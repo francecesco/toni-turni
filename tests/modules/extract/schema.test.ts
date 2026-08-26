@@ -79,4 +79,44 @@ describe('parseExtraction', () => {
   it('rifiuta un elenco di colonne vuoto', () => {
     expect(parseExtraction(JSON.stringify({ ...valida, columns: [], cells: [] })).ok).toBe(false)
   })
+
+  it('accetta intestazione e cella che differiscono per spazi doppi, come la stessa colonna', () => {
+    const cells = [
+      { day: 1, column: 'ANNA  LIA', code: 'M', confidence: 0.9, handCorrected: false },
+    ]
+    const result = parseExtraction(
+      JSON.stringify({ ...valida, columns: ['ANNA LIA'], cells }),
+    )
+    expect(result.ok).toBe(true)
+  })
+
+  it('rifiuta due celle che differiscono solo per spazi finali, come duplicato', () => {
+    const cells = [
+      { day: 1, column: 'RENATA', code: 'M', confidence: 1, handCorrected: false },
+      { day: 1, column: 'RENATA ', code: 'P', confidence: 1, handCorrected: false },
+    ]
+    const result = parseExtraction(JSON.stringify({ ...valida, cells }))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toMatch(/duplicat/i)
+  })
+
+  it('rifiuta il giorno 31 in un mese che ne ha 30', () => {
+    const cells = [{ day: 31, column: 'RENATA', code: 'M', confidence: 1, handCorrected: false }]
+    const result = parseExtraction(JSON.stringify({ ...valida, month: 9, cells }))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toMatch(/non esiste/i)
+  })
+
+  it('accetta il 29 febbraio di un anno bisestile', () => {
+    const cells = [{ day: 29, column: 'RENATA', code: 'M', confidence: 1, handCorrected: false }]
+    const result = parseExtraction(JSON.stringify({ ...valida, year: 2028, month: 2, cells }))
+    expect(result.ok).toBe(true)
+  })
+
+  it('rifiuta il 29 febbraio di un anno non bisestile', () => {
+    const cells = [{ day: 29, column: 'RENATA', code: 'M', confidence: 1, handCorrected: false }]
+    const result = parseExtraction(JSON.stringify({ ...valida, year: 2026, month: 2, cells }))
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toMatch(/non esiste/i)
+  })
 })

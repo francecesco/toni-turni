@@ -2,28 +2,38 @@ import { z } from 'zod'
 
 export const extractedCellSchema = z.object({
   day: z.number().int().min(1).max(31),
-  column: z.string().min(1).max(60),
+  column: z.string().trim().min(1).max(60),
   /** Testo della cella come letto dalla foto; vuoto se la cella è vuota. */
-  code: z.string().max(20),
+  code: z.string().trim().max(20),
   confidence: z.number().min(0).max(1),
   /** Il modello ha visto una correzione a penna o col correttore. */
   handCorrected: z.boolean(),
 })
 
+/**
+ * Forma usata solo per confrontare identità di colonna, non per il valore salvato:
+ * uno spazio doppio fra nome e cognome, o uno spazio residuo dopo il `.trim()` del
+ * campo, non deve far sembrare due colonne diverse ("ANNA LIA" / "ANNA  LIA").
+ */
+function normalizeColumn(value: string): string {
+  return value.trim().toUpperCase().replace(/\s+/g, ' ')
+}
+
 export const extractionSchema = z
   .object({
     year: z.number().int().min(2020).max(2100),
     month: z.number().int().min(1).max(12),
-    ward: z.string().min(1).max(60),
-    columns: z.array(z.string().min(1).max(60)).min(1).max(40),
+    ward: z.string().trim().min(1).max(60),
+    columns: z.array(z.string().trim().min(1).max(60)).min(1).max(40),
     cells: z.array(extractedCellSchema),
   })
   .superRefine((value, ctx) => {
-    const dichiarate = new Set(value.columns)
+    const dichiarate = new Set(value.columns.map(normalizeColumn))
     const viste = new Set<string>()
+    const giorniNelMese = new Date(value.year, value.month, 0).getDate()
 
     for (const cell of value.cells) {
-      if (!dichiarate.has(cell.column)) {
+      if (!dichiarate.has(normalizeColumn(cell.column))) {
         // 'custom' come stringa funziona sia in Zod 3 sia in Zod 4, dove
         // z.ZodIssueCode non esiste più.
         ctx.addIssue({
@@ -32,7 +42,14 @@ export const extractionSchema = z
         })
       }
 
-      const chiave = `${cell.day}:${cell.column}`
+      if (cell.day > giorniNelMese) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `Il giorno ${cell.day} non esiste nel mese ${value.month}/${value.year} (che ne ha ${giorniNelMese})`,
+        })
+      }
+
+      const chiave = `${cell.day}:${normalizeColumn(cell.column)}`
       if (viste.has(chiave)) {
         ctx.addIssue({
           code: 'custom',
