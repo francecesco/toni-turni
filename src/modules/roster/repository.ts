@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db'
 import { listShiftCodes, matchCode } from '@/modules/codes'
-import type { Extraction } from '@/modules/extract/schema'
+import type { Extraction } from '@/modules/extract'
 
 export async function nextVersion(year: number, month: number, ward: string): Promise<number> {
   const ultima = await prisma.roster.findFirst({
