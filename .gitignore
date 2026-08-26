@@ -6,6 +6,7 @@ node_modules/
 out/
 build/
 next-env.d.ts
+prisma/seed.js
 
 # Ambiente e segreti
 .env
