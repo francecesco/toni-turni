@@ -97,10 +97,30 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
   sufficiente per questo carico.
 - **`npm run eval` chiama il provider reale e consuma token.** Non eseguirlo in CI né in loop.
 
-## Convenzioni
+## Workflow: TDD, non negoziabile
 
-- **Test prima del codice** per la logica di dominio (mapping orari, diff, validazione): sono
-  esattamente i punti dove un errore è invisibile a occhio.
+Ogni feature e ogni bugfix segue il ciclo **RED → GREEN → REFACTOR**:
+
+1. **RED** — scrivi il test che descrive il comportamento atteso ed **eseguilo**. Deve fallire, e per
+   il motivo giusto: un test che passa subito non sta testando ciò che credi.
+2. **GREEN** — scrivi il minimo codice che lo fa passare. Niente astrazioni anticipate.
+3. **REFACTOR** — riordina con i test verdi a fare da rete.
+
+Regole che ne derivano:
+
+- **Non si scrive codice di produzione senza un test che lo richieda.** Se stai per implementare
+  qualcosa e non esiste un test rosso, fermati e scrivi prima il test.
+- **Non si dichiara qualcosa "fatto" senza aver eseguito i test e letto l'output.** Il comando è
+  `npm test`; incolla il risultato, non presumerlo.
+- **Ogni bug diventa prima un test che lo riproduce**, poi si corregge. Così non torna.
+- I bordi difficili vanno testati per primi, perché è lì che l'errore è invisibile a occhio: notte a
+  cavallo della mezzanotte, cambio ora legale, diff del sync, validazione dell'output AI, codici turno
+  sconosciuti.
+- Le dipendenze esterne (provider AI, Google Calendar) sono **sempre mockate** nei test. `npm run eval`
+  è l'unica cosa che parla col provider reale, e non è un test.
+- Il commit contiene test e implementazione insieme.
+
+## Convenzioni
 - Nomi di identificatori, commenti e messaggi di commit in **inglese**; testi dell'interfaccia e
   documenti in **italiano** (le utenti sono italiane).
 - I codici turno restano in italiano come sulla carta (`M`, `P`, `NOTTE`, `RP`): sono il vocabolario

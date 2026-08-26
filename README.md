@@ -153,6 +153,10 @@ npm test         # unit test, AI e Google API mockate
 npm run eval     # accuratezza dell'estrazione sul provider reale (consuma token)
 ```
 
+Lo sviluppo segue **TDD**: prima il test che fallisce, poi il codice minimo che lo fa passare, poi il
+refactor. Vale in particolare per la logica dove un errore non si vede a occhio — orari a cavallo
+della mezzanotte, ora legale, diff del sync.
+
 Convenzioni, confini dei moduli e regole invarianti sono in [CLAUDE.md](CLAUDE.md); il design
 completo in [docs/superpowers/specs/2026-08-26-toni-turni-design.md](docs/superpowers/specs/2026-08-26-toni-turni-design.md).
 

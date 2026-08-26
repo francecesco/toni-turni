@@ -10,4 +10,6 @@ Foto reali della tabella turni, usate come **golden test** dell'estrazione AI.
 Per ogni immagine va mantenuto un `<nome>.expected.json` con la trascrizione corretta, verificata a
 mano. È il riferimento contro cui `npm run eval` misura l'accuratezza per cella.
 
-**Attenzione:** contengono nomi e assenze di persone reali. Il repository deve restare privato.
+I dati nelle immagini sono **fittizi**: nomi e turni non corrispondono a persone reali, quindi le
+foto possono stare nel repository. Le tabelle caricate in produzione contengono invece dati veri e
+non vanno mai committate (`uploads/` e `data/` sono in `.gitignore`).
