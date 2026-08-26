@@ -41,7 +41,12 @@ export async function GET(request: Request) {
     profile = await exchangeGoogleCode(code)
   } catch (error) {
     if (error instanceof EmailNotVerifiedError) return loginError('email_not_verified')
-    throw error
+    // Qualsiasi altro errore (es. "invalid_grant" quando l URL di callback viene
+    // ricaricato o si torna indietro col browser su un code già consumato) non deve
+    // finire sulla pagina di errore generica di Next. Logghiamo solo il nome
+    // dell errore: il messaggio/response di Google può contenere il code o i token.
+    console.error('Scambio del code OAuth non riuscito:', error instanceof Error ? error.name : 'errore sconosciuto')
+    return loginError('google')
   }
 
   const email = normalizeEmail(profile.email)

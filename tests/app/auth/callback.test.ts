@@ -139,7 +139,7 @@ describe('GET /api/auth/google/callback — registrazione', () => {
       data: { email: 'anna@example.com', displayName: 'Anna Rossi', role: 'REFERENTE' },
     })
     await dbModule.prisma.invite.create({
-      data: { email: '  Mery@Example.com ', invitedBy: referente.id },
+      data: { email: '  Mery@Example.com ', invitedBy: referente.email },
     })
 
     cookieStore.set(OAUTH_STATE_COOKIE, STATE)
@@ -203,6 +203,18 @@ describe('GET /api/auth/google/callback — email non verificata', () => {
     const response = await route.GET(callbackRequest({ code: 'auth-code', state: STATE }))
 
     expect(locationOf(response)).toBe('http://localhost:3000/login?error=email_not_verified')
+    expect(await dbModule.prisma.user.count()).toBe(0)
+  })
+})
+
+describe('GET /api/auth/google/callback — errore generico dello scambio del code', () => {
+  it('un "code" già consumato (invalid_grant) rimanda a /login?error=google senza creare utenti', async () => {
+    cookieStore.set(OAUTH_STATE_COOKIE, STATE)
+    vi.mocked(googleModule.exchangeGoogleCode).mockRejectedValue(new Error('invalid_grant'))
+
+    const response = await route.GET(callbackRequest({ code: 'auth-code', state: STATE }))
+
+    expect(locationOf(response)).toBe('http://localhost:3000/login?error=google')
     expect(await dbModule.prisma.user.count()).toBe(0)
   })
 })

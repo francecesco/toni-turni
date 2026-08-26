@@ -35,7 +35,7 @@ model GoogleAccount {
 
 model Invite {
   email     String    @id
-  invitedBy String
+  invitedBy String    // email della referente che ha creato l invito (non una FK: la Fase 1 non ne ha bisogno)
   createdAt DateTime  @default(now())
   usedAt    DateTime?
 }
