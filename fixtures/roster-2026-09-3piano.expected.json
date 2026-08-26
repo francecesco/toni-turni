@@ -1,0 +1,1220 @@
+{
+  "_avvertenza": "Verita di riferimento per misurare l'estrazione automatica. Prodotta da due letture indipendenti della foto, concordi su tutte le 240 celle. NON ancora verificata da una persona che conosce il reparto: le percentuali di accuratezza valgono quanto questa trascrizione.",
+  "verified": false,
+  "source": "due trascrizioni indipendenti concordanti (240/240)",
+  "year": 2026,
+  "month": 9,
+  "ward": "3°PIANO",
+  "columns": [
+    "RENATA",
+    "KHADIJA",
+    "MERY",
+    "SARA DP.",
+    "ALEX",
+    "CRISTINA",
+    "COSTANZA",
+    "CARMEN"
+  ],
+  "cells": [
+    {
+      "day": 1,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 1,
+      "column": "CARMEN",
+      "code": "P"
+    },
+    {
+      "day": 1,
+      "column": "COSTANZA",
+      "code": "M"
+    },
+    {
+      "day": 1,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 1,
+      "column": "KHADIJA",
+      "code": "P"
+    },
+    {
+      "day": 1,
+      "column": "MERY",
+      "code": "ASS"
+    },
+    {
+      "day": 1,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 1,
+      "column": "SARA DP.",
+      "code": "SN"
+    },
+    {
+      "day": 2,
+      "column": "ALEX",
+      "code": "M"
+    },
+    {
+      "day": 2,
+      "column": "CARMEN",
+      "code": "M"
+    },
+    {
+      "day": 2,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 2,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 2,
+      "column": "KHADIJA",
+      "code": "NOTTE"
+    },
+    {
+      "day": 2,
+      "column": "MERY",
+      "code": "ASS"
+    },
+    {
+      "day": 2,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 2,
+      "column": "SARA DP.",
+      "code": "RIP"
+    },
+    {
+      "day": 3,
+      "column": "ALEX",
+      "code": "M/P"
+    },
+    {
+      "day": 3,
+      "column": "CARMEN",
+      "code": "ASS"
+    },
+    {
+      "day": 3,
+      "column": "COSTANZA",
+      "code": "M"
+    },
+    {
+      "day": 3,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 3,
+      "column": "KHADIJA",
+      "code": "SN"
+    },
+    {
+      "day": 3,
+      "column": "MERY",
+      "code": "ASS"
+    },
+    {
+      "day": 3,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 3,
+      "column": "SARA DP.",
+      "code": "P"
+    },
+    {
+      "day": 4,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 4,
+      "column": "CARMEN",
+      "code": "ASS"
+    },
+    {
+      "day": 4,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 4,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 4,
+      "column": "KHADIJA",
+      "code": "RIP"
+    },
+    {
+      "day": 4,
+      "column": "MERY",
+      "code": "ASS"
+    },
+    {
+      "day": 4,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 4,
+      "column": "SARA DP.",
+      "code": "M/P"
+    },
+    {
+      "day": 5,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 5,
+      "column": "CARMEN",
+      "code": "RP"
+    },
+    {
+      "day": 5,
+      "column": "COSTANZA",
+      "code": "RP"
+    },
+    {
+      "day": 5,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 5,
+      "column": "KHADIJA",
+      "code": "P"
+    },
+    {
+      "day": 5,
+      "column": "MERY",
+      "code": "ASS"
+    },
+    {
+      "day": 5,
+      "column": "RENATA",
+      "code": "RP"
+    },
+    {
+      "day": 5,
+      "column": "SARA DP.",
+      "code": "M"
+    },
+    {
+      "day": 6,
+      "column": "ALEX",
+      "code": "RP"
+    },
+    {
+      "day": 6,
+      "column": "CARMEN",
+      "code": "M"
+    },
+    {
+      "day": 6,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 6,
+      "column": "CRISTINA",
+      "code": "RP"
+    },
+    {
+      "day": 6,
+      "column": "KHADIJA",
+      "code": "M"
+    },
+    {
+      "day": 6,
+      "column": "MERY",
+      "code": "RP"
+    },
+    {
+      "day": 6,
+      "column": "RENATA",
+      "code": "RP"
+    },
+    {
+      "day": 6,
+      "column": "SARA DP.",
+      "code": "P"
+    },
+    {
+      "day": 7,
+      "column": "ALEX",
+      "code": "ASS"
+    },
+    {
+      "day": 7,
+      "column": "CARMEN",
+      "code": "P"
+    },
+    {
+      "day": 7,
+      "column": "COSTANZA",
+      "code": "M"
+    },
+    {
+      "day": 7,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 7,
+      "column": "KHADIJA",
+      "code": "P"
+    },
+    {
+      "day": 7,
+      "column": "MERY",
+      "code": "M"
+    },
+    {
+      "day": 7,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 7,
+      "column": "SARA DP.",
+      "code": "RP"
+    },
+    {
+      "day": 8,
+      "column": "ALEX",
+      "code": "ASS"
+    },
+    {
+      "day": 8,
+      "column": "CARMEN",
+      "code": "M+"
+    },
+    {
+      "day": 8,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 8,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 8,
+      "column": "KHADIJA",
+      "code": "M"
+    },
+    {
+      "day": 8,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 8,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 8,
+      "column": "SARA DP.",
+      "code": "P"
+    },
+    {
+      "day": 9,
+      "column": "ALEX",
+      "code": "ASS"
+    },
+    {
+      "day": 9,
+      "column": "CARMEN",
+      "code": "M RSF"
+    },
+    {
+      "day": 9,
+      "column": "COSTANZA",
+      "code": "M"
+    },
+    {
+      "day": 9,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 9,
+      "column": "KHADIJA",
+      "code": "P"
+    },
+    {
+      "day": 9,
+      "column": "MERY",
+      "code": "M"
+    },
+    {
+      "day": 9,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 9,
+      "column": "SARA DP.",
+      "code": "P"
+    },
+    {
+      "day": 10,
+      "column": "ALEX",
+      "code": "ASS"
+    },
+    {
+      "day": 10,
+      "column": "CARMEN",
+      "code": "P RSF"
+    },
+    {
+      "day": 10,
+      "column": "COSTANZA",
+      "code": "M/P"
+    },
+    {
+      "day": 10,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 10,
+      "column": "KHADIJA",
+      "code": "M"
+    },
+    {
+      "day": 10,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 10,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 10,
+      "column": "SARA DP.",
+      "code": "NOTTE"
+    },
+    {
+      "day": 11,
+      "column": "ALEX",
+      "code": "ASS"
+    },
+    {
+      "day": 11,
+      "column": "CARMEN",
+      "code": "M RSF"
+    },
+    {
+      "day": 11,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 11,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 11,
+      "column": "KHADIJA",
+      "code": "RP"
+    },
+    {
+      "day": 11,
+      "column": "MERY",
+      "code": "M/P"
+    },
+    {
+      "day": 11,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 11,
+      "column": "SARA DP.",
+      "code": "SN"
+    },
+    {
+      "day": 12,
+      "column": "ALEX",
+      "code": "ASS"
+    },
+    {
+      "day": 12,
+      "column": "CARMEN",
+      "code": "M"
+    },
+    {
+      "day": 12,
+      "column": "COSTANZA",
+      "code": "RP"
+    },
+    {
+      "day": 12,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 12,
+      "column": "KHADIJA",
+      "code": "M"
+    },
+    {
+      "day": 12,
+      "column": "MERY",
+      "code": "RP"
+    },
+    {
+      "day": 12,
+      "column": "RENATA",
+      "code": "RP"
+    },
+    {
+      "day": 12,
+      "column": "SARA DP.",
+      "code": "RIP"
+    },
+    {
+      "day": 13,
+      "column": "ALEX",
+      "code": "RP"
+    },
+    {
+      "day": 13,
+      "column": "CARMEN",
+      "code": "RP"
+    },
+    {
+      "day": 13,
+      "column": "COSTANZA",
+      "code": "M"
+    },
+    {
+      "day": 13,
+      "column": "CRISTINA",
+      "code": "RP"
+    },
+    {
+      "day": 13,
+      "column": "KHADIJA",
+      "code": "P"
+    },
+    {
+      "day": 13,
+      "column": "MERY",
+      "code": "M"
+    },
+    {
+      "day": 13,
+      "column": "RENATA",
+      "code": "RP"
+    },
+    {
+      "day": 13,
+      "column": "SARA DP.",
+      "code": "ASS"
+    },
+    {
+      "day": 14,
+      "column": "ALEX",
+      "code": "M"
+    },
+    {
+      "day": 14,
+      "column": "CARMEN",
+      "code": "M"
+    },
+    {
+      "day": 14,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 14,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 14,
+      "column": "KHADIJA",
+      "code": "P"
+    },
+    {
+      "day": 14,
+      "column": "MERY",
+      "code": "M"
+    },
+    {
+      "day": 14,
+      "column": "RENATA",
+      "code": "ASS"
+    },
+    {
+      "day": 14,
+      "column": "SARA DP.",
+      "code": "ASS"
+    },
+    {
+      "day": 15,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 15,
+      "column": "CARMEN",
+      "code": "P"
+    },
+    {
+      "day": 15,
+      "column": "COSTANZA",
+      "code": "M"
+    },
+    {
+      "day": 15,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 15,
+      "column": "KHADIJA",
+      "code": "M"
+    },
+    {
+      "day": 15,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 15,
+      "column": "RENATA",
+      "code": "ASS"
+    },
+    {
+      "day": 15,
+      "column": "SARA DP.",
+      "code": "ASS"
+    },
+    {
+      "day": 16,
+      "column": "ALEX",
+      "code": "M"
+    },
+    {
+      "day": 16,
+      "column": "CARMEN",
+      "code": "M"
+    },
+    {
+      "day": 16,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 16,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 16,
+      "column": "KHADIJA",
+      "code": "P"
+    },
+    {
+      "day": 16,
+      "column": "MERY",
+      "code": "M"
+    },
+    {
+      "day": 16,
+      "column": "RENATA",
+      "code": "ASS"
+    },
+    {
+      "day": 16,
+      "column": "SARA DP.",
+      "code": "ASS"
+    },
+    {
+      "day": 17,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 17,
+      "column": "CARMEN",
+      "code": "P"
+    },
+    {
+      "day": 17,
+      "column": "COSTANZA",
+      "code": "M"
+    },
+    {
+      "day": 17,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 17,
+      "column": "KHADIJA",
+      "code": "M"
+    },
+    {
+      "day": 17,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 17,
+      "column": "RENATA",
+      "code": "ASS"
+    },
+    {
+      "day": 17,
+      "column": "SARA DP.",
+      "code": "ASS"
+    },
+    {
+      "day": 18,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 18,
+      "column": "CARMEN",
+      "code": "M"
+    },
+    {
+      "day": 18,
+      "column": "COSTANZA",
+      "code": "ASS"
+    },
+    {
+      "day": 18,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 18,
+      "column": "KHADIJA",
+      "code": "RP"
+    },
+    {
+      "day": 18,
+      "column": "MERY",
+      "code": "M/P"
+    },
+    {
+      "day": 18,
+      "column": "RENATA",
+      "code": "ASS"
+    },
+    {
+      "day": 18,
+      "column": "SARA DP.",
+      "code": "P"
+    },
+    {
+      "day": 19,
+      "column": "ALEX",
+      "code": "M"
+    },
+    {
+      "day": 19,
+      "column": "CARMEN",
+      "code": "M"
+    },
+    {
+      "day": 19,
+      "column": "COSTANZA",
+      "code": "ASS"
+    },
+    {
+      "day": 19,
+      "column": "CRISTINA",
+      "code": "RP"
+    },
+    {
+      "day": 19,
+      "column": "KHADIJA",
+      "code": "M"
+    },
+    {
+      "day": 19,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 19,
+      "column": "RENATA",
+      "code": "RP"
+    },
+    {
+      "day": 19,
+      "column": "SARA DP.",
+      "code": "P"
+    },
+    {
+      "day": 20,
+      "column": "ALEX",
+      "code": "RP"
+    },
+    {
+      "day": 20,
+      "column": "CARMEN",
+      "code": "M"
+    },
+    {
+      "day": 20,
+      "column": "COSTANZA",
+      "code": "RP"
+    },
+    {
+      "day": 20,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 20,
+      "column": "KHADIJA",
+      "code": "P"
+    },
+    {
+      "day": 20,
+      "column": "MERY",
+      "code": "RP"
+    },
+    {
+      "day": 20,
+      "column": "RENATA",
+      "code": "RP"
+    },
+    {
+      "day": 20,
+      "column": "SARA DP.",
+      "code": "RP"
+    },
+    {
+      "day": 21,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 21,
+      "column": "CARMEN",
+      "code": "RP"
+    },
+    {
+      "day": 21,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 21,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 21,
+      "column": "KHADIJA",
+      "code": "P"
+    },
+    {
+      "day": 21,
+      "column": "MERY",
+      "code": "M"
+    },
+    {
+      "day": 21,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 21,
+      "column": "SARA DP.",
+      "code": "M+"
+    },
+    {
+      "day": 22,
+      "column": "ALEX",
+      "code": "M+"
+    },
+    {
+      "day": 22,
+      "column": "CARMEN",
+      "code": "M+"
+    },
+    {
+      "day": 22,
+      "column": "COSTANZA",
+      "code": "M"
+    },
+    {
+      "day": 22,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 22,
+      "column": "KHADIJA",
+      "code": "M"
+    },
+    {
+      "day": 22,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 22,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 22,
+      "column": "SARA DP.",
+      "code": "P"
+    },
+    {
+      "day": 23,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 23,
+      "column": "CARMEN",
+      "code": "M 2°P"
+    },
+    {
+      "day": 23,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 23,
+      "column": "CRISTINA",
+      "code": "P2°P"
+    },
+    {
+      "day": 23,
+      "column": "KHADIJA",
+      "code": "P"
+    },
+    {
+      "day": 23,
+      "column": "MERY",
+      "code": "M"
+    },
+    {
+      "day": 23,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 23,
+      "column": "SARA DP.",
+      "code": "M"
+    },
+    {
+      "day": 24,
+      "column": "ALEX",
+      "code": "M"
+    },
+    {
+      "day": 24,
+      "column": "CARMEN",
+      "code": "P"
+    },
+    {
+      "day": 24,
+      "column": "COSTANZA",
+      "code": "M 2°P"
+    },
+    {
+      "day": 24,
+      "column": "CRISTINA",
+      "code": "M 2°P"
+    },
+    {
+      "day": 24,
+      "column": "KHADIJA",
+      "code": "M"
+    },
+    {
+      "day": 24,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 24,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 24,
+      "column": "SARA DP.",
+      "code": "P"
+    },
+    {
+      "day": 25,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 25,
+      "column": "CARMEN",
+      "code": "M"
+    },
+    {
+      "day": 25,
+      "column": "COSTANZA",
+      "code": "ASS"
+    },
+    {
+      "day": 25,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 25,
+      "column": "KHADIJA",
+      "code": "RP"
+    },
+    {
+      "day": 25,
+      "column": "MERY",
+      "code": "M"
+    },
+    {
+      "day": 25,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 25,
+      "column": "SARA DP.",
+      "code": "P"
+    },
+    {
+      "day": 26,
+      "column": "ALEX",
+      "code": "M"
+    },
+    {
+      "day": 26,
+      "column": "CARMEN",
+      "code": "P"
+    },
+    {
+      "day": 26,
+      "column": "COSTANZA",
+      "code": "ASS"
+    },
+    {
+      "day": 26,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 26,
+      "column": "KHADIJA",
+      "code": "P"
+    },
+    {
+      "day": 26,
+      "column": "MERY",
+      "code": "RP"
+    },
+    {
+      "day": 26,
+      "column": "RENATA",
+      "code": "RP"
+    },
+    {
+      "day": 26,
+      "column": "SARA DP.",
+      "code": "RP"
+    },
+    {
+      "day": 27,
+      "column": "ALEX",
+      "code": "M"
+    },
+    {
+      "day": 27,
+      "column": "CARMEN",
+      "code": "RP"
+    },
+    {
+      "day": 27,
+      "column": "COSTANZA",
+      "code": "RP"
+    },
+    {
+      "day": 27,
+      "column": "CRISTINA",
+      "code": "RP"
+    },
+    {
+      "day": 27,
+      "column": "KHADIJA",
+      "code": "M"
+    },
+    {
+      "day": 27,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 27,
+      "column": "RENATA",
+      "code": "RP"
+    },
+    {
+      "day": 27,
+      "column": "SARA DP.",
+      "code": "P"
+    },
+    {
+      "day": 28,
+      "column": "ALEX",
+      "code": "RP"
+    },
+    {
+      "day": 28,
+      "column": "CARMEN",
+      "code": "M 4°P"
+    },
+    {
+      "day": 28,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 28,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 28,
+      "column": "KHADIJA",
+      "code": "P"
+    },
+    {
+      "day": 28,
+      "column": "MERY",
+      "code": "M"
+    },
+    {
+      "day": 28,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 28,
+      "column": "SARA DP.",
+      "code": "M"
+    },
+    {
+      "day": 29,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 29,
+      "column": "CARMEN",
+      "code": "M+"
+    },
+    {
+      "day": 29,
+      "column": "COSTANZA",
+      "code": "M+"
+    },
+    {
+      "day": 29,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 29,
+      "column": "KHADIJA",
+      "code": "M"
+    },
+    {
+      "day": 29,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 29,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 29,
+      "column": "SARA DP.",
+      "code": "P"
+    },
+    {
+      "day": 30,
+      "column": "ALEX",
+      "code": "M"
+    },
+    {
+      "day": 30,
+      "column": "CARMEN",
+      "code": "M 2°P"
+    },
+    {
+      "day": 30,
+      "column": "COSTANZA",
+      "code": "P 2°P"
+    },
+    {
+      "day": 30,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 30,
+      "column": "KHADIJA",
+      "code": "P"
+    },
+    {
+      "day": 30,
+      "column": "MERY",
+      "code": "M"
+    },
+    {
+      "day": 30,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 30,
+      "column": "SARA DP.",
+      "code": "P"
+    }
+  ]
+}
