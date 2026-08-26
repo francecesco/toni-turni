@@ -1,11 +1,18 @@
 import { optionalEnv, requireEnv } from '@/lib/env'
-import { VisionProviderError, type VisionProvider, type VisionRequest } from './types'
+import { VisionProviderError, VisionTruncatedError, type VisionProvider, type VisionRequest } from './types'
 
 const ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions'
 export const GROQ_DEFAULT_MODEL = 'qwen/qwen3.8-27b'
+// Groq conta il valore *prenotato* di max_completion_tokens nel budget di token al
+// minuto del piano, non solo quello effettivamente usato: chiederne 8000 (il tetto
+// del piano gratuito) fa pesare la richiesta 10369 token e la fa rifiutare con un
+// errore che parla di dimensione della richiesta e non c entra nulla con l immagine.
+// 4000 è stato verificato sul campo: basta per una tabella intera senza sforare.
+const DEFAULT_MAX_OUTPUT_TOKENS = 4000
 
 interface GroqResponse {
-  choices?: Array<{ message?: { content?: string } }>
+  choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
+  usage?: { completion_tokens?: number }
 }
 
 export function createGroqProvider(fetchImpl: typeof fetch = fetch): VisionProvider {
@@ -21,6 +28,9 @@ export function createGroqProvider(fetchImpl: typeof fetch = fetch): VisionProvi
       }
 
       const model = optionalEnv('GROQ_MODEL', GROQ_DEFAULT_MODEL)
+      const maxOutputTokens = Number(
+        optionalEnv('GROQ_MAX_OUTPUT_TOKENS', String(DEFAULT_MAX_OUTPUT_TOKENS)),
+      )
 
       const messages: unknown[] = [
         {
@@ -36,28 +46,64 @@ export function createGroqProvider(fetchImpl: typeof fetch = fetch): VisionProvi
         ...(request.previousTurns ?? []).map((turn) => ({ role: turn.role, content: turn.text })),
       ]
 
-      const response = await fetchImpl(ENDPOINT, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          messages,
-          // La modalità JSON riduce i casi in cui il modello aggiunge testo attorno.
-          response_format: { type: 'json_object' },
-          temperature: 0,
-        }),
-      })
-
-      if (!response.ok) {
-        // Il corpo dell errore non viene incluso: può contenere l eco della richiesta.
-        throw new VisionProviderError(`Groq ha risposto con stato ${response.status}`)
+      let response: Response
+      try {
+        response = await fetchImpl(ENDPOINT, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            // La modalità JSON riduce i casi in cui il modello aggiunge testo attorno.
+            response_format: { type: 'json_object' },
+            temperature: 0,
+            max_completion_tokens: maxOutputTokens,
+          }),
+        })
+      } catch (cause) {
+        // DNS che non risolve, connessione resettata, ecc: fuori dal contratto del
+        // provider se non tradotto qui. Da questo dipende la decisione di fallback.
+        throw new VisionProviderError('Chiamata di rete a Groq non riuscita', { cause })
       }
 
-      const payload = (await response.json()) as GroqResponse
-      const raw = payload.choices?.[0]?.message?.content
+      if (!response.ok) {
+        const retryAfterHeader = response.headers.get('retry-after')
+        const retryAfterSeconds =
+          retryAfterHeader !== null && !Number.isNaN(Number(retryAfterHeader))
+            ? Number(retryAfterHeader)
+            : undefined
+        // Il corpo dell errore non viene incluso: può contenere l eco della richiesta.
+        throw new VisionProviderError(`Groq ha risposto con stato ${response.status}`, {
+          status: response.status,
+          retryAfterSeconds,
+        })
+      }
+
+      let payload: GroqResponse
+      try {
+        payload = (await response.json()) as GroqResponse
+      } catch (cause) {
+        // Un 200 con corpo non-JSON (tipico di un proxy che intercetta la richiesta)
+        // non deve rompere il contratto del provider con un SyntaxError grezzo.
+        throw new VisionProviderError('Risposta di Groq non decodificabile come JSON', {
+          cause,
+          status: response.status,
+        })
+      }
+
+      const choice = payload.choices?.[0]
+      const raw = choice?.message?.content
+
+      if (choice?.finish_reason === 'length') {
+        const usati = payload.usage?.completion_tokens ?? 'sconosciuti'
+        throw new VisionTruncatedError(
+          `Groq ha troncato la risposta per il limite di token di output (token di output usati: ${usati})`,
+        )
+      }
+
       if (typeof raw !== 'string' || raw.trim() === '') {
         throw new VisionProviderError('Groq ha restituito una risposta senza contenuto')
       }

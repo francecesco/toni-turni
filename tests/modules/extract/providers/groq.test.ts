@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createGroqProvider, GROQ_DEFAULT_MODEL } from '@/modules/extract/providers/groq'
-import { VisionProviderError } from '@/modules/extract/providers/types'
+import { VisionProviderError, VisionTruncatedError } from '@/modules/extract/providers/types'
 
 const IMAGE = Buffer.from([0xff, 0xd8, 0xff, 0x42])
 
@@ -18,6 +18,7 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.GROQ_API_KEY
   delete process.env.GROQ_MODEL
+  delete process.env.GROQ_MAX_OUTPUT_TOKENS
 })
 
 describe('createGroqProvider', () => {
@@ -112,6 +113,67 @@ describe('createGroqProvider', () => {
     await expect(
       createGroqProvider(fetchMock).extract({ image: IMAGE, prompt: 'x' }),
     ).rejects.toThrow(VisionProviderError)
+  })
+
+  it('imposta max_completion_tokens con il default, configurabile via env', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(risposta('{}'))
+    await createGroqProvider(fetchMock).extract({ image: IMAGE, prompt: 'x' })
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    expect(body.max_completion_tokens).toBe(4000)
+
+    process.env.GROQ_MAX_OUTPUT_TOKENS = '1500'
+    const fetchMock2 = vi.fn().mockResolvedValue(risposta('{}'))
+    await createGroqProvider(fetchMock2).extract({ image: IMAGE, prompt: 'x' })
+    const body2 = JSON.parse(String((fetchMock2.mock.calls[0][1] as RequestInit).body))
+    expect(body2.max_completion_tokens).toBe(1500)
+  })
+
+  it('solleva VisionTruncatedError quando finish_reason è length, non un errore di formato', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '{"year": 2026, "cells": [' }, finish_reason: 'length' }],
+          usage: { completion_tokens: 4000 },
+        }),
+        { status: 200 },
+      ),
+    )
+
+    let caught: unknown
+    try {
+      await createGroqProvider(fetchMock).extract({ image: IMAGE, prompt: 'x' })
+    } catch (e) {
+      caught = e
+    }
+
+    expect(caught).toBeInstanceOf(VisionTruncatedError)
+    expect((caught as Error).message).toMatch(/tronc/i)
+    expect((caught as Error).message).toContain('4000')
+  })
+
+  it('traduce un errore di rete del fetch in VisionProviderError', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('fetch failed'))
+
+    await expect(
+      createGroqProvider(fetchMock).extract({ image: IMAGE, prompt: 'x' }),
+    ).rejects.toThrow(VisionProviderError)
+  })
+
+  it('porta status e retryAfterSeconds su un 429 con header retry-after', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('troppe richieste', { status: 429, headers: { 'retry-after': '30' } }),
+    )
+
+    let caught: unknown
+    try {
+      await createGroqProvider(fetchMock).extract({ image: IMAGE, prompt: 'x' })
+    } catch (e) {
+      caught = e
+    }
+
+    expect(caught).toBeInstanceOf(VisionProviderError)
+    expect((caught as VisionProviderError).status).toBe(429)
+    expect((caught as VisionProviderError).retryAfterSeconds).toBe(30)
   })
 
   it('non mette la chiave nel messaggio di errore', async () => {

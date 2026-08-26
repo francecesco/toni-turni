@@ -3,8 +3,8 @@ import { createAnthropicProvider } from './anthropic'
 import { createGroqProvider } from './groq'
 import { VisionProviderError, type VisionProvider } from './types'
 
-export type { VisionProvider, VisionRequest, VisionResult } from './types'
-export { VisionProviderError } from './types'
+export type { VisionProvider, VisionRequest, VisionResult, VisionProviderErrorOptions } from './types'
+export { VisionProviderError, VisionTruncatedError } from './types'
 export { createGroqProvider, GROQ_DEFAULT_MODEL } from './groq'
 export { ANTHROPIC_DEFAULT_MODEL, createAnthropicProvider } from './anthropic'
 
