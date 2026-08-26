@@ -1133,25 +1133,26 @@ import { DEFAULT_SHIFT_CODES } from '../src/modules/codes/defaults'
  * gli orari corretti a mano dalla referente non vengono mai sovrascritti.
  */
 export async function seedShiftCodes(prisma: PrismaClient): Promise<number> {
+  // createMany({ skipDuplicates: true }) non è supportato su SQLite: si controlla prima.
   let created = 0
   for (const def of DEFAULT_SHIFT_CODES) {
-    const result = await prisma.shiftCode.createMany({
-      data: [
-        {
-          code: def.code,
-          label: def.label,
-          kind: def.kind,
-          startTime: def.startTime,
-          endTime: def.endTime,
-          crossesMidnight: def.crossesMidnight,
-          location: def.location,
-          color: def.color,
-          needsReview: def.needsReview,
-        },
-      ],
-      skipDuplicates: true,
+    const existing = await prisma.shiftCode.findUnique({ where: { code: def.code } })
+    if (existing) continue
+
+    await prisma.shiftCode.create({
+      data: {
+        code: def.code,
+        label: def.label,
+        kind: def.kind,
+        startTime: def.startTime,
+        endTime: def.endTime,
+        crossesMidnight: def.crossesMidnight,
+        location: def.location,
+        color: def.color,
+        needsReview: def.needsReview,
+      },
     })
-    created += result.count
+    created += 1
   }
   return created
 }
