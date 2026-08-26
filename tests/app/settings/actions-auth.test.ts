@@ -103,6 +103,39 @@ describe('autorizzazione delle server action di /settings', () => {
 
     expect(after).toBe(before)
   })
+
+  it('removeShiftCode rimanda alla home e non scrive nulla se chiamata da un utente NURSE', async () => {
+    const nurse = await dbModule.prisma.user.create({
+      data: { email: 'mery@example.com', displayName: 'Mery', role: 'NURSE' },
+    })
+    await session.openSessionCookie(nurse.id)
+    await dbModule.prisma.shiftCode.create({
+      data: { code: 'M', label: 'Mattino', kind: 'work', startTime: '07:00', endTime: '14:00' },
+    })
+
+    const form = new FormData()
+    form.set('code', 'M')
+
+    await expect(codesActions.removeShiftCode(form)).rejects.toThrow('REDIRECT:/')
+    expect(await dbModule.prisma.shiftCode.findUnique({ where: { code: 'M' } })).not.toBeNull()
+  })
+
+  it('revokeInvite rimanda alla home e non scrive nulla se chiamata da un utente NURSE', async () => {
+    const nurse = await dbModule.prisma.user.create({
+      data: { email: 'mery@example.com', displayName: 'Mery', role: 'NURSE' },
+    })
+    await session.openSessionCookie(nurse.id)
+    await dbModule.prisma.invite.create({
+      data: { email: 'nuova@example.com', invitedBy: 'anna@example.com' },
+    })
+
+    const form = new FormData()
+    form.set('email', 'nuova@example.com')
+
+    await expect(usersActions.revokeInvite(form)).rejects.toThrow('REDIRECT:/')
+    expect(await dbModule.prisma.invite.findUnique({ where: { email: 'nuova@example.com' } })).not
+      .toBeNull()
+  })
 })
 
 describe('saveShiftCode e inviteUser sotto una sessione REFERENTE', () => {
@@ -127,6 +160,66 @@ describe('saveShiftCode e inviteUser sotto una sessione REFERENTE', () => {
       where: { email: 'nuova@example.com' },
     })
     expect(invite.invitedBy).toBe(referente.email)
+  })
+})
+
+describe('saveShiftCode — errori di validazione arrivano all utente', () => {
+  it('un orario non nel formato HH:mm rimanda a /settings/codes con il messaggio e non scrive', async () => {
+    await createReferente()
+
+    const form = shiftCodeForm()
+    form.set('startTime', '7')
+
+    await expect(codesActions.saveShiftCode(form)).rejects.toThrow(
+      'REDIRECT:/settings/codes?error=',
+    )
+    expect(await dbModule.prisma.shiftCode.count()).toBe(0)
+  })
+})
+
+describe('inviteUser — errori di validazione arrivano all utente', () => {
+  it('un email non valida rimanda a /settings/users con il messaggio e non scrive', async () => {
+    await createReferente()
+
+    const form = new FormData()
+    form.set('email', 'non-un-email')
+
+    await expect(usersActions.inviteUser(form)).rejects.toThrow(
+      'REDIRECT:/settings/users?error=Indirizzo%20email%20non%20valido',
+    )
+    expect(await dbModule.prisma.invite.count()).toBe(0)
+  })
+})
+
+describe('saveShiftCode — collisione di codici equivalenti', () => {
+  it('salvare "m" dopo "M" viene rifiutato e non crea una seconda riga', async () => {
+    await createReferente()
+    await codesActions.saveShiftCode(shiftCodeForm())
+
+    const collidingForm = shiftCodeForm()
+    collidingForm.set('code', 'm')
+
+    await expect(codesActions.saveShiftCode(collidingForm)).rejects.toThrow(
+      'REDIRECT:/settings/codes?error=',
+    )
+    expect(await dbModule.prisma.shiftCode.count()).toBe(1)
+    const row = await dbModule.prisma.shiftCode.findUniqueOrThrow({ where: { code: 'M' } })
+    expect(row.endTime).toBe('14:00')
+  })
+
+  it('salvare di nuovo lo stesso codice "M" con un altro orario aggiorna la riga esistente', async () => {
+    await createReferente()
+    await codesActions.saveShiftCode(shiftCodeForm())
+
+    const updateForm = shiftCodeForm()
+    updateForm.set('endTime', '13:30')
+
+    const result = await codesActions.saveShiftCode(updateForm)
+
+    expect(result).toEqual({ errors: [] })
+    expect(await dbModule.prisma.shiftCode.count()).toBe(1)
+    const row = await dbModule.prisma.shiftCode.findUniqueOrThrow({ where: { code: 'M' } })
+    expect(row.endTime).toBe('13:30')
   })
 })
 

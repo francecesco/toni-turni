@@ -2,8 +2,13 @@ import { listShiftCodes } from '@/modules/codes'
 import { requireReferente } from '@/modules/auth'
 import { removeShiftCode, saveShiftCode } from './actions'
 
-export default async function ShiftCodesPage() {
+export default async function ShiftCodesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>
+}) {
   await requireReferente()
+  const { error } = await searchParams
   const codes = await listShiftCodes()
 
   return (
@@ -16,6 +21,12 @@ export default async function ShiftCodesPage() {
         </p>
       </header>
 
+      {error && (
+        <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+
       <table className="w-full text-sm">
         <thead className="text-left">
           <tr>
@@ -24,6 +35,7 @@ export default async function ShiftCodesPage() {
             <th className="p-2">Tipo</th>
             <th className="p-2">Orario</th>
             <th className="p-2">Sede</th>
+            <th className="p-2">Colore</th>
             <th className="p-2" />
           </tr>
         </thead>
@@ -46,6 +58,18 @@ export default async function ShiftCodesPage() {
                   : 'tutto il giorno'}
               </td>
               <td className="p-2">{code.location ?? '—'}</td>
+              <td className="p-2">
+                {code.color ? (
+                  <span
+                    aria-label={`Colore ${code.color}`}
+                    title={code.color}
+                    className="inline-block size-4 rounded-full border border-black/10 align-middle"
+                    style={{ backgroundColor: code.color }}
+                  />
+                ) : (
+                  '—'
+                )}
+              </td>
               <td className="p-2 text-right">
                 <form action={removeShiftCode}>
                   <input type="hidden" name="code" value={code.code} />
@@ -64,6 +88,8 @@ export default async function ShiftCodesPage() {
         <form
           action={async (formData: FormData) => {
             'use server'
+            // saveShiftCode fa redirect (rilanciando l eccezione) in caso di errore: qui non
+            // c è nulla da scartare, il valore di ritorno serve solo a chi la chiama nei test.
             await saveShiftCode(formData)
           }}
           className="grid grid-cols-2 gap-3 sm:grid-cols-3"
@@ -79,6 +105,13 @@ export default async function ShiftCodesPage() {
           <input name="startTime" placeholder="Inizio (07:00)" className="rounded border p-2" />
           <input name="endTime" placeholder="Fine (14:00)" className="rounded border p-2" />
           <input name="location" placeholder="Sede (opzionale)" className="rounded border p-2" />
+          <input
+            name="color"
+            placeholder="Colore (es. #f59e0b, opzionale)"
+            pattern="#[0-9a-fA-F]{6}"
+            title="Un colore esadecimale, es. #f59e0b"
+            className="rounded border p-2"
+          />
           <button type="submit" className="col-span-2 rounded bg-black p-2 text-white sm:col-span-3">
             Salva
           </button>
