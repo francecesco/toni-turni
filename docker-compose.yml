@@ -10,9 +10,17 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       AI_PROVIDER: ${AI_PROVIDER:-groq}
+      AI_FALLBACK_PROVIDER: ${AI_FALLBACK_PROVIDER:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-qwen/qwen3.8-27b}
+      GROQ_MAX_OUTPUT_TOKENS: ${GROQ_MAX_OUTPUT_TOKENS:-4000}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5}
       IMAGE_RETENTION_DAYS: ${IMAGE_RETENTION_DAYS:-90}
+      # Senza questa, WORKDIR /app fa risolvere il default dentro il layer
+      # dell immagine invece che nel volume montato su /data: le foto (dati
+      # personali di terzi) sparirebbero a ogni ricostruzione del container.
+      UPLOAD_DIR: /data/uploads
       TZ: Europe/Rome
     volumes:
       - turni-data:/data
