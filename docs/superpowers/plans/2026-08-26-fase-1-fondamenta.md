@@ -530,6 +530,23 @@ describe('wallClockToUtc', () => {
     expect(hoursBetween(start, end)).toBe(10)
   })
 
+  it('corregge l offset quando la prima stima cade dal lato sbagliato del cambio d ora', () => {
+    // 01:30 del 25 ottobre 2026 a Roma esiste due volte: la prima occorrenza è ancora
+    // ora legale (+2). Con un solo passaggio l offset stimato sarebbe +1 e il risultato
+    // cadrebbe sulla seconda occorrenza, un ora più tardi.
+    expect(wallClockToUtc('2026-10-25T01:30', ROME_TZ).toISOString()).toBe(
+      '2026-10-24T23:30:00.000Z',
+    )
+  })
+
+  it('gestisce un orario che il cambio d ora fa saltare del tutto', () => {
+    // 02:30 del 29 marzo 2026 non esiste a Roma: le lancette vanno da 02:00 a 03:00.
+    // Il secondo passaggio lo porta a 03:30 locali; con un solo passaggio finirebbe a 01:30.
+    expect(wallClockToUtc('2026-03-29T02:30', ROME_TZ).toISOString()).toBe(
+      '2026-03-29T01:30:00.000Z',
+    )
+  })
+
   it('accetta anche i secondi nel wall clock', () => {
     expect(wallClockToUtc('2026-08-01T07:00:00', ROME_TZ).toISOString()).toBe(
       '2026-08-01T05:00:00.000Z',
@@ -606,7 +623,7 @@ export function hoursBetween(a: Date, b: Date): number {
 - [ ] **Step 4: Eseguire i test**
 
 Run: `npm test tests/lib/time.test.ts`
-Expected: PASS, 13 test (cumulativo: 22). Se la notte di ottobre risulta di 10 ore, il secondo passaggio di `wallClockToUtc` non sta funzionando: è esattamente il bug che questo test esiste per intercettare.
+Expected: PASS, 15 test (cumulativo: 24). I due test sull orario ambiguo e su quello inesistente sono gli unici che falliscono se si rimuove il secondo passaggio: sono loro a proteggere il meccanismo. Se la notte di ottobre risulta di 10 ore, il secondo passaggio di `wallClockToUtc` non sta funzionando: è esattamente il bug che questo test esiste per intercettare.
 
 - [ ] **Step 5: Commit**
 
@@ -1154,7 +1171,7 @@ if (process.argv[1]?.endsWith('seed.ts')) {
 - [ ] **Step 13: Eseguire tutta la suite**
 
 Run: `npm test`
-Expected: PASS, 43 test.
+Expected: PASS, 45 test.
 
 - [ ] **Step 14: Commit**
 
@@ -1269,7 +1286,7 @@ export function decryptSecret(payload: string): string {
 - [ ] **Step 4: Eseguire i test**
 
 Run: `npm test tests/lib/crypto.test.ts`
-Expected: PASS, 6 test (cumulativo: 49).
+Expected: PASS, 6 test (cumulativo: 51).
 
 - [ ] **Step 5: Commit**
 
@@ -1802,7 +1819,7 @@ Expected: primo accesso → utente creato con ruolo `REFERENTE`, cookie `turni_s
 - [ ] **Step 13: Eseguire tutta la suite e il lint**
 
 Run: `npm test && npm run lint`
-Expected: PASS, 61 test; nessun errore di tipo.
+Expected: PASS, 63 test; nessun errore di tipo.
 
 - [ ] **Step 14: Commit**
 
@@ -2279,7 +2296,7 @@ Expected: da referente, `/settings/codes` elenca i 19 codici con il badge "da co
 - [ ] **Step 10: Eseguire tutta la suite e il lint**
 
 Run: `npm test && npm run lint`
-Expected: PASS, 69 test; nessun errore di tipo.
+Expected: PASS, 73 test; nessun errore di tipo.
 
 - [ ] **Step 11: Commit**
 
@@ -2544,7 +2561,7 @@ git commit -m "feat: containerize app with migrations, seed and healthcheck"
 
 ## Definizione di completamento della Fase 1
 
-- [ ] `npm test` verde con 71 test; `npm run lint` senza errori
+- [ ] `npm test` verde con 73 test; `npm run lint` senza errori
 - [ ] `docker compose up -d` porta l'app in stato `healthy` sulla ZimaBoard
 - [ ] Il primo accesso Google crea la referente; un'email non invitata viene respinta con un messaggio comprensibile
 - [ ] `GoogleAccount.refreshToken` è cifrato sul database (verificato con `prisma studio`)
