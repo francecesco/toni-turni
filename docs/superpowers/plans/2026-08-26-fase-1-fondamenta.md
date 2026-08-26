@@ -1191,7 +1191,13 @@ git commit -m "feat: add shift code legend with timezone-aware calendar slots"
 
 **Interfaces:**
 - Consumes: `requireEnv` da `@/lib/env`
-- Produces: da `@/lib/crypto`: `encryptSecret(plaintext: string): string`, `decryptSecret(payload: string): string`
+- Produces: da `@/lib/crypto`: `encryptSecret(plaintext: string, context: string): string`, `decryptSecret(payload: string, context: string): string`
+
+**Perché il `context`:** viene autenticato ma non cifrato (AAD di GCM) e lega il payload al record che
+lo contiene. Senza, chi riuscisse a scrivere sul database potrebbe spostare il refresh token di
+un'infermiera nel record di un'altra e far scrivere il server sul calendario sbagliato. Il Task 6 passa
+`google_refresh:<userId>`. Vanno inoltre validate le lunghezze di IV (12 byte) e tag (16 byte) prima di
+decifrare: GCM accetta tag più corti, e un tag troncato ridurrebbe l'autenticazione a pochi byte.
 
 - [ ] **Step 1: Scrivere i test che falliscono**
 
@@ -1747,8 +1753,15 @@ export async function GET(request: Request) {
   if (profile.refreshToken) {
     await prisma.googleAccount.upsert({
       where: { userId: user.id },
-      create: { userId: user.id, refreshToken: encryptSecret(profile.refreshToken), status: 'ok' },
-      update: { refreshToken: encryptSecret(profile.refreshToken), status: 'ok' },
+      create: {
+        userId: user.id,
+        refreshToken: encryptSecret(profile.refreshToken, `google_refresh:${user.id}`),
+        status: 'ok',
+      },
+      update: {
+        refreshToken: encryptSecret(profile.refreshToken, `google_refresh:${user.id}`),
+        status: 'ok',
+      },
     })
   }
 
