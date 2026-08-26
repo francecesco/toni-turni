@@ -95,4 +95,16 @@ describe('createAnthropicProvider', () => {
       createAnthropicProvider(create).extract({ image: IMAGE, prompt: 'x' }),
     ).rejects.toThrow(VisionProviderError)
   })
+
+  it('solleva un VisionProviderError se la chiave manca, senza toccare l SDK reale', async () => {
+    delete process.env.ANTHROPIC_API_KEY
+
+    try {
+      await expect(
+        createAnthropicProvider().extract({ image: IMAGE, prompt: 'x' }),
+      ).rejects.toThrow(VisionProviderError)
+    } finally {
+      process.env.ANTHROPIC_API_KEY = 'sk-ant-di-test'
+    }
+  })
 })

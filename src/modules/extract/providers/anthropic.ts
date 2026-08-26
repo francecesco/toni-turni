@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { optionalEnv } from '@/lib/env'
+import { optionalEnv, requireEnv } from '@/lib/env'
 import { VisionProviderError, type VisionProvider, type VisionRequest } from './types'
 
 export const ANTHROPIC_DEFAULT_MODEL = 'claude-opus-5'
@@ -22,7 +22,20 @@ export function createAnthropicProvider(create?: MessageCreator): VisionProvider
 
     async extract(request: VisionRequest) {
       const model = optionalEnv('ANTHROPIC_MODEL', ANTHROPIC_DEFAULT_MODEL)
-      const createMessage = create ?? defaultCreator()
+
+      // Guardia esplicita, simmetrica a Groq: un guasto di configurazione deve uscire
+      // come VisionProviderError, non come errore grezzo dell SDK (da cui dipende il fallback).
+      let createMessage: MessageCreator
+      if (create) {
+        createMessage = create
+      } else {
+        try {
+          requireEnv('ANTHROPIC_API_KEY')
+        } catch (cause) {
+          throw new VisionProviderError('ANTHROPIC_API_KEY non configurata', { cause })
+        }
+        createMessage = defaultCreator()
+      }
 
       let response: Awaited<ReturnType<MessageCreator>>
       try {

@@ -1,7 +1,7 @@
 import { optionalEnv } from '@/lib/env'
 import { createAnthropicProvider } from './anthropic'
 import { createGroqProvider } from './groq'
-import type { VisionProvider } from './types'
+import { VisionProviderError, type VisionProvider } from './types'
 
 export type { VisionProvider, VisionRequest, VisionResult } from './types'
 export { VisionProviderError } from './types'
@@ -15,7 +15,8 @@ function byName(name: string): VisionProvider {
     case 'anthropic':
       return createAnthropicProvider()
     default:
-      throw new Error(`Provider AI non riconosciuto: ${name}`)
+      // Stesso tipo di errore degli altri guasti del modulo, non un Error generico.
+      throw new VisionProviderError(`Provider AI non riconosciuto: ${name}`)
   }
 }
 

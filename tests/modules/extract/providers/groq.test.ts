@@ -119,16 +119,16 @@ describe('createGroqProvider', () => {
       new Response('errore con gsk-di-test', { status: 500 }),
     )
 
-    let errore: unknown
+    let caught: unknown
     try {
       await createGroqProvider(fetchMock).extract({ image: IMAGE, prompt: 'x' })
     } catch (e) {
-      errore = e
+      caught = e
     }
 
-    expect(errore).toBeInstanceOf(VisionProviderError)
-    expect((errore as Error).message).toContain('500')
+    expect(caught).toBeInstanceOf(VisionProviderError)
+    expect((caught as Error).message).toContain('500')
     // il corpo della risposta di Groq può contenere l eco della richiesta: non va nel messaggio
-    expect((errore as Error).message).not.toContain('gsk-di-test')
+    expect((caught as Error).message).not.toContain('gsk-di-test')
   })
 })
