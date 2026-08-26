@@ -7,7 +7,11 @@ export const GROQ_DEFAULT_MODEL = 'qwen/qwen3.8-27b'
 // minuto del piano, non solo quello effettivamente usato: chiederne 8000 (il tetto
 // del piano gratuito) fa pesare la richiesta 10369 token e la fa rifiutare con un
 // errore che parla di dimensione della richiesta e non c entra nulla con l immagine.
-// 4000 è stato verificato sul campo: basta per una tabella intera senza sforare.
+// 4000 è un punto di partenza scelto per stare sotto quel tetto, non una capienza
+// misurata: una risposta completa per le ~250 celle di una tabella intera è
+// plausibilmente dello stesso ordine di grandezza. Con la strategia a ritagli
+// (Fase 2A-bis) ogni chiamata produce poche decine di celle e resta ben lontana
+// dal limite, quindi il problema non si ripresenta in quella forma.
 const DEFAULT_MAX_OUTPUT_TOKENS = 4000
 
 interface GroqResponse {
@@ -28,9 +32,14 @@ export function createGroqProvider(fetchImpl: typeof fetch = fetch): VisionProvi
       }
 
       const model = optionalEnv('GROQ_MODEL', GROQ_DEFAULT_MODEL)
-      const maxOutputTokens = Number(
-        optionalEnv('GROQ_MAX_OUTPUT_TOKENS', String(DEFAULT_MAX_OUTPUT_TOKENS)),
-      )
+      // Number('') è 0, non NaN: senza questo controllo una variabile impostata a
+      // stringa vuota (o a un valore non numerico) troncherebbe silenziosamente
+      // ogni risposta invece di ripiegare sul default.
+      const parsedMaxOutputTokens = Number(optionalEnv('GROQ_MAX_OUTPUT_TOKENS', ''))
+      const maxOutputTokens =
+        Number.isFinite(parsedMaxOutputTokens) && parsedMaxOutputTokens > 0
+          ? parsedMaxOutputTokens
+          : DEFAULT_MAX_OUTPUT_TOKENS
 
       const messages: unknown[] = [
         {

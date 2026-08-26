@@ -128,6 +128,22 @@ describe('createGroqProvider', () => {
     expect(body2.max_completion_tokens).toBe(1500)
   })
 
+  it('ripiega sul default se GROQ_MAX_OUTPUT_TOKENS non è un numero valido', async () => {
+    process.env.GROQ_MAX_OUTPUT_TOKENS = 'abc'
+    const fetchMock = vi.fn().mockResolvedValue(risposta('{}'))
+    await createGroqProvider(fetchMock).extract({ image: IMAGE, prompt: 'x' })
+    const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+    // Number('') sarebbe 0, non NaN: senza un controllo esplicito ogni risposta
+    // risulterebbe troncata in modo silenzioso, invece di ripiegare sul default.
+    expect(body.max_completion_tokens).toBe(4000)
+
+    process.env.GROQ_MAX_OUTPUT_TOKENS = '0'
+    const fetchMock2 = vi.fn().mockResolvedValue(risposta('{}'))
+    await createGroqProvider(fetchMock2).extract({ image: IMAGE, prompt: 'x' })
+    const body2 = JSON.parse(String((fetchMock2.mock.calls[0][1] as RequestInit).body))
+    expect(body2.max_completion_tokens).toBe(4000)
+  })
+
   it('solleva VisionTruncatedError quando finish_reason è length, non un errore di formato', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

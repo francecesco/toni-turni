@@ -11,11 +11,15 @@ export const extractedCellSchema = z.object({
 })
 
 /**
- * Forma usata solo per confrontare identità di colonna, non per il valore salvato:
- * uno spazio doppio fra nome e cognome, o uno spazio residuo dopo il `.trim()` del
- * campo, non deve far sembrare due colonne diverse ("ANNA LIA" / "ANNA  LIA").
+ * Punto unico di verità per l identità di una colonna: usata qui per validare
+ * (colonna dichiarata, duplicati) e riusata da `scripts/accuracy.ts` per il
+ * confronto con la fixture. Non è la forma del valore salvato in `Extraction`
+ * (quella resta solo `.trim()`), ma quella su cui si decide se due colonne
+ * sono "la stessa" — uno spazio doppio fra nome e cognome, o uno spazio
+ * residuo dopo il `.trim()` del campo, non deve far sembrare due colonne
+ * diverse ("ANNA LIA" / "ANNA  LIA") in nessuno dei due punti della pipeline.
  */
-function normalizeColumn(value: string): string {
+export function normalizeColumn(value: string): string {
   return value.trim().toUpperCase().replace(/\s+/g, ' ')
 }
 

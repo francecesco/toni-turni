@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { compareExtraction, validateExpectedRoster } from '../../scripts/accuracy'
+import { parseExtraction } from '../../src/modules/extract/schema'
 
 const expected = {
   year: 2026,
@@ -145,6 +146,36 @@ describe('compareExtraction', () => {
         '0.5-0.8': { total: 1, correct: 0 },
         '>=0.8': { total: 1, correct: 1 },
       })
+    })
+  })
+
+  describe('interazione con lo schema di validazione', () => {
+    // Lo schema (punto 3) accetta una colonna con spazio doppio come la stessa
+    // dichiarata in intestazione: se il confronto qui usasse una normalizzazione
+    // diversa, quella stessa cella tornerebbe a essere contata come mancante (dal
+    // lato atteso) e spuria (dal lato prodotto), anche se il modello l aveva letta
+    // giusta. Le due normalizzazioni devono essere la stessa funzione.
+    it('una colonna con spazio doppio, valida dallo schema, risulta corretta e non mancante/spuria', () => {
+      const raw = JSON.stringify({
+        year: 2026,
+        month: 8,
+        ward: '3°PIANO',
+        columns: ['ANNA LIA'],
+        cells: [{ day: 1, column: 'ANNA  LIA', code: 'M', confidence: 0.9, handCorrected: false }],
+      })
+
+      const parsed = parseExtraction(raw)
+      expect(parsed.ok).toBe(true)
+      if (!parsed.ok) return
+
+      const report = compareExtraction(
+        { ...expected, cells: [{ day: 1, column: 'ANNA LIA', code: 'M' }] },
+        parsed.value,
+      )
+
+      expect(report.correct).toBe(1)
+      expect(report.missing).toBe(0)
+      expect(report.spurious).toBe(0)
     })
   })
 })

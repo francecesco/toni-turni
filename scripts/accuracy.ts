@@ -1,5 +1,5 @@
 import { compactCode } from '../src/modules/codes/normalize'
-import type { Extraction } from '../src/modules/extract/schema'
+import { normalizeColumn, type Extraction } from '../src/modules/extract/schema'
 
 export interface ExpectedRoster {
   year: number
@@ -90,7 +90,10 @@ export interface AccuracyReport {
 }
 
 function key(day: number, column: string): string {
-  return `${day}:${column.trim().toUpperCase()}`
+  // Stessa normalizzazione dello schema di validazione (trim, maiuscole, spazi
+  // interni collassati): un'unica nozione di identità di colonna, non due che
+  // possono disallinearsi silenziosamente.
+  return `${day}:${normalizeColumn(column)}`
 }
 
 /** Il confronto è sulla forma compatta: "M 1°P" e "M1°P" sono lo stesso turno. */
