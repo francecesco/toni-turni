@@ -42,18 +42,18 @@ async function tryProvider(
 
     let result
     try {
-      const repairPrompt = round === 0 ? null : buildRepairPrompt(lastRaw ?? '', lastError)
-      result = await provider.extract({
-        image,
-        prompt: repairPrompt ?? prompt,
-        previousTurns:
-          repairPrompt === null
-            ? undefined
-            : [
-                { role: 'assistant' as const, text: lastRaw ?? '' },
-                { role: 'user' as const, text: repairPrompt },
-              ],
-      })
+      // Il prompt di estrazione (schema, colonne da ignorare, regola sulla
+      // confidenza) resta sempre il primo turno: nel giro di riparazione si
+      // aggiunge solo l ultimo output e l istruzione di correggerlo, senza
+      // sostituire né duplicare le specifiche.
+      const previousTurns =
+        round === 0
+          ? undefined
+          : [
+              { role: 'assistant' as const, text: lastRaw ?? '' },
+              { role: 'user' as const, text: buildRepairPrompt(lastRaw ?? '', lastError) },
+            ]
+      result = await provider.extract({ image, prompt, previousTurns })
     } catch (error) {
       const message = error instanceof VisionProviderError ? error.message : String(error)
       return { ok: false, rawOutput: lastRaw, error: message, attempts }

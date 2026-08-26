@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { extractRoster } from '@/modules/extract'
-import { VisionProviderError, type VisionProvider } from '@/modules/extract/providers'
+import { extractRoster } from '@/modules/extract/extract'
+import { VisionProviderError, VisionTruncatedError, type VisionProvider } from '@/modules/extract/providers/types'
 
 const IMAGE = Buffer.from([0xff, 0xd8, 0xff])
 
@@ -48,17 +48,31 @@ describe('extractRoster', () => {
     expect(p.extract).toHaveBeenCalledTimes(2)
   })
 
-  it('nella riparazione rimanda l output sbagliato e l errore di validazione', async () => {
+  it('nella riparazione manda il prompt di estrazione al primo turno e l istruzione di riparazione una sola volta', async () => {
     const p = provider('groq', 'non è JSON', VALIDA)
 
-    await extractRoster({ image: IMAGE, knownCodes: [], provider: p })
+    await extractRoster({ image: IMAGE, knownCodes: ['NOTTE'], provider: p })
 
+    const primaChiamata = vi.mocked(p.extract).mock.calls[0][0]
     const secondaChiamata = vi.mocked(p.extract).mock.calls[1][0]
+
+    // Il prompt di estrazione (schema, codici noti, regole) resta lo stesso: non
+    // viene sostituito dall istruzione di riparazione.
+    expect(primaChiamata.prompt).toContain('NOTTE')
+    expect(secondaChiamata.prompt).toBe(primaChiamata.prompt)
+
+    expect(secondaChiamata.previousTurns).toHaveLength(2)
     expect(secondaChiamata.previousTurns?.[0]).toEqual({
       role: 'assistant',
       text: 'non è JSON',
     })
     expect(secondaChiamata.previousTurns?.[1].text).toMatch(/JSON/i)
+
+    // L istruzione di riparazione compare una sola volta, non anche dentro "prompt".
+    const occorrenze = secondaChiamata.previousTurns?.filter((turno) =>
+      turno.text.includes('non rispetta il formato richiesto'),
+    )
+    expect(occorrenze).toHaveLength(1)
   })
 
   it('passa al provider di riserva se il principale non si corregge', async () => {
@@ -103,6 +117,19 @@ describe('extractRoster', () => {
       expect(result.error).toMatch(/quota esaurita/)
       expect(result.rawOutput).toBeNull()
     }
+    expect(p.extract).toHaveBeenCalledTimes(1)
+  })
+
+  it('non riprova sullo stesso provider quando la risposta è troncata, e lo dice nel messaggio', async () => {
+    const p = provider(
+      'groq',
+      new VisionTruncatedError('Groq ha troncato la risposta per il limite di token di output (token di output usati: 4000)'),
+    )
+
+    const result = await extractRoster({ image: IMAGE, knownCodes: [], provider: p })
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toMatch(/tronc/i)
     expect(p.extract).toHaveBeenCalledTimes(1)
   })
 
