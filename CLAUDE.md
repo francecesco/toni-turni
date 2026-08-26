@@ -2,11 +2,18 @@
 
 Istruzioni per Claude Code su questo repository.
 
-> **Stato: Fase 1 (fondamenta) completata.** Sono implementati progetto Next.js, persistenza
-> Prisma/SQLite, legenda dei codici turno con orari, cifratura dei token, login Google con ruoli e
-> inviti, pagine di impostazioni e container Docker. **Non** sono implementati l'upload delle foto,
-> l'estrazione AI, la griglia di conferma e il sync con Google Calendar: sono le fasi 2-6, e ognuna
-> avrà il suo piano in `docs/superpowers/plans/`.
+> **Stato: Fase 2A (estrazione) completata.** Oltre alle fondamenta della Fase 1 (Next.js,
+> Prisma/SQLite, legenda dei codici turno, cifratura dei token, login Google, pagine di
+> impostazioni, Docker), sono implementati l'ingestione delle foto (`ingest`), l'estrazione AI con
+> provider Groq/Anthropic e schema di validazione (`extract`), e la persistenza della tabella
+> estratta (`roster`). **Non** sono ancora implementati la griglia di conferma e il sync con Google
+> Calendar: sono le fasi 3-6, e ognuna avrà il suo piano in `docs/superpowers/plans/`.
+>
+> **La misura reale dell'estrazione (Fase 2A) ha dato 46/248 celle su una foto di agosto (18,5%),
+> con l'intera tabella mandata in una sola chiamata.** Un esperimento successivo ha mostrato che lo
+> stesso modello, sullo stesso prompt, su un **ritaglio** (colonna giorni + due colonne, mezzo mese)
+> legge 30/30 celle. Di conseguenza la Fase 2A-bis, non ancora pianificata in dettaglio, estrarrà a
+> ritagli invece che sulla tabella intera. Vedi "Trappole note" più sotto per il perché.
 >
 > Resta una verifica in sospeso: il flusso OAuth non è mai stato eseguito con credenziali Google
 > reali — in tutti i test `exchangeGoogleCode` è mockata. La checklist da eseguire è in
@@ -53,18 +60,21 @@ src/
 │   └── page.tsx, layout.tsx
 ├── modules/
 │   ├── codes/     # types, normalize, slot, defaults, form, repository, index
-│   └── auth/      # policy, token, session, google, guards, index
+│   ├── auth/      # policy, token, session, google, guards, index
+│   ├── ingest/    # normalizzazione foto (auto-rotate EXIF, resize), storage, index
+│   ├── extract/   # VisionProvider (groq, anthropic), schema Zod, prompt, extract, index
+│   └── roster/    # tabella e versioni, salvataggio celle, index
 ├── components/ui/ # generati da shadcn, non ancora usati: serviranno alla rifinitura UI
 └── lib/           # env, db, time, crypto
 prisma/            # schema, migrations, seed
 tests/             # unit e integrazione, specchio di src/
-fixtures/          # le due foto reali, per i golden test della Fase 2
+scripts/           # accuracy.ts (logica pura) ed eval-extraction.ts (npm run eval)
+fixtures/          # le due foto reali e le trascrizioni di riferimento, per npm run eval
 docker/            # entrypoint: migrate deploy + seed all'avvio
 ```
 
-Moduli previsti dalle fasi successive e **non ancora presenti**: `ingest` (normalizzazione foto),
-`extract` (VisionProvider e schema Zod), `roster` (tabella e versioni), `review` (conferma),
-`calendar` (sync idempotente).
+Moduli previsti dalle fasi successive e **non ancora presenti**: `review` (griglia di conferma
+umana), `calendar` (sync idempotente con Google Calendar).
 
 **Confini dei moduli:** ogni modulo espone la sua interfaccia pubblica in `index.ts`. Non importare
 file interni di un altro modulo. Se serve, allarga l'`index.ts` — non aggirarlo.
@@ -108,6 +118,15 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
 - **SQLite non gestisce scritture concorrenti.** Serializza le operazioni di sync; è ampiamente
   sufficiente per questo carico.
 - **`npm run eval` chiama il provider reale e consuma token.** Non eseguirlo in CI né in loop.
+- **Groq conta i token di output *prenotati* nel budget al minuto, non solo quelli usati.** Il
+  piano gratuito ha un tetto di 8000 token/minuto: chiedere `max_completion_tokens: 8000` fa
+  pesare la richiesta 10369 token e la fa rifiutare con un errore sulla dimensione della
+  richiesta, che non c'entra nulla con l'immagine. `GROQ_MAX_OUTPUT_TOKENS` di default è 4000
+  (vedi `src/modules/extract/providers/groq.ts`).
+- **L'estrazione della tabella intera in una sola chiamata non funziona su questo modello.** La
+  misura reale su una foto di agosto ha dato 18,5% di celle corrette (46/248); lo stesso modello e
+  lo stesso prompt, su un ritaglio di due colonne e mezzo mese, legge 30/30. La strategia scelta
+  per la Fase 2A-bis è quindi **a ritagli**, non sulla tabella intera.
 - **Node 22 è obbligatorio, e la shell può partire su una versione più vecchia.** Verifica con
   `node -v` e, se serve, `nvm use 22` prima di installare o eseguire i test.
 - **`npm run lint` esegue `tsc --noEmit`, che richiede i tipi generati in `.next/types`.** Su un

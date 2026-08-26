@@ -52,3 +52,39 @@ model ShiftCode {
   needsReview     Boolean  @default(false)
   updatedAt       DateTime @updatedAt
 }
+
+model Roster {
+  id        String   @id @default(cuid())
+  year      Int
+  month     Int
+  ward      String
+  version   Int      @default(1)
+  imagePath String
+  // uploaded | extracting | extracted | failed
+  status    String   @default("uploaded")
+  // nome del provider che ha prodotto l estrazione, per capire i confronti a posteriori
+  provider  String?
+  // testo grezzo del modello: serve a capire un estrazione andata male
+  rawOutput String?
+  createdAt DateTime @default(now())
+  cells     RosterCell[]
+
+  @@unique([year, month, ward, version])
+}
+
+model RosterCell {
+  id            String  @id @default(cuid())
+  rosterId      String
+  roster        Roster  @relation(fields: [rosterId], references: [id], onDelete: Cascade)
+  day           Int
+  columnLabel   String
+  // testo letto dalla foto, senza normalizzazione
+  rawCode       String
+  // codice risolto in ShiftCode, null quando la legenda non lo conosce
+  code          String?
+  confidence    Float
+  // il modello ha visto una correzione a penna o col correttore
+  handCorrected Boolean @default(false)
+
+  @@unique([rosterId, day, columnLabel])
+}

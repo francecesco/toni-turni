@@ -1,0 +1,1340 @@
+{
+  "_avvertenza": "Verita di riferimento per misurare l'estrazione automatica. Prodotta da due letture indipendenti della foto, concordi su tutte le 248 celle. NON ancora verificata da una persona che conosce il reparto: le percentuali di accuratezza valgono quanto questa trascrizione.",
+  "verified": false,
+  "source": "due trascrizioni indipendenti concordanti (248/248)",
+  "year": 2026,
+  "month": 8,
+  "ward": "3°PIANO",
+  "columns": [
+    "RENATA",
+    "KHADIJA",
+    "MERY",
+    "ANNA LIA",
+    "ALEX",
+    "CRISTINA",
+    "COSTANZA",
+    "CARMEN"
+  ],
+  "cells": [
+    {
+      "day": 1,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 1,
+      "column": "ANNA LIA",
+      "code": "RP"
+    },
+    {
+      "day": 1,
+      "column": "CARMEN",
+      "code": "F"
+    },
+    {
+      "day": 1,
+      "column": "COSTANZA",
+      "code": "M"
+    },
+    {
+      "day": 1,
+      "column": "CRISTINA",
+      "code": "RP"
+    },
+    {
+      "day": 1,
+      "column": "KHADIJA",
+      "code": "F"
+    },
+    {
+      "day": 1,
+      "column": "MERY",
+      "code": "M/P"
+    },
+    {
+      "day": 1,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 2,
+      "column": "ALEX",
+      "code": "M"
+    },
+    {
+      "day": 2,
+      "column": "ANNA LIA",
+      "code": "P"
+    },
+    {
+      "day": 2,
+      "column": "CARMEN",
+      "code": "RP"
+    },
+    {
+      "day": 2,
+      "column": "COSTANZA",
+      "code": "RP"
+    },
+    {
+      "day": 2,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 2,
+      "column": "KHADIJA",
+      "code": "RP"
+    },
+    {
+      "day": 2,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 2,
+      "column": "RENATA",
+      "code": "RP"
+    },
+    {
+      "day": 3,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 3,
+      "column": "ANNA LIA",
+      "code": "M"
+    },
+    {
+      "day": 3,
+      "column": "CARMEN",
+      "code": "F"
+    },
+    {
+      "day": 3,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 3,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 3,
+      "column": "KHADIJA",
+      "code": "F"
+    },
+    {
+      "day": 3,
+      "column": "MERY",
+      "code": "RP"
+    },
+    {
+      "day": 3,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 4,
+      "column": "ALEX",
+      "code": "M"
+    },
+    {
+      "day": 4,
+      "column": "ANNA LIA",
+      "code": "P"
+    },
+    {
+      "day": 4,
+      "column": "CARMEN",
+      "code": "F"
+    },
+    {
+      "day": 4,
+      "column": "COSTANZA",
+      "code": "M"
+    },
+    {
+      "day": 4,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 4,
+      "column": "KHADIJA",
+      "code": "F"
+    },
+    {
+      "day": 4,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 4,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 5,
+      "column": "ALEX",
+      "code": "RP"
+    },
+    {
+      "day": 5,
+      "column": "ANNA LIA",
+      "code": "M/P"
+    },
+    {
+      "day": 5,
+      "column": "CARMEN",
+      "code": "F"
+    },
+    {
+      "day": 5,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 5,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 5,
+      "column": "KHADIJA",
+      "code": "F"
+    },
+    {
+      "day": 5,
+      "column": "MERY",
+      "code": "M"
+    },
+    {
+      "day": 5,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 6,
+      "column": "ALEX",
+      "code": "F"
+    },
+    {
+      "day": 6,
+      "column": "ANNA LIA",
+      "code": "P"
+    },
+    {
+      "day": 6,
+      "column": "CARMEN",
+      "code": "F"
+    },
+    {
+      "day": 6,
+      "column": "COSTANZA",
+      "code": "M"
+    },
+    {
+      "day": 6,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 6,
+      "column": "KHADIJA",
+      "code": "F"
+    },
+    {
+      "day": 6,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 6,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 7,
+      "column": "ALEX",
+      "code": "F"
+    },
+    {
+      "day": 7,
+      "column": "ANNA LIA",
+      "code": "P"
+    },
+    {
+      "day": 7,
+      "column": "CARMEN",
+      "code": "F"
+    },
+    {
+      "day": 7,
+      "column": "COSTANZA",
+      "code": "M"
+    },
+    {
+      "day": 7,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 7,
+      "column": "KHADIJA",
+      "code": "F"
+    },
+    {
+      "day": 7,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 7,
+      "column": "RENATA",
+      "code": "M"
+    },
+    {
+      "day": 8,
+      "column": "ALEX",
+      "code": "F"
+    },
+    {
+      "day": 8,
+      "column": "ANNA LIA",
+      "code": "M"
+    },
+    {
+      "day": 8,
+      "column": "CARMEN",
+      "code": "F"
+    },
+    {
+      "day": 8,
+      "column": "COSTANZA",
+      "code": "RP"
+    },
+    {
+      "day": 8,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 8,
+      "column": "KHADIJA",
+      "code": "F"
+    },
+    {
+      "day": 8,
+      "column": "MERY",
+      "code": "P 1°P"
+    },
+    {
+      "day": 8,
+      "column": "RENATA",
+      "code": "RP"
+    },
+    {
+      "day": 9,
+      "column": "ALEX",
+      "code": "RP"
+    },
+    {
+      "day": 9,
+      "column": "ANNA LIA",
+      "code": "RP"
+    },
+    {
+      "day": 9,
+      "column": "CARMEN",
+      "code": "RP"
+    },
+    {
+      "day": 9,
+      "column": "COSTANZA",
+      "code": "P 1°P"
+    },
+    {
+      "day": 9,
+      "column": "CRISTINA",
+      "code": "P RSF"
+    },
+    {
+      "day": 9,
+      "column": "KHADIJA",
+      "code": "RP"
+    },
+    {
+      "day": 9,
+      "column": "MERY",
+      "code": "M1°P"
+    },
+    {
+      "day": 9,
+      "column": "RENATA",
+      "code": "RP"
+    },
+    {
+      "day": 10,
+      "column": "ALEX",
+      "code": "P 1°P"
+    },
+    {
+      "day": 10,
+      "column": "ANNA LIA",
+      "code": "F"
+    },
+    {
+      "day": 10,
+      "column": "CARMEN",
+      "code": "F"
+    },
+    {
+      "day": 10,
+      "column": "COSTANZA",
+      "code": "P RSF"
+    },
+    {
+      "day": 10,
+      "column": "CRISTINA",
+      "code": "RP"
+    },
+    {
+      "day": 10,
+      "column": "KHADIJA",
+      "code": "F"
+    },
+    {
+      "day": 10,
+      "column": "MERY",
+      "code": "RP"
+    },
+    {
+      "day": 10,
+      "column": "RENATA",
+      "code": "M1°P"
+    },
+    {
+      "day": 11,
+      "column": "ALEX",
+      "code": "M+"
+    },
+    {
+      "day": 11,
+      "column": "ANNA LIA",
+      "code": "P+"
+    },
+    {
+      "day": 11,
+      "column": "CARMEN",
+      "code": "F"
+    },
+    {
+      "day": 11,
+      "column": "COSTANZA",
+      "code": "M+"
+    },
+    {
+      "day": 11,
+      "column": "CRISTINA",
+      "code": "F"
+    },
+    {
+      "day": 11,
+      "column": "KHADIJA",
+      "code": "F"
+    },
+    {
+      "day": 11,
+      "column": "MERY",
+      "code": "P 1°P"
+    },
+    {
+      "day": 11,
+      "column": "RENATA",
+      "code": "M1°P"
+    },
+    {
+      "day": 12,
+      "column": "ALEX",
+      "code": "P+"
+    },
+    {
+      "day": 12,
+      "column": "ANNA LIA",
+      "code": "P+"
+    },
+    {
+      "day": 12,
+      "column": "CARMEN",
+      "code": "F"
+    },
+    {
+      "day": 12,
+      "column": "COSTANZA",
+      "code": "P RSF"
+    },
+    {
+      "day": 12,
+      "column": "CRISTINA",
+      "code": "F"
+    },
+    {
+      "day": 12,
+      "column": "KHADIJA",
+      "code": "F"
+    },
+    {
+      "day": 12,
+      "column": "MERY",
+      "code": "M1°P"
+    },
+    {
+      "day": 12,
+      "column": "RENATA",
+      "code": "M1°P"
+    },
+    {
+      "day": 13,
+      "column": "ALEX",
+      "code": "P+"
+    },
+    {
+      "day": 13,
+      "column": "ANNA LIA",
+      "code": "M+"
+    },
+    {
+      "day": 13,
+      "column": "CARMEN",
+      "code": "F"
+    },
+    {
+      "day": 13,
+      "column": "COSTANZA",
+      "code": "M RSF"
+    },
+    {
+      "day": 13,
+      "column": "CRISTINA",
+      "code": "F"
+    },
+    {
+      "day": 13,
+      "column": "KHADIJA",
+      "code": "F"
+    },
+    {
+      "day": 13,
+      "column": "MERY",
+      "code": "M1°P"
+    },
+    {
+      "day": 13,
+      "column": "RENATA",
+      "code": "M1°P"
+    },
+    {
+      "day": 14,
+      "column": "ALEX",
+      "code": "M+"
+    },
+    {
+      "day": 14,
+      "column": "ANNA LIA",
+      "code": "RP"
+    },
+    {
+      "day": 14,
+      "column": "CARMEN",
+      "code": "RP"
+    },
+    {
+      "day": 14,
+      "column": "COSTANZA",
+      "code": "M+"
+    },
+    {
+      "day": 14,
+      "column": "CRISTINA",
+      "code": "F"
+    },
+    {
+      "day": 14,
+      "column": "KHADIJA",
+      "code": "F"
+    },
+    {
+      "day": 14,
+      "column": "MERY",
+      "code": "P 1°P"
+    },
+    {
+      "day": 14,
+      "column": "RENATA",
+      "code": "M1°P"
+    },
+    {
+      "day": 15,
+      "column": "ALEX",
+      "code": "RP"
+    },
+    {
+      "day": 15,
+      "column": "ANNA LIA",
+      "code": "P+"
+    },
+    {
+      "day": 15,
+      "column": "CARMEN",
+      "code": "P 1°P"
+    },
+    {
+      "day": 15,
+      "column": "COSTANZA",
+      "code": "F"
+    },
+    {
+      "day": 15,
+      "column": "CRISTINA",
+      "code": "F"
+    },
+    {
+      "day": 15,
+      "column": "KHADIJA",
+      "code": "F"
+    },
+    {
+      "day": 15,
+      "column": "MERY",
+      "code": "M1°P"
+    },
+    {
+      "day": 15,
+      "column": "RENATA",
+      "code": "RP"
+    },
+    {
+      "day": 16,
+      "column": "ALEX",
+      "code": "P 1°P"
+    },
+    {
+      "day": 16,
+      "column": "ANNA LIA",
+      "code": "M1°P"
+    },
+    {
+      "day": 16,
+      "column": "CARMEN",
+      "code": "M1°P"
+    },
+    {
+      "day": 16,
+      "column": "COSTANZA",
+      "code": "RP"
+    },
+    {
+      "day": 16,
+      "column": "CRISTINA",
+      "code": "RP"
+    },
+    {
+      "day": 16,
+      "column": "KHADIJA",
+      "code": "RP"
+    },
+    {
+      "day": 16,
+      "column": "MERY",
+      "code": "RP"
+    },
+    {
+      "day": 16,
+      "column": "RENATA",
+      "code": "RP"
+    },
+    {
+      "day": 17,
+      "column": "ALEX",
+      "code": "P 1°P"
+    },
+    {
+      "day": 17,
+      "column": "ANNA LIA",
+      "code": "F"
+    },
+    {
+      "day": 17,
+      "column": "CARMEN",
+      "code": "M1°P"
+    },
+    {
+      "day": 17,
+      "column": "COSTANZA",
+      "code": "F"
+    },
+    {
+      "day": 17,
+      "column": "CRISTINA",
+      "code": "F"
+    },
+    {
+      "day": 17,
+      "column": "KHADIJA",
+      "code": "P RSF"
+    },
+    {
+      "day": 17,
+      "column": "MERY",
+      "code": "F"
+    },
+    {
+      "day": 17,
+      "column": "RENATA",
+      "code": "F"
+    },
+    {
+      "day": 18,
+      "column": "ALEX",
+      "code": "M+"
+    },
+    {
+      "day": 18,
+      "column": "ANNA LIA",
+      "code": "F"
+    },
+    {
+      "day": 18,
+      "column": "CARMEN",
+      "code": "M1°P"
+    },
+    {
+      "day": 18,
+      "column": "COSTANZA",
+      "code": "P+"
+    },
+    {
+      "day": 18,
+      "column": "CRISTINA",
+      "code": "F"
+    },
+    {
+      "day": 18,
+      "column": "KHADIJA",
+      "code": "NOTTE"
+    },
+    {
+      "day": 18,
+      "column": "MERY",
+      "code": "F"
+    },
+    {
+      "day": 18,
+      "column": "RENATA",
+      "code": "F"
+    },
+    {
+      "day": 19,
+      "column": "ALEX",
+      "code": "P 1°P"
+    },
+    {
+      "day": 19,
+      "column": "ANNA LIA",
+      "code": "F"
+    },
+    {
+      "day": 19,
+      "column": "CARMEN",
+      "code": "P 1°P"
+    },
+    {
+      "day": 19,
+      "column": "COSTANZA",
+      "code": "M+"
+    },
+    {
+      "day": 19,
+      "column": "CRISTINA",
+      "code": "F"
+    },
+    {
+      "day": 19,
+      "column": "KHADIJA",
+      "code": "SN"
+    },
+    {
+      "day": 19,
+      "column": "MERY",
+      "code": "F"
+    },
+    {
+      "day": 19,
+      "column": "RENATA",
+      "code": "F"
+    },
+    {
+      "day": 20,
+      "column": "ALEX",
+      "code": "M1°P"
+    },
+    {
+      "day": 20,
+      "column": "ANNA LIA",
+      "code": "F"
+    },
+    {
+      "day": 20,
+      "column": "CARMEN",
+      "code": "M1°P"
+    },
+    {
+      "day": 20,
+      "column": "COSTANZA",
+      "code": "P+"
+    },
+    {
+      "day": 20,
+      "column": "CRISTINA",
+      "code": "F"
+    },
+    {
+      "day": 20,
+      "column": "KHADIJA",
+      "code": "RIP"
+    },
+    {
+      "day": 20,
+      "column": "MERY",
+      "code": "F"
+    },
+    {
+      "day": 20,
+      "column": "RENATA",
+      "code": "F"
+    },
+    {
+      "day": 21,
+      "column": "ALEX",
+      "code": "M+"
+    },
+    {
+      "day": 21,
+      "column": "ANNA LIA",
+      "code": "F"
+    },
+    {
+      "day": 21,
+      "column": "CARMEN",
+      "code": "M1°P"
+    },
+    {
+      "day": 21,
+      "column": "COSTANZA",
+      "code": "P 1°P"
+    },
+    {
+      "day": 21,
+      "column": "CRISTINA",
+      "code": "F"
+    },
+    {
+      "day": 21,
+      "column": "KHADIJA",
+      "code": "P+"
+    },
+    {
+      "day": 21,
+      "column": "MERY",
+      "code": "F"
+    },
+    {
+      "day": 21,
+      "column": "RENATA",
+      "code": "F"
+    },
+    {
+      "day": 22,
+      "column": "ALEX",
+      "code": "P 1°P"
+    },
+    {
+      "day": 22,
+      "column": "ANNA LIA",
+      "code": "F"
+    },
+    {
+      "day": 22,
+      "column": "CARMEN",
+      "code": "M1°P"
+    },
+    {
+      "day": 22,
+      "column": "COSTANZA",
+      "code": "M1°P"
+    },
+    {
+      "day": 22,
+      "column": "CRISTINA",
+      "code": "F"
+    },
+    {
+      "day": 22,
+      "column": "KHADIJA",
+      "code": "P RSF"
+    },
+    {
+      "day": 22,
+      "column": "MERY",
+      "code": "F"
+    },
+    {
+      "day": 22,
+      "column": "RENATA",
+      "code": "RP"
+    },
+    {
+      "day": 23,
+      "column": "ALEX",
+      "code": "RP"
+    },
+    {
+      "day": 23,
+      "column": "ANNA LIA",
+      "code": "RP"
+    },
+    {
+      "day": 23,
+      "column": "CARMEN",
+      "code": "RP"
+    },
+    {
+      "day": 23,
+      "column": "COSTANZA",
+      "code": "M1°P"
+    },
+    {
+      "day": 23,
+      "column": "CRISTINA",
+      "code": "RP"
+    },
+    {
+      "day": 23,
+      "column": "KHADIJA",
+      "code": "M RSF"
+    },
+    {
+      "day": 23,
+      "column": "MERY",
+      "code": "RP"
+    },
+    {
+      "day": 23,
+      "column": "RENATA",
+      "code": "RP"
+    },
+    {
+      "day": 24,
+      "column": "ALEX",
+      "code": "M"
+    },
+    {
+      "day": 24,
+      "column": "ANNA LIA",
+      "code": "P"
+    },
+    {
+      "day": 24,
+      "column": "CARMEN",
+      "code": "M"
+    },
+    {
+      "day": 24,
+      "column": "COSTANZA",
+      "code": "RP"
+    },
+    {
+      "day": 24,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 24,
+      "column": "KHADIJA",
+      "code": "M"
+    },
+    {
+      "day": 24,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 24,
+      "column": "RENATA",
+      "code": "F"
+    },
+    {
+      "day": 25,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 25,
+      "column": "ANNA LIA",
+      "code": "M"
+    },
+    {
+      "day": 25,
+      "column": "CARMEN",
+      "code": "M+"
+    },
+    {
+      "day": 25,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 25,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 25,
+      "column": "KHADIJA",
+      "code": "P"
+    },
+    {
+      "day": 25,
+      "column": "MERY",
+      "code": "M"
+    },
+    {
+      "day": 25,
+      "column": "RENATA",
+      "code": "F"
+    },
+    {
+      "day": 26,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 26,
+      "column": "ANNA LIA",
+      "code": "P"
+    },
+    {
+      "day": 26,
+      "column": "CARMEN",
+      "code": "M"
+    },
+    {
+      "day": 26,
+      "column": "COSTANZA",
+      "code": "M"
+    },
+    {
+      "day": 26,
+      "column": "CRISTINA",
+      "code": "M+"
+    },
+    {
+      "day": 26,
+      "column": "KHADIJA",
+      "code": "M"
+    },
+    {
+      "day": 26,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 26,
+      "column": "RENATA",
+      "code": "F"
+    },
+    {
+      "day": 27,
+      "column": "ALEX",
+      "code": "M"
+    },
+    {
+      "day": 27,
+      "column": "ANNA LIA",
+      "code": "M"
+    },
+    {
+      "day": 27,
+      "column": "CARMEN",
+      "code": "P"
+    },
+    {
+      "day": 27,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 27,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 27,
+      "column": "KHADIJA",
+      "code": "NOTTE"
+    },
+    {
+      "day": 27,
+      "column": "MERY",
+      "code": "M"
+    },
+    {
+      "day": 27,
+      "column": "RENATA",
+      "code": "F"
+    },
+    {
+      "day": 28,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 28,
+      "column": "ANNA LIA",
+      "code": "P"
+    },
+    {
+      "day": 28,
+      "column": "CARMEN",
+      "code": "M"
+    },
+    {
+      "day": 28,
+      "column": "COSTANZA",
+      "code": "M"
+    },
+    {
+      "day": 28,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 28,
+      "column": "KHADIJA",
+      "code": "SN"
+    },
+    {
+      "day": 28,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 28,
+      "column": "RENATA",
+      "code": "F"
+    },
+    {
+      "day": 29,
+      "column": "ALEX",
+      "code": "M"
+    },
+    {
+      "day": 29,
+      "column": "ANNA LIA",
+      "code": "M"
+    },
+    {
+      "day": 29,
+      "column": "CARMEN",
+      "code": "RP"
+    },
+    {
+      "day": 29,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 29,
+      "column": "CRISTINA",
+      "code": "P"
+    },
+    {
+      "day": 29,
+      "column": "KHADIJA",
+      "code": "RIP"
+    },
+    {
+      "day": 29,
+      "column": "MERY",
+      "code": "M"
+    },
+    {
+      "day": 29,
+      "column": "RENATA",
+      "code": "F"
+    },
+    {
+      "day": 30,
+      "column": "ALEX",
+      "code": "RP"
+    },
+    {
+      "day": 30,
+      "column": "ANNA LIA",
+      "code": "RP"
+    },
+    {
+      "day": 30,
+      "column": "CARMEN",
+      "code": "M"
+    },
+    {
+      "day": 30,
+      "column": "COSTANZA",
+      "code": "RP"
+    },
+    {
+      "day": 30,
+      "column": "CRISTINA",
+      "code": "M"
+    },
+    {
+      "day": 30,
+      "column": "KHADIJA",
+      "code": "P"
+    },
+    {
+      "day": 30,
+      "column": "MERY",
+      "code": "RP"
+    },
+    {
+      "day": 30,
+      "column": "RENATA",
+      "code": "F"
+    },
+    {
+      "day": 31,
+      "column": "ALEX",
+      "code": "P"
+    },
+    {
+      "day": 31,
+      "column": "ANNA LIA",
+      "code": "M"
+    },
+    {
+      "day": 31,
+      "column": "CARMEN",
+      "code": "M"
+    },
+    {
+      "day": 31,
+      "column": "COSTANZA",
+      "code": "P"
+    },
+    {
+      "day": 31,
+      "column": "CRISTINA",
+      "code": "RP"
+    },
+    {
+      "day": 31,
+      "column": "KHADIJA",
+      "code": "M"
+    },
+    {
+      "day": 31,
+      "column": "MERY",
+      "code": "P"
+    },
+    {
+      "day": 31,
+      "column": "RENATA",
+      "code": "F"
+    }
+  ],
+  "handCorrected": [
+    {
+      "day": 8,
+      "column": "COSTANZA",
+      "note": "valore stampato cancellato/coperto (si intravede ancora una \"P\" sbiadita) e riscritto a mano in verde: ora legge RP"
+    },
+    {
+      "day": 8,
+      "column": "CRISTINA",
+      "note": "cella coperta col correttore bianco sopra il valore stampato (fondo arancione = RP) e riscritta a mano in verde: ora legge M"
+    },
+    {
+      "day": 10,
+      "column": "COSTANZA",
+      "note": "cella coperta col correttore bianco (fondo arancione) e riscritta a mano in verde corsivo: ora legge P RSF"
+    },
+    {
+      "day": 10,
+      "column": "CRISTINA",
+      "note": "cella coperta col correttore bianco e riscritta a mano in verde: ora legge RP"
+    },
+    {
+      "day": 11,
+      "column": "COSTANZA",
+      "note": "cella coperta col correttore bianco e riscritta a mano in verde: ora legge M+"
+    },
+    {
+      "day": 11,
+      "column": "CRISTINA",
+      "note": "cella coperta col correttore bianco e riscritta a mano in verde: ora legge F"
+    },
+    {
+      "day": 12,
+      "column": "COSTANZA",
+      "note": "cella coperta col correttore bianco e riscritta a mano in verde corsivo: ora legge P RSF"
+    },
+    {
+      "day": 12,
+      "column": "CRISTINA",
+      "note": "cella coperta col correttore bianco e riscritta a mano in verde: ora legge F"
+    },
+    {
+      "day": 13,
+      "column": "COSTANZA",
+      "note": "cella coperta col correttore bianco e riscritta a mano in verde corsivo: ora legge M RSF"
+    },
+    {
+      "day": 13,
+      "column": "CRISTINA",
+      "note": "cella coperta col correttore bianco e riscritta a mano in verde: ora legge F"
+    }
+  ],
+  "penAnnotations": [
+    {
+      "day": 1,
+      "column": "ALEX",
+      "note": "sul valore stampato \"P\" è aggiunta a penna nera l'annotazione \"h 13:00\"; il codice del turno resta P (l'annotazione indica solo l'orario)"
+    },
+    {
+      "day": 2,
+      "column": "CRISTINA",
+      "note": "accanto al \"M\" stampato è aggiunto a penna nera un \"7\" (orario); il codice resta M"
+    },
+    {
+      "day": 3,
+      "column": "ANNA LIA",
+      "note": "accanto al \"M\" stampato è aggiunto a penna nera un \"7\" (orario); il codice resta M"
+    },
+    {
+      "day": 3,
+      "column": "CRISTINA",
+      "note": "accanto al \"M\" stampato sono aggiunti a penna nera un \"7\" e un segno che sborda sulla riga sotto (orario); il codice resta M"
+    },
+    {
+      "day": 4,
+      "column": "CRISTINA",
+      "note": "accanto al \"P\" stampato è aggiunto a penna nera un \"13\" (orario); il codice resta P"
+    }
+  ],
+  "_daVerificare": "COSTANZA giorni 10, 12 e 13: i codici 'P RSF' / 'M RSF' sono scritti a mano in corsivo. La lettura e coerente col vocabolario del reparto ma e il punto meno certo della trascrizione."
+}
