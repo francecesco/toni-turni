@@ -6,6 +6,19 @@ COPY package.json package-lock.json ./
 COPY prisma ./prisma
 RUN npm ci
 
+# node_modules di sola produzione per il runner: la CLI Prisma (ora una dependency,
+# non una devDependency) e le sue dipendenze transitive arrivano tutte da qui,
+# pinnate dal lockfile via "npm ci --omit=dev" — mai un npm install floating.
+# Un bump di patch di Prisma che cambia le sue dipendenze non richiede più di
+# aggiornare a mano un elenco di COPY nel runner.
+FROM node:22-alpine AS prod-deps
+WORKDIR /app
+RUN apk add --no-cache openssl
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+RUN npm ci --omit=dev \
+ && npx prisma generate
+
 FROM node:22-alpine AS builder
 WORKDIR /app
 RUN apk add --no-cache openssl
@@ -29,44 +42,14 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 TZ=Europe/Rome HOSTN
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
-# migrate deploy e seed girano all avvio: servono schema, migrazioni e CLI.
-# @prisma/config (usato dalla CLI Prisma 6.19 per "migrate deploy") porta
-# dipendenze proprie che vivono fuori dallo scope @prisma: le prendiamo dal
-# builder, dove npm ci le ha gia installate pinnate dal package-lock.json,
-# invece di un npm install a se (che le risolverebbe per semver a ogni build).
+# migrate deploy e seed girano all avvio: servono schema, migrazioni e la CLI Prisma
+# con tutte le sue dipendenze transitive, prese in blocco da prod-deps invece che
+# enumerate una per una (vedi commento sopra sullo stage prod-deps).
 COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
-COPY --from=builder /app/node_modules/@standard-schema ./node_modules/@standard-schema
-COPY --from=builder /app/node_modules/c12 ./node_modules/c12
-COPY --from=builder /app/node_modules/chokidar ./node_modules/chokidar
-COPY --from=builder /app/node_modules/citty ./node_modules/citty
-COPY --from=builder /app/node_modules/confbox ./node_modules/confbox
-COPY --from=builder /app/node_modules/consola ./node_modules/consola
-COPY --from=builder /app/node_modules/deepmerge-ts ./node_modules/deepmerge-ts
-COPY --from=builder /app/node_modules/defu ./node_modules/defu
-COPY --from=builder /app/node_modules/destr ./node_modules/destr
-COPY --from=builder /app/node_modules/dotenv ./node_modules/dotenv
-COPY --from=builder /app/node_modules/effect ./node_modules/effect
-COPY --from=builder /app/node_modules/empathic ./node_modules/empathic
-COPY --from=builder /app/node_modules/exsolve ./node_modules/exsolve
-COPY --from=builder /app/node_modules/fast-check ./node_modules/fast-check
-COPY --from=builder /app/node_modules/giget ./node_modules/giget
-COPY --from=builder /app/node_modules/jiti ./node_modules/jiti
-COPY --from=builder /app/node_modules/node-fetch-native ./node_modules/node-fetch-native
-COPY --from=builder /app/node_modules/nypm ./node_modules/nypm
-COPY --from=builder /app/node_modules/ohash ./node_modules/ohash
-COPY --from=builder /app/node_modules/pathe ./node_modules/pathe
-COPY --from=builder /app/node_modules/perfect-debounce ./node_modules/perfect-debounce
-COPY --from=builder /app/node_modules/pkg-types ./node_modules/pkg-types
-COPY --from=builder /app/node_modules/pure-rand ./node_modules/pure-rand
-COPY --from=builder /app/node_modules/rc9 ./node_modules/rc9
-COPY --from=builder /app/node_modules/readdirp ./node_modules/readdirp
-COPY --from=builder /app/node_modules/tinyexec ./node_modules/tinyexec
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/prisma/seed.js ./prisma/seed.js
 COPY docker/entrypoint.sh ./docker/entrypoint.sh
-RUN chmod +x ./docker/entrypoint.sh && mkdir -p /data && chown -R node:node /data /app
+RUN chmod +x ./docker/entrypoint.sh && mkdir -p /data && chown -R node:node /data
 
 USER node
 EXPOSE 3000
