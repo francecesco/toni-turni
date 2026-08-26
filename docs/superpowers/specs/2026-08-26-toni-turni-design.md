@@ -37,14 +37,14 @@ Non-obiettivi (esplicitamente fuori scope):
 | Calendario | Evento con orario su un **calendario dedicato** creato dall'app |
 | AI | Provider vision astratto: Groq come default, provider alternativo selezionabile da env |
 | Rete | Cloudflare Tunnel + dominio https (richiesto dal redirect OAuth Google) |
-| Stack | Next.js 15 + Prisma/SQLite + Tailwind + shadcn/ui, un solo container applicativo |
+| Stack | Next.js 16 + Prisma/SQLite + Tailwind + shadcn/ui, un solo container applicativo |
 | Legenda turni | Default precaricati, **modificabili dalla referente** in Impostazioni |
 
 ## 4. Architettura
 
 Due container in `docker-compose.yml`:
 
-- **`app`** — Next.js 15 in output standalone su `node:22-alpine`. Contiene UI, API, job di
+- **`app`** — Next.js 16 in output standalone su `node:22-alpine`. Contiene UI, API, job di
   estrazione e sync. SQLite su volume Docker.
 - **`cloudflared`** — tunnel verso il dominio https pubblico. La ZimaBoard non espone porte verso
   internet.
@@ -258,6 +258,24 @@ Le foto contengono dati personali di terzi (nomi delle colleghe e loro presenze/
 
 Nessuna di queste blocca la prima implementazione: sono codici marcati `needsReview` e correggibili da
 Impostazioni.
+
+## 9-bis. Decisioni prese durante la Fase 1
+
+- **Autenticazione senza password**, solo Google: lo stesso consenso serve al calendario, quindi un
+  flusso unico. Il primo accesso crea la referente, poi vale la allowlist `Invite`.
+- **Ciclo di vita degli utenti volutamente fuori dalla Fase 1.** Si può invitare e revocare un invito
+  non usato, ma non rimuovere un'utente registrata né invalidare una sessione prima dei 30 giorni di
+  scadenza del token. È una lacuna consapevole: con quattro o cinque utenti conosciute di persona, il
+  rimedio manuale (cancellare la riga e il suo `GoogleAccount`) è accettabile, mentre una gestione
+  seria richiede sessioni con stato lato server e va progettata insieme alla schermata di
+  amministrazione. Da riprendere prima di aprire l'app a un reparto intero.
+- **La cifratura dei segreti è legata al record**: `encryptSecret(testo, contesto)` usa il contesto
+  come AAD e per i token Google il contesto è `google_refresh:<userId>`. Un blob spostato su un altro
+  utente non si decifra.
+- **Il seed non sovrascrive mai**: se la referente cancella un codice turno dalle impostazioni, il
+  seed non lo ripristina al riavvio. È la semantica voluta (le sue modifiche vincono), ma va detta.
+- **Next.js 16 e Tailwind v4** invece di Next 15, come prodotti da `create-next-app`; Prisma resta
+  fissato alla major 6 (la 7 richiede `prisma.config.ts` e cambia lo schema).
 
 ## 10. Fasi di sviluppo
 

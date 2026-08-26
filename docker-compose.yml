@@ -1,0 +1,39 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: file:/data/turni.db
+      APP_URL: ${APP_URL}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY}
+      SESSION_SECRET: ${SESSION_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      AI_PROVIDER: ${AI_PROVIDER:-groq}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      IMAGE_RETENTION_DAYS: ${IMAGE_RETENTION_DAYS:-90}
+      TZ: Europe/Rome
+    volumes:
+      - turni-data:/data
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:3000/api/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    # Il token come variabile d ambiente non finisce nell argomento del comando
+    # (visibile con "docker inspect"), a differenza di --token.
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  turni-data:

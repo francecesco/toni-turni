@@ -3,8 +3,10 @@
 Digitalizza la tabella turni cartacea del reparto e la porta sul Google Calendar di ogni infermiera —
 con conferma umana prima di scrivere qualsiasi evento.
 
-> **Stato: in sviluppo.** Design approvato, implementazione non ancora iniziata. Le istruzioni di
-> installazione descrivono l'assetto previsto.
+> **Stato: fondamenta pronte, lettura delle foto in arrivo.** Funzionano accesso con Google, ruoli e
+> inviti, legenda dei turni configurabile e deploy in container. L'upload della foto, l'estrazione AI,
+> la conferma e il sync con Google Calendar sono le fasi successive: oggi l'app non legge ancora le
+> tabelle.
 
 ## Il problema
 
@@ -55,14 +57,18 @@ Il dominio https non è un vezzo: Google accetta redirect OAuth solo su `https` 
 ## Installazione
 
 ```bash
-git clone <url-del-repo> toni-turni
+git clone https://github.com/francecesco/toni-turni.git
 cd toni-turni
 cp .env.example .env
 # compila .env (vedi sotto), poi:
 docker compose up -d --build
 ```
 
-L'app resta raggiungibile solo attraverso il tunnel: sulla ZimaBoard non serve aprire porte del router.
+All'avvio il container applica da sé le migrazioni del database e carica i codici turno mancanti,
+senza sovrascrivere quelli già modificati a mano: un aggiornamento non perde le tue impostazioni.
+
+L'app resta raggiungibile solo attraverso il tunnel: sulla ZimaBoard non serve aprire porte del
+router, e il container non pubblica porte sull'host.
 
 ### Configurazione
 
@@ -150,9 +156,13 @@ docker compose cp app:/data/backup.db ./backup-$(date +%F).db
 
 ## Sviluppo
 
+Serve Node 22 (`nvm use 22`).
+
 ```bash
 npm install
-npm run dev      # http://localhost:3000
+npx prisma migrate dev   # crea il database in prisma/data/turni.db
+npm run db:seed          # carica la legenda dei turni
+npm run dev              # http://localhost:3000
 npm test         # unit test, AI e Google API mockate
 npm run eval     # accuratezza dell'estrazione sul provider reale (consuma token)
 ```
@@ -164,6 +174,10 @@ della mezzanotte, ora legale, diff del sync.
 Convenzioni, confini dei moduli e regole invarianti sono in [CLAUDE.md](CLAUDE.md); il design
 completo in [docs/superpowers/specs/2026-08-26-toni-turni-design.md](docs/superpowers/specs/2026-08-26-toni-turni-design.md).
 
+Prima di considerare l'accesso funzionante, esegui una volta la
+[verifica manuale del flusso Google OAuth](docs/verifica-manuale-oauth.md): è l'unica parte non
+coperta dai test automatici.
+
 ## Limiti noti
 
 - La pianificazione dei turni resta cartacea: l'app legge, non genera.
@@ -171,6 +185,10 @@ completo in [docs/superpowers/specs/2026-08-26-toni-turni-design.md](docs/superp
 - Le correzioni a penna sono il punto debole del riconoscimento: per questo la conferma umana non è
   opzionale.
 - Una foto sfocata o molto obliqua va rifatta: nessun modello recupera ciò che non si vede.
+- **Gestione utenti ridotta all'osso:** la referente può invitare e revocare un invito non ancora
+  usato, ma non esiste ancora un modo per rimuovere un'utente già registrata o per invalidare la sua
+  sessione prima della scadenza (30 giorni). Se serve subito, si cancella la riga dal database e si
+  svuota `GoogleAccount`. Una gestione vera arriverà con le fasi successive.
 
 ## Licenza
 

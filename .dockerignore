@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+**/data
+*.db
+*.db-journal
+*.db-wal
+uploads
+docs
+fixtures
+*.log
+.env
+.env.*
+prisma/seed.js

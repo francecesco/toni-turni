@@ -4,9 +4,9 @@
 
 **Goal:** Avere un'app Next.js deployabile su ZimaBoard in cui le infermiere accedono con Google e la referente configura la legenda dei turni con i relativi orari.
 
-**Architecture:** Monolite Next.js 15 (App Router) con moduli di dominio isolati sotto `src/modules/`, persistenza Prisma/SQLite, login OAuth Google senza password. Questa fase costruisce le fondamenta che le fasi successive consumano: la conversione codice turno → intervallo orario (usata dal sync), la gestione fusi/ora legale (il punto dove i bug sono invisibili) e l'autenticazione con ruoli.
+**Architecture:** Monolite Next.js 16 (App Router) con moduli di dominio isolati sotto `src/modules/`, persistenza Prisma/SQLite, login OAuth Google senza password. Questa fase costruisce le fondamenta che le fasi successive consumano: la conversione codice turno → intervallo orario (usata dal sync), la gestione fusi/ora legale (il punto dove i bug sono invisibili) e l'autenticazione con ruoli.
 
-**Tech Stack:** Next.js 15, TypeScript, Prisma + SQLite, Tailwind + shadcn/ui, `jose`, `google-auth-library`, Vitest, Docker Compose + cloudflared.
+**Tech Stack:** Next.js 16, TypeScript, Prisma + SQLite, Tailwind + shadcn/ui, `jose`, `google-auth-library`, Vitest, Docker Compose + cloudflared.
 
 **Spec:** `docs/superpowers/specs/2026-08-26-toni-turni-design.md`
 
@@ -15,7 +15,7 @@
 - **Node 22**, gestore pacchetti `npm`. Target hardware: ZimaBoard x86_64, 8 GB RAM → nessuna dipendenza pesante senza motivo.
 - **TDD obbligatorio:** RED → GREEN → REFACTOR. Nessun codice di produzione senza un test rosso che lo giustifichi. Nessun "fatto" senza aver eseguito la suite e letto l'output.
 - **Fuso orario:** ogni orario di turno è wall clock di `Europe/Rome`. Gli eventi Google si costruiscono con `{ dateTime, timeZone: "Europe/Rome" }`, mai con offset fissi né UTC calcolato a mano.
-- **Testi UI in italiano**, identificatori e commenti di codice in **inglese**. I codici turno restano come sulla carta (`M`, `P`, `NOTTE`, `RP`): non tradurli.
+- **Identificatori e messaggi di commit in inglese; testi UI, commenti di codice e descrizioni dei test in italiano.** I codici turno restano come sulla carta (`M`, `P`, `NOTTE`, `RP`): non tradurli.
 - **Nessun segreto nel repository.** Solo variabili d'ambiente. `refreshToken` cifrato a riposo con `APP_ENCRYPTION_KEY` (32 byte base64).
 - **Ruoli:** `REFERENTE` (carica tabelle, modifica legenda, invita utenti) e `NURSE`. Autorizzazione verificata lato server, non solo in UI.
 - **Un commit per task**, test e implementazione insieme.
@@ -37,7 +37,8 @@
 | `src/modules/codes/form.ts` | Validazione del form della legenda (logica pura) |
 | `src/modules/codes/repository.ts` | Lettura/scrittura `ShiftCode` su database |
 | `src/modules/auth/policy.ts` | Chi può registrarsi, con quale ruolo (logica pura) |
-| `src/modules/auth/session.ts` | Firma/verifica del token di sessione e cookie |
+| `src/modules/auth/token.ts` | Firma e verifica del token di sessione (logica pura) |
+| `src/modules/auth/session.ts` | Lettura/scrittura del cookie di sessione |
 | `src/modules/auth/google.ts` | URL di consenso e scambio del codice OAuth |
 | `src/modules/auth/guards.ts` | `requireUser()`, `requireReferente()` per route e pagine |
 | `src/app/login/page.tsx` | Schermata di accesso |
@@ -102,7 +103,7 @@ Aggiungi gli script in `package.json` (mantieni quelli generati da create-next-a
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint && tsc --noEmit",
+    "lint": "eslint && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:migrate": "prisma migrate dev",
@@ -230,7 +231,7 @@ git commit -m "chore: bootstrap Next.js project with Vitest and env helpers"
 - Test: `tests/lib/db.test.ts`
 
 **Interfaces:**
-- Consumes: `requireEnv` da `@/lib/env`
+- Consumes: niente da codice applicativo (`DATABASE_URL` è letto direttamente da Prisma)
 - Produces: `prisma` (istanza `PrismaClient` condivisa) da `@/lib/db`; `createTestDb(): { prisma: PrismaClient; url: string; cleanup: () => Promise<void> }` da `tests/helpers/db`; modelli `User`, `GoogleAccount`, `Invite`, `ShiftCode`
 
 - [ ] **Step 1: Installare Prisma**
@@ -529,6 +530,23 @@ describe('wallClockToUtc', () => {
     expect(hoursBetween(start, end)).toBe(10)
   })
 
+  it('corregge l offset quando la prima stima cade dal lato sbagliato del cambio d ora', () => {
+    // 01:30 del 25 ottobre 2026 a Roma esiste due volte: la prima occorrenza è ancora
+    // ora legale (+2). Con un solo passaggio l offset stimato sarebbe +1 e il risultato
+    // cadrebbe sulla seconda occorrenza, un ora più tardi.
+    expect(wallClockToUtc('2026-10-25T01:30', ROME_TZ).toISOString()).toBe(
+      '2026-10-24T23:30:00.000Z',
+    )
+  })
+
+  it('gestisce un orario che il cambio d ora fa saltare del tutto', () => {
+    // 02:30 del 29 marzo 2026 non esiste a Roma: le lancette vanno da 02:00 a 03:00.
+    // Il secondo passaggio lo porta a 03:30 locali; con un solo passaggio finirebbe a 01:30.
+    expect(wallClockToUtc('2026-03-29T02:30', ROME_TZ).toISOString()).toBe(
+      '2026-03-29T01:30:00.000Z',
+    )
+  })
+
   it('accetta anche i secondi nel wall clock', () => {
     expect(wallClockToUtc('2026-08-01T07:00:00', ROME_TZ).toISOString()).toBe(
       '2026-08-01T05:00:00.000Z',
@@ -605,7 +623,7 @@ export function hoursBetween(a: Date, b: Date): number {
 - [ ] **Step 4: Eseguire i test**
 
 Run: `npm test tests/lib/time.test.ts`
-Expected: PASS, 13 test (cumulativo: 22). Se la notte di ottobre risulta di 10 ore, il secondo passaggio di `wallClockToUtc` non sta funzionando: è esattamente il bug che questo test esiste per intercettare.
+Expected: PASS, 15 test (cumulativo: 24). I due test sull orario ambiguo e su quello inesistente sono gli unici che falliscono se si rimuove il secondo passaggio: sono loro a proteggere il meccanismo. Se la notte di ottobre risulta di 10 ore, il secondo passaggio di `wallClockToUtc` non sta funzionando: è esattamente il bug che questo test esiste per intercettare.
 
 - [ ] **Step 5: Commit**
 
@@ -1115,25 +1133,26 @@ import { DEFAULT_SHIFT_CODES } from '../src/modules/codes/defaults'
  * gli orari corretti a mano dalla referente non vengono mai sovrascritti.
  */
 export async function seedShiftCodes(prisma: PrismaClient): Promise<number> {
+  // createMany({ skipDuplicates: true }) non è supportato su SQLite: si controlla prima.
   let created = 0
   for (const def of DEFAULT_SHIFT_CODES) {
-    const result = await prisma.shiftCode.createMany({
-      data: [
-        {
-          code: def.code,
-          label: def.label,
-          kind: def.kind,
-          startTime: def.startTime,
-          endTime: def.endTime,
-          crossesMidnight: def.crossesMidnight,
-          location: def.location,
-          color: def.color,
-          needsReview: def.needsReview,
-        },
-      ],
-      skipDuplicates: true,
+    const existing = await prisma.shiftCode.findUnique({ where: { code: def.code } })
+    if (existing) continue
+
+    await prisma.shiftCode.create({
+      data: {
+        code: def.code,
+        label: def.label,
+        kind: def.kind,
+        startTime: def.startTime,
+        endTime: def.endTime,
+        crossesMidnight: def.crossesMidnight,
+        location: def.location,
+        color: def.color,
+        needsReview: def.needsReview,
+      },
     })
-    created += result.count
+    created += 1
   }
   return created
 }
@@ -1153,7 +1172,7 @@ if (process.argv[1]?.endsWith('seed.ts')) {
 - [ ] **Step 13: Eseguire tutta la suite**
 
 Run: `npm test`
-Expected: PASS, 43 test.
+Expected: PASS, 45 test.
 
 - [ ] **Step 14: Commit**
 
@@ -1172,7 +1191,13 @@ git commit -m "feat: add shift code legend with timezone-aware calendar slots"
 
 **Interfaces:**
 - Consumes: `requireEnv` da `@/lib/env`
-- Produces: da `@/lib/crypto`: `encryptSecret(plaintext: string): string`, `decryptSecret(payload: string): string`
+- Produces: da `@/lib/crypto`: `encryptSecret(plaintext: string, context: string): string`, `decryptSecret(payload: string, context: string): string`
+
+**Perché il `context`:** viene autenticato ma non cifrato (AAD di GCM) e lega il payload al record che
+lo contiene. Senza, chi riuscisse a scrivere sul database potrebbe spostare il refresh token di
+un'infermiera nel record di un'altra e far scrivere il server sul calendario sbagliato. Il Task 6 passa
+`google_refresh:<userId>`. Vanno inoltre validate le lunghezze di IV (12 byte) e tag (16 byte) prima di
+decifrare: GCM accetta tag più corti, e un tag troncato ridurrebbe l'autenticazione a pochi byte.
 
 - [ ] **Step 1: Scrivere i test che falliscono**
 
@@ -1268,7 +1293,7 @@ export function decryptSecret(payload: string): string {
 - [ ] **Step 4: Eseguire i test**
 
 Run: `npm test tests/lib/crypto.test.ts`
-Expected: PASS, 6 test (cumulativo: 49).
+Expected: PASS, 6 test (cumulativo: 51).
 
 - [ ] **Step 5: Commit**
 
@@ -1282,7 +1307,7 @@ git commit -m "feat: encrypt secrets at rest with AES-256-GCM"
 ### Task 6: Autenticazione con Google, ruoli e inviti
 
 **Files:**
-- Create: `src/modules/auth/policy.ts`, `src/modules/auth/session.ts`, `src/modules/auth/google.ts`, `src/modules/auth/guards.ts`, `src/modules/auth/index.ts`, `src/app/login/page.tsx`, `src/app/api/auth/google/start/route.ts`, `src/app/api/auth/google/callback/route.ts`, `src/app/api/auth/logout/route.ts`
+- Create: `src/modules/auth/policy.ts`, `src/modules/auth/token.ts`, `src/modules/auth/session.ts`, `src/modules/auth/google.ts`, `src/modules/auth/guards.ts`, `src/modules/auth/index.ts`, `src/app/login/page.tsx`, `src/app/api/auth/google/start/route.ts`, `src/app/api/auth/google/callback/route.ts`, `src/app/api/auth/logout/route.ts`
 - Test: `tests/modules/auth/policy.test.ts`, `tests/modules/auth/session.test.ts`
 
 **Interfaces:**
@@ -1292,8 +1317,13 @@ git commit -m "feat: encrypt secrets at rest with AES-256-GCM"
   - `normalizeEmail(email: string): string`
   - `roleForNewUser(existingUsers: number): Role`
   - `decideRegistration(email: string, ctx: { existingUsers: number; invitedEmails: string[] }): { allowed: true; role: Role } | { allowed: false; reason: 'not_invited' }`
-  - `signSession(userId: string, secret: string, ttlSeconds?: number): Promise<string>`
-  - `verifySession(token: string, secret: string): Promise<{ userId: string } | null>`
+  - da `@/modules/auth/token`: `signSession(userId: string, secret: string, ttlSeconds?: number): Promise<string>`, `verifySession(token: string, secret: string): Promise<{ userId: string } | null>`
+  - `openSessionCookie(userId: string): Promise<void>`, `closeSessionCookie(): Promise<void>`, `readSessionCookie(): Promise<{ userId: string } | null>`
+
+**Nota sugli import nei test:** `session.ts` importa `next/headers`, che include `server-only` e
+fallisce se caricato fuori dal runtime di Next. Per questo la firma del token vive in `token.ts` senza
+dipendenze da Next, e i test importano `@/modules/auth/token` e `@/modules/auth/policy` direttamente.
+Il codice applicativo continua a usare la facciata `@/modules/auth`.
   - `buildGoogleAuthUrl(state: string): string`, `exchangeGoogleCode(code: string): Promise<{ email: string; name: string; refreshToken: string | null }>`
   - `getCurrentUser(): Promise<{ id: string; email: string; displayName: string; role: Role } | null>`, `requireUser()`, `requireReferente()`
 
@@ -1309,7 +1339,7 @@ Crea `tests/modules/auth/policy.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest'
-import { decideRegistration, normalizeEmail, roleForNewUser } from '@/modules/auth'
+import { decideRegistration, normalizeEmail, roleForNewUser } from '@/modules/auth/policy'
 
 describe('normalizeEmail', () => {
   it('mette in minuscolo e rimuove gli spazi', () => {
@@ -1368,7 +1398,7 @@ Crea `tests/modules/auth/session.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest'
-import { signSession, verifySession } from '@/modules/auth'
+import { signSession, verifySession } from '@/modules/auth/token'
 
 const SECRET = 'segreto-di-test-abbastanza-lungo-32+'
 
@@ -1440,18 +1470,16 @@ export function decideRegistration(
 }
 ```
 
-- [ ] **Step 6: Implementare la sessione**
+- [ ] **Step 6: Implementare il token e il cookie di sessione**
 
-Crea `src/modules/auth/session.ts`:
+Crea `src/modules/auth/token.ts` (nessun import da Next: deve restare testabile in Node puro):
 
 ```ts
-import { cookies } from 'next/headers'
 import { jwtVerify, SignJWT } from 'jose'
-import { requireEnv } from '@/lib/env'
 
 export const SESSION_COOKIE = 'turni_session'
 export const OAUTH_STATE_COOKIE = 'turni_oauth_state'
-const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 30
+export const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 30
 
 function keyFrom(secret: string): Uint8Array {
   return new TextEncoder().encode(secret)
@@ -1481,6 +1509,15 @@ export async function verifySession(
     return null
   }
 }
+
+```
+
+Crea `src/modules/auth/session.ts`:
+
+```ts
+import { cookies } from 'next/headers'
+import { requireEnv } from '@/lib/env'
+import { DEFAULT_TTL_SECONDS, SESSION_COOKIE, signSession, verifySession } from './token'
 
 export async function openSessionCookie(userId: string): Promise<void> {
   const token = await signSession(userId, requireEnv('SESSION_SECRET'))
@@ -1606,14 +1643,13 @@ Crea `src/modules/auth/index.ts`:
 export type { Role, RegistrationDecision } from './policy'
 export { decideRegistration, normalizeEmail, roleForNewUser } from './policy'
 export {
+  DEFAULT_TTL_SECONDS,
   OAUTH_STATE_COOKIE,
   SESSION_COOKIE,
-  closeSessionCookie,
-  openSessionCookie,
-  readSessionCookie,
   signSession,
   verifySession,
-} from './session'
+} from './token'
+export { closeSessionCookie, openSessionCookie, readSessionCookie } from './session'
 export { GOOGLE_SCOPES, buildGoogleAuthUrl, exchangeGoogleCode } from './google'
 export type { CurrentUser } from './guards'
 export { getCurrentUser, requireReferente, requireUser } from './guards'
@@ -1622,7 +1658,7 @@ export { getCurrentUser, requireReferente, requireUser } from './guards'
 - [ ] **Step 9: Eseguire i test**
 
 Run: `npm test tests/modules/auth`
-Expected: PASS, 12 test (7 di policy, 5 di sessione).
+Expected: PASS, 12 test (7 di policy, 5 di token).
 
 - [ ] **Step 10: Implementare le route OAuth**
 
@@ -1717,8 +1753,15 @@ export async function GET(request: Request) {
   if (profile.refreshToken) {
     await prisma.googleAccount.upsert({
       where: { userId: user.id },
-      create: { userId: user.id, refreshToken: encryptSecret(profile.refreshToken), status: 'ok' },
-      update: { refreshToken: encryptSecret(profile.refreshToken), status: 'ok' },
+      create: {
+        userId: user.id,
+        refreshToken: encryptSecret(profile.refreshToken, `google_refresh:${user.id}`),
+        status: 'ok',
+      },
+      update: {
+        refreshToken: encryptSecret(profile.refreshToken, `google_refresh:${user.id}`),
+        status: 'ok',
+      },
     })
   }
 
@@ -1790,7 +1833,7 @@ Expected: primo accesso → utente creato con ruolo `REFERENTE`, cookie `turni_s
 - [ ] **Step 13: Eseguire tutta la suite e il lint**
 
 Run: `npm test && npm run lint`
-Expected: PASS, 61 test; nessun errore di tipo.
+Expected: PASS, 63 test; nessun errore di tipo.
 
 - [ ] **Step 14: Commit**
 
@@ -2267,7 +2310,7 @@ Expected: da referente, `/settings/codes` elenca i 19 codici con il badge "da co
 - [ ] **Step 10: Eseguire tutta la suite e il lint**
 
 Run: `npm test && npm run lint`
-Expected: PASS, 69 test; nessun errore di tipo.
+Expected: PASS, 73 test; nessun errore di tipo.
 
 - [ ] **Step 11: Commit**
 
@@ -2383,6 +2426,7 @@ fixtures
 *.log
 .env
 .env.*
+prisma/seed.js
 ```
 
 Crea `Dockerfile`:
@@ -2402,7 +2446,11 @@ RUN apk add --no-cache openssl
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npx prisma generate && npm run build
+# Il seed viene compilato qui: nel runner non ci sono tsx e le sue dipendenze.
+RUN npx prisma generate \
+ && npm run build \
+ && ./node_modules/.bin/esbuild prisma/seed.ts --bundle --platform=node --target=node22 \
+      --external:@prisma/client --outfile=prisma/seed.js
 
 FROM node:22-alpine AS runner
 WORKDIR /app
@@ -2417,7 +2465,7 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
-COPY --from=builder /app/node_modules/tsx ./node_modules/tsx
+COPY --from=builder /app/prisma/seed.js ./prisma/seed.js
 COPY docker/entrypoint.sh ./docker/entrypoint.sh
 RUN chmod +x ./docker/entrypoint.sh && mkdir -p /data && chown -R node:node /data /app
 
@@ -2433,11 +2481,12 @@ Crea `docker/entrypoint.sh`:
 #!/bin/sh
 set -e
 
+# node_modules/.bin non viene copiato nell immagine: invochiamo gli entry point diretti.
 echo "Applico le migrazioni..."
-./node_modules/.bin/prisma migrate deploy
+node ./node_modules/prisma/build/index.js migrate deploy
 
 echo "Carico i codici turno mancanti..."
-./node_modules/.bin/tsx prisma/seed.ts
+node prisma/seed.js
 
 exec "$@"
 ```
@@ -2497,7 +2546,7 @@ docker compose ps
 curl -s localhost:3000/api/health
 ```
 
-Expected: `{"status":"ok","database":true}` e container `app` in stato `healthy`. Se `prisma migrate deploy` fallisce con un errore sui binari, controlla che `binaryTargets` nello schema includa `linux-musl-openssl-3.0.x`.
+Expected: `{"status":"ok","database":true}` e container `app` in stato `healthy`. Se `prisma migrate deploy` fallisce con un errore sui binari, controlla che `binaryTargets` nello schema includa `linux-musl-openssl-3.0.x`. Se il seed non parte, verifica che `prisma/seed.js` sia stato prodotto dallo stage di build (`docker compose build --progress plain` mostra il comando esbuild).
 
 - [ ] **Step 9: Verificare la persistenza dopo un restart**
 
@@ -2526,7 +2575,7 @@ git commit -m "feat: containerize app with migrations, seed and healthcheck"
 
 ## Definizione di completamento della Fase 1
 
-- [ ] `npm test` verde con 71 test; `npm run lint` senza errori
+- [ ] `npm test` verde con 73 test; `npm run lint` senza errori
 - [ ] `docker compose up -d` porta l'app in stato `healthy` sulla ZimaBoard
 - [ ] Il primo accesso Google crea la referente; un'email non invitata viene respinta con un messaggio comprensibile
 - [ ] `GoogleAccount.refreshToken` è cifrato sul database (verificato con `prisma studio`)

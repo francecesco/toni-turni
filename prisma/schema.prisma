@@ -1,0 +1,54 @@
+generator client {
+  provider      = "prisma-client-js"
+  // linux-musl-openssl-3.0.x serve per l'immagine node:22-alpine del deploy
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  REFERENTE
+  NURSE
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  displayName   String
+  role          Role           @default(NURSE)
+  createdAt     DateTime       @default(now())
+  googleAccount GoogleAccount?
+}
+
+model GoogleAccount {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken String   // cifrato con APP_ENCRYPTION_KEY, mai in chiaro
+  calendarId   String?
+  status       String   @default("ok") // ok | needs_reauth
+  updatedAt    DateTime @updatedAt
+}
+
+model Invite {
+  email     String    @id
+  invitedBy String    // email della referente che ha creato l invito (non una FK: la Fase 1 non ne ha bisogno)
+  createdAt DateTime  @default(now())
+  usedAt    DateTime?
+}
+
+model ShiftCode {
+  code            String   @id
+  label           String
+  kind            String   // work | absence | info | unknown
+  startTime       String?  // "HH:mm", null per eventi tutto il giorno
+  endTime         String?
+  crossesMidnight Boolean  @default(false)
+  location        String?
+  color           String?
+  needsReview     Boolean  @default(false)
+  updatedAt       DateTime @updatedAt
+}

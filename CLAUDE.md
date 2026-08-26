@@ -2,10 +2,15 @@
 
 Istruzioni per Claude Code su questo repository.
 
-> **Stato attuale: progetto approvato ma non ancora implementato.** Nella repo ci sono per ora solo i
-> documenti e le due foto di esempio. I comandi qui sotto descrivono l'assetto target: se un file o
-> uno script non esiste ancora, va creato seguendo questo documento — non va inventata una struttura
-> alternativa.
+> **Stato: Fase 1 (fondamenta) completata.** Sono implementati progetto Next.js, persistenza
+> Prisma/SQLite, legenda dei codici turno con orari, cifratura dei token, login Google con ruoli e
+> inviti, pagine di impostazioni e container Docker. **Non** sono implementati l'upload delle foto,
+> l'estrazione AI, la griglia di conferma e il sync con Google Calendar: sono le fasi 2-6, e ognuna
+> avrà il suo piano in `docs/superpowers/plans/`.
+>
+> Resta una verifica in sospeso: il flusso OAuth non è mai stato eseguito con credenziali Google
+> reali — in tutti i test `exchangeGoogleCode` è mockata. La checklist da eseguire è in
+> [docs/verifica-manuale-oauth.md](docs/verifica-manuale-oauth.md).
 
 ## Cos'è
 
@@ -17,7 +22,7 @@ modifiche non banali**: contiene modello dati, flusso, legenda dei codici turno 
 
 ## Stack
 
-Next.js 15 (App Router) · TypeScript · Prisma + SQLite · Tailwind + shadcn/ui · `sharp` · `groq-sdk` ·
+Next.js 16 (App Router) · TypeScript · Prisma + SQLite · Tailwind + shadcn/ui · `sharp` · `groq-sdk` ·
 `googleapis` · Vitest. Deploy: Docker Compose su ZimaBoard (x86_64) + Cloudflare Tunnel.
 
 ## Comandi
@@ -37,22 +42,29 @@ docker compose logs -f app     # log applicativi
 
 ## Struttura
 
+Quello che esiste oggi:
+
 ```
 src/
-├── app/                 # route Next.js (App Router): UI + API routes
-├── modules/             # logica di dominio, un modulo per responsabilità
-│   ├── ingest/          # normalizzazione foto (sharp)
-│   ├── extract/         # VisionProvider, prompt, schema Zod
-│   ├── roster/          # persistenza tabella e versioni
-│   ├── codes/           # dizionario codici turno → orari
-│   ├── review/          # flusso di conferma
-│   ├── calendar/        # OAuth Google + sync idempotente
-│   └── auth/            # sessioni, ruoli, alias colonna → utente
-├── components/ui/       # componenti shadcn/ui (generati, si modificano poco)
-└── lib/                 # utility trasversali (db, crypto, date)
-tests/                   # unit test
-fixtures/                # foto reali + JSON atteso per i golden test
+├── app/
+│   ├── api/auth/google/{start,callback}/  # flusso OAuth
+│   ├── api/auth/logout/, api/health/
+│   ├── login/, settings/{codes,users}/    # pagine + server action
+│   └── page.tsx, layout.tsx
+├── modules/
+│   ├── codes/     # types, normalize, slot, defaults, form, repository, index
+│   └── auth/      # policy, token, session, google, guards, index
+├── components/ui/ # generati da shadcn, non ancora usati: serviranno alla rifinitura UI
+└── lib/           # env, db, time, crypto
+prisma/            # schema, migrations, seed
+tests/             # unit e integrazione, specchio di src/
+fixtures/          # le due foto reali, per i golden test della Fase 2
+docker/            # entrypoint: migrate deploy + seed all'avvio
 ```
+
+Moduli previsti dalle fasi successive e **non ancora presenti**: `ingest` (normalizzazione foto),
+`extract` (VisionProvider e schema Zod), `roster` (tabella e versioni), `review` (conferma),
+`calendar` (sync idempotente).
 
 **Confini dei moduli:** ogni modulo espone la sua interfaccia pubblica in `index.ts`. Non importare
 file interni di un altro modulo. Se serve, allarga l'`index.ts` — non aggirarlo.
@@ -96,6 +108,11 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
 - **SQLite non gestisce scritture concorrenti.** Serializza le operazioni di sync; è ampiamente
   sufficiente per questo carico.
 - **`npm run eval` chiama il provider reale e consuma token.** Non eseguirlo in CI né in loop.
+- **Node 22 è obbligatorio, e la shell può partire su una versione più vecchia.** Verifica con
+  `node -v` e, se serve, `nvm use 22` prima di installare o eseguire i test.
+- **`npm run lint` esegue `tsc --noEmit`, che richiede i tipi generati in `.next/types`.** Su un
+  checkout pulito lancia prima `npx next typegen` (o un `npm run build`), altrimenti il type-check
+  fallisce su route che esistono.
 
 ## Workflow: TDD, non negoziabile
 
@@ -121,8 +138,19 @@ Regole che ne derivano:
 - Il commit contiene test e implementazione insieme.
 
 ## Convenzioni
-- Nomi di identificatori, commenti e messaggi di commit in **inglese**; testi dell'interfaccia e
-  documenti in **italiano** (le utenti sono italiane).
+
+- **Test prima del codice**, sempre: vedi la sezione sul TDD qui sopra.
+- **I test di logica pura importano i sottomoduli, non le facciate.** `@/modules/codes/normalize` e
+  `@/modules/auth/token` invece di `@/modules/codes` e `@/modules/auth`: le facciate tirano dentro il
+  client Prisma e `next/headers` (che include `server-only` e fallisce fuori dal runtime di Next). Il
+  codice applicativo usa invece sempre la facciata.
+- **I test che toccano il database** usano `createTestDb()` da `tests/helpers/db.ts`; se serve il
+  singleton `@/lib/db`, impostano `process.env.DATABASE_URL`, cancellano `globalThis.prisma` e fanno
+  `vi.resetModules()` **prima** di un import dinamico.
+- Nomi di identificatori e messaggi di commit in **inglese**. Testi dell'interfaccia, commenti di
+  codice, descrizioni dei test e documenti in **italiano**: il progetto ha un solo manutentore
+  italiano e il dominio (turni, codici, ruoli) è italiano, quindi commentare in inglese aggiungerebbe
+  una traduzione mentale a ogni lettura senza far guadagnare nulla.
 - I codici turno restano in italiano come sulla carta (`M`, `P`, `NOTTE`, `RP`): sono il vocabolario
   del reparto, non tradurli.
 - Server Components per default; `"use client"` solo dove serve interattività.
@@ -133,3 +161,13 @@ Regole che ne derivano:
 Vivono in `docs/superpowers/specs/2026-08-26-toni-turni-design.md` §9 (durata di `M+`/`P+`,
 significato di `RSF`, colonne di aiuto). I relativi codici sono marcati `needsReview: true` in
 `ShiftCode`. **Non risolverle indovinando** — chiedi.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
