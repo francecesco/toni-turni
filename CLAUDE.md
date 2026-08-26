@@ -9,7 +9,8 @@ Istruzioni per Claude Code su questo repository.
 > avrà il suo piano in `docs/superpowers/plans/`.
 >
 > Resta una verifica in sospeso: il flusso OAuth non è mai stato eseguito con credenziali Google
-> reali. La checklist è in `.superpowers/sdd/2026-08-26-fase-1-fondamenta/task-6-report.md`.
+> reali — in tutti i test `exchangeGoogleCode` è mockata. La checklist da eseguire è in
+> [docs/verifica-manuale-oauth.md](docs/verifica-manuale-oauth.md).
 
 ## Cos'è
 

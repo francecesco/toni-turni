@@ -174,6 +174,10 @@ della mezzanotte, ora legale, diff del sync.
 Convenzioni, confini dei moduli e regole invarianti sono in [CLAUDE.md](CLAUDE.md); il design
 completo in [docs/superpowers/specs/2026-08-26-toni-turni-design.md](docs/superpowers/specs/2026-08-26-toni-turni-design.md).
 
+Prima di considerare l'accesso funzionante, esegui una volta la
+[verifica manuale del flusso Google OAuth](docs/verifica-manuale-oauth.md): è l'unica parte non
+coperta dai test automatici.
+
 ## Limiti noti
 
 - La pianificazione dei turni resta cartacea: l'app legge, non genera.
