@@ -65,6 +65,17 @@ describe('compareExtraction', () => {
     expect(report.spurious).toBe(1)
   })
 
+  it('non considera equivalenti M e M/P: sette ore non sono quattordici', () => {
+    const report = compareExtraction(
+      { ...expected, cells: [{ day: 1, column: 'RENATA', code: 'M' }] },
+      actual([{ day: 1, column: 'RENATA', code: 'M/P' }]),
+    )
+    expect(report.correct).toBe(0)
+    expect(report.wrong).toEqual([
+      { day: 1, column: 'RENATA', expected: 'M', actual: 'M/P' },
+    ])
+  })
+
   it('riporta l accuratezza per colonna, così si vede se una è illeggibile', () => {
     const report = compareExtraction(expected, actual([
       { day: 1, column: 'RENATA', code: 'M' },

@@ -13,8 +13,8 @@ import { compareExtraction, type ExpectedRoster } from './accuracy'
 const FIXTURES = join(process.cwd(), 'fixtures')
 
 async function main(): Promise<void> {
-  const attesi = readdirSync(FIXTURES).filter((f) => f.endsWith('.expected.json'))
-  if (attesi.length === 0) {
+  const expectedFiles = readdirSync(FIXTURES).filter((f) => f.endsWith('.expected.json'))
+  if (expectedFiles.length === 0) {
     console.error('Nessun file *.expected.json in fixtures/: senza verità di riferimento non si misura nulla.')
     process.exit(1)
   }
@@ -23,65 +23,75 @@ async function main(): Promise<void> {
   const fallback = fallbackProviderFromEnv()
   const knownCodes = DEFAULT_SHIFT_CODES.map((def) => def.code)
 
-  let totaleCelle = 0
-  let totaleCorrette = 0
+  let totalCells = 0
+  let totalCorrect = 0
   // Un estrazione fallita (chiave mancante, provider giù, JSON irreparabile) non è
   // un dato di accuratezza: è un guasto, e va segnalato con un codice di uscita
   // diverso da zero perché uno script che finisce "verde" con zero celle misurate
   // nasconderebbe il problema.
-  let fallimenti = 0
+  const failedPhotos: string[] = []
 
-  for (const nomeAtteso of attesi) {
-    const nomeFoto = nomeAtteso.replace('.expected.json', '.jpeg')
-    const expected = JSON.parse(readFileSync(join(FIXTURES, nomeAtteso), 'utf8')) as ExpectedRoster
+  for (const expectedFileName of expectedFiles) {
+    const photoFileName = expectedFileName.replace('.expected.json', '.jpeg')
+    const expected = JSON.parse(readFileSync(join(FIXTURES, expectedFileName), 'utf8')) as ExpectedRoster
 
-    console.log(`\n=== ${nomeFoto} (provider: ${provider.name}) ===`)
-    const immagine = await normalizeRosterPhoto(readFileSync(join(FIXTURES, nomeFoto)))
-    console.log(`immagine normalizzata: ${immagine.width}x${immagine.height}, ${Math.round(immagine.bytes / 1024)} KB`)
+    console.log(`\n=== ${photoFileName} (provider: ${provider.name}) ===`)
+    const image = await normalizeRosterPhoto(readFileSync(join(FIXTURES, photoFileName)))
+    console.log(`immagine normalizzata: ${image.width}x${image.height}, ${Math.round(image.bytes / 1024)} KB`)
 
-    const inizio = Date.now()
-    const esito = await extractRoster({ image: immagine.data, knownCodes, provider, fallback })
-    const secondi = ((Date.now() - inizio) / 1000).toFixed(1)
+    const start = Date.now()
+    const outcome = await extractRoster({ image: image.data, knownCodes, provider, fallback })
+    const seconds = ((Date.now() - start) / 1000).toFixed(1)
 
-    if (!esito.ok) {
-      console.error(`estrazione FALLITA dopo ${esito.attempts} tentativi in ${secondi}s: ${esito.error}`)
-      console.error(`output grezzo: ${esito.rawOutput?.slice(0, 500) ?? '(nessuno)'}`)
-      fallimenti += 1
+    if (!outcome.ok) {
+      console.error(`estrazione FALLITA dopo ${outcome.attempts} tentativi in ${seconds}s: ${outcome.error}`)
+      console.error(`output grezzo: ${outcome.rawOutput?.slice(0, 500) ?? '(nessuno)'}`)
+      failedPhotos.push(photoFileName)
       continue
     }
 
-    const report = compareExtraction(expected, esito.extraction)
-    const percentuale = report.total === 0 ? 0 : (report.correct / report.total) * 100
+    const report = compareExtraction(expected, outcome.extraction)
+    const percentage = report.total === 0 ? 0 : (report.correct / report.total) * 100
 
-    totaleCelle += report.total
-    totaleCorrette += report.correct
+    totalCells += report.total
+    totalCorrect += report.correct
 
-    console.log(`tentativi: ${esito.attempts} | tempo: ${secondi}s | provider usato: ${esito.provider} (${esito.model})`)
-    console.log(`intestazione: ${esito.extraction.ward} ${esito.extraction.month}/${esito.extraction.year} (atteso: ${expected.ward} ${expected.month}/${expected.year})`)
-    console.log(`accuratezza: ${report.correct}/${report.total} celle (${percentuale.toFixed(1)}%), mancanti ${report.missing}, in eccesso ${report.spurious}`)
+    console.log(`tentativi: ${outcome.attempts} | tempo: ${seconds}s | provider usato: ${outcome.provider} (${outcome.model})`)
+    console.log(`intestazione: ${outcome.extraction.ward} ${outcome.extraction.month}/${outcome.extraction.year} (atteso: ${expected.ward} ${expected.month}/${expected.year})`)
+    console.log(`accuratezza: ${report.correct}/${report.total} celle (${percentage.toFixed(1)}%), mancanti ${report.missing}, in eccesso ${report.spurious}`)
 
     console.log('per colonna:')
-    for (const [colonna, dati] of Object.entries(report.byColumn).sort()) {
-      const pct = dati.total === 0 ? 0 : (dati.correct / dati.total) * 100
-      console.log(`  ${colonna.padEnd(12)} ${dati.correct}/${dati.total} (${pct.toFixed(0)}%)`)
+    for (const [column, stats] of Object.entries(report.byColumn).sort(([a], [b]) => a.localeCompare(b))) {
+      const pct = stats.total === 0 ? 0 : (stats.correct / stats.total) * 100
+      console.log(`  ${column.padEnd(12)} ${stats.correct}/${stats.total} (${pct.toFixed(0)}%)`)
     }
 
     if (report.wrong.length > 0) {
       console.log(`celle sbagliate (${report.wrong.length}):`)
-      for (const errore of report.wrong.slice(0, 40)) {
-        console.log(`  giorno ${String(errore.day).padStart(2)} ${errore.column.padEnd(12)} atteso "${errore.expected}" letto "${errore.actual}"`)
+      for (const mistake of report.wrong.slice(0, 40)) {
+        console.log(`  giorno ${String(mistake.day).padStart(2)} ${mistake.column.padEnd(12)} atteso "${mistake.expected}" letto "${mistake.actual}"`)
       }
       if (report.wrong.length > 40) console.log(`  ... e altre ${report.wrong.length - 40}`)
     }
   }
 
-  if (totaleCelle > 0) {
-    const complessiva = (totaleCorrette / totaleCelle) * 100
-    console.log(`\n=== TOTALE: ${totaleCorrette}/${totaleCelle} celle (${complessiva.toFixed(1)}%) ===`)
+  // La riga finale deve dichiarare quante foto hanno davvero contribuito al numero:
+  // un TOTALE senza copertura, letto da solo o fra un mese, può passare per una
+  // media sulle foto quando in realtà ne riflette solo alcune (o nessuna).
+  const measuredCount = expectedFiles.length - failedPhotos.length
+  if (measuredCount === 0) {
+    console.log(`\n=== TOTALE: nessuna foto misurata su ${expectedFiles.length} (tutte le estrazioni sono fallite) ===`)
+  } else {
+    const overallPercentage = (totalCorrect / totalCells) * 100
+    const coverage =
+      failedPhotos.length === 0
+        ? `su ${measuredCount} foto`
+        : `su ${measuredCount} foto misurate di ${expectedFiles.length} (fallite: ${failedPhotos.join(', ')})`
+    console.log(`\n=== TOTALE: ${totalCorrect}/${totalCells} celle (${overallPercentage.toFixed(1)}%) ${coverage} ===`)
   }
 
-  if (fallimenti > 0) {
-    console.error(`\n${fallimenti} estrazione/i su ${attesi.length} non riuscita/e: vedi gli errori sopra.`)
+  if (failedPhotos.length > 0) {
+    console.error(`\n${failedPhotos.length} estrazione/i su ${expectedFiles.length} non riuscita/e: vedi gli errori sopra.`)
     process.exit(1)
   }
 }
