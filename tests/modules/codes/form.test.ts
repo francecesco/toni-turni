@@ -35,6 +35,13 @@ describe('parseShiftCodeForm', () => {
     expect(result.ok && result.value.crossesMidnight).toBe(true)
   })
 
+  it('considera crossesMidnight anche quando inizio e fine coincidono (turno di 24 ore)', () => {
+    const result = parseShiftCodeForm(
+      form({ code: 'H24', label: 'Turno 24h', kind: 'work', startTime: '07:00', endTime: '07:00' }),
+    )
+    expect(result.ok && result.value.crossesMidnight).toBe(true)
+  })
+
   it('accetta un turno tutto il giorno senza orari', () => {
     const result = parseShiftCodeForm(form({ code: 'RP', label: 'Riposo', kind: 'info' }))
     expect(result.ok && result.value.startTime).toBeNull()

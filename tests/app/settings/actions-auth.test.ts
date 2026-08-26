@@ -69,6 +69,14 @@ function inviteForm(): FormData {
   return form
 }
 
+async function createReferente(email = 'anna@example.com'): Promise<{ id: string; email: string }> {
+  const referente = await dbModule.prisma.user.create({
+    data: { email, displayName: 'Anna Rossi', role: 'REFERENTE' },
+  })
+  await session.openSessionCookie(referente.id)
+  return referente
+}
+
 describe('autorizzazione delle server action di /settings', () => {
   it('saveShiftCode rimanda alla home e non scrive nulla se chiamata da un utente NURSE', async () => {
     const nurse = await dbModule.prisma.user.create({
@@ -94,5 +102,47 @@ describe('autorizzazione delle server action di /settings', () => {
     const after = await dbModule.prisma.invite.count()
 
     expect(after).toBe(before)
+  })
+})
+
+describe('saveShiftCode e inviteUser sotto una sessione REFERENTE', () => {
+  it('saveShiftCode crea davvero il codice turno con gli orari attesi', async () => {
+    await createReferente()
+
+    const result = await codesActions.saveShiftCode(shiftCodeForm())
+
+    expect(result).toEqual({ errors: [] })
+    const row = await dbModule.prisma.shiftCode.findUniqueOrThrow({ where: { code: 'M' } })
+    expect(row.startTime).toBe('07:00')
+    expect(row.endTime).toBe('14:00')
+  })
+
+  it('inviteUser crea davvero la riga Invite con invitedBy uguale all email della referente', async () => {
+    const referente = await createReferente()
+
+    const result = await usersActions.inviteUser(inviteForm())
+
+    expect(result).toEqual({ errors: [] })
+    const invite = await dbModule.prisma.invite.findUniqueOrThrow({
+      where: { email: 'nuova@example.com' },
+    })
+    expect(invite.invitedBy).toBe(referente.email)
+  })
+})
+
+describe('removeShiftCode — doppio Elimina (due schede aperte)', () => {
+  it('elimina il codice e una seconda chiamata sullo stesso codice non lancia', async () => {
+    await createReferente()
+    await dbModule.prisma.shiftCode.create({
+      data: { code: 'M', label: 'Mattino', kind: 'work', startTime: '07:00', endTime: '14:00' },
+    })
+
+    const form = new FormData()
+    form.set('code', 'M')
+
+    await codesActions.removeShiftCode(form)
+    expect(await dbModule.prisma.shiftCode.findUnique({ where: { code: 'M' } })).toBeNull()
+
+    await expect(codesActions.removeShiftCode(form)).resolves.toBeUndefined()
   })
 })
