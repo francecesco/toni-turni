@@ -1,0 +1,39 @@
+# Dipendenze
+node_modules/
+
+# Build Next.js
+.next/
+out/
+build/
+next-env.d.ts
+
+# Ambiente e segreti
+.env
+.env.*
+!.env.example
+
+# Dati applicativi (database SQLite, foto caricate a runtime)
+data/
+*.db
+*.db-journal
+*.db-wal
+uploads/
+
+# Test e cache
+coverage/
+.vitest/
+playwright-report/
+test-results/
+.eslintcache
+*.tsbuildinfo
+
+# Sistema operativo / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Log
+*.log
+npm-debug.log*
