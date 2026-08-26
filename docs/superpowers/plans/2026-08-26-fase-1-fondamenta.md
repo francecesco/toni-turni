@@ -4,9 +4,9 @@
 
 **Goal:** Avere un'app Next.js deployabile su ZimaBoard in cui le infermiere accedono con Google e la referente configura la legenda dei turni con i relativi orari.
 
-**Architecture:** Monolite Next.js 15 (App Router) con moduli di dominio isolati sotto `src/modules/`, persistenza Prisma/SQLite, login OAuth Google senza password. Questa fase costruisce le fondamenta che le fasi successive consumano: la conversione codice turno → intervallo orario (usata dal sync), la gestione fusi/ora legale (il punto dove i bug sono invisibili) e l'autenticazione con ruoli.
+**Architecture:** Monolite Next.js 16 (App Router) con moduli di dominio isolati sotto `src/modules/`, persistenza Prisma/SQLite, login OAuth Google senza password. Questa fase costruisce le fondamenta che le fasi successive consumano: la conversione codice turno → intervallo orario (usata dal sync), la gestione fusi/ora legale (il punto dove i bug sono invisibili) e l'autenticazione con ruoli.
 
-**Tech Stack:** Next.js 15, TypeScript, Prisma + SQLite, Tailwind + shadcn/ui, `jose`, `google-auth-library`, Vitest, Docker Compose + cloudflared.
+**Tech Stack:** Next.js 16, TypeScript, Prisma + SQLite, Tailwind + shadcn/ui, `jose`, `google-auth-library`, Vitest, Docker Compose + cloudflared.
 
 **Spec:** `docs/superpowers/specs/2026-08-26-toni-turni-design.md`
 
@@ -103,7 +103,7 @@ Aggiungi gli script in `package.json` (mantieni quelli generati da create-next-a
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint && tsc --noEmit",
+    "lint": "eslint && tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:migrate": "prisma migrate dev",

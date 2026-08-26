@@ -37,14 +37,14 @@ Non-obiettivi (esplicitamente fuori scope):
 | Calendario | Evento con orario su un **calendario dedicato** creato dall'app |
 | AI | Provider vision astratto: Groq come default, provider alternativo selezionabile da env |
 | Rete | Cloudflare Tunnel + dominio https (richiesto dal redirect OAuth Google) |
-| Stack | Next.js 15 + Prisma/SQLite + Tailwind + shadcn/ui, un solo container applicativo |
+| Stack | Next.js 16 + Prisma/SQLite + Tailwind + shadcn/ui, un solo container applicativo |
 | Legenda turni | Default precaricati, **modificabili dalla referente** in Impostazioni |
 
 ## 4. Architettura
 
 Due container in `docker-compose.yml`:
 
-- **`app`** — Next.js 15 in output standalone su `node:22-alpine`. Contiene UI, API, job di
+- **`app`** — Next.js 16 in output standalone su `node:22-alpine`. Contiene UI, API, job di
   estrazione e sync. SQLite su volume Docker.
 - **`cloudflared`** — tunnel verso il dominio https pubblico. La ZimaBoard non espone porte verso
   internet.

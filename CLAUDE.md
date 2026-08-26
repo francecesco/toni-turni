@@ -17,7 +17,7 @@ modifiche non banali**: contiene modello dati, flusso, legenda dei codici turno 
 
 ## Stack
 
-Next.js 15 (App Router) · TypeScript · Prisma + SQLite · Tailwind + shadcn/ui · `sharp` · `groq-sdk` ·
+Next.js 16 (App Router) · TypeScript · Prisma + SQLite · Tailwind + shadcn/ui · `sharp` · `groq-sdk` ·
 `googleapis` · Vitest. Deploy: Docker Compose su ZimaBoard (x86_64) + Cloudflare Tunnel.
 
 ## Comandi
@@ -96,6 +96,11 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
 - **SQLite non gestisce scritture concorrenti.** Serializza le operazioni di sync; è ampiamente
   sufficiente per questo carico.
 - **`npm run eval` chiama il provider reale e consuma token.** Non eseguirlo in CI né in loop.
+- **Node 22 è obbligatorio, e la shell può partire su una versione più vecchia.** Verifica con
+  `node -v` e, se serve, `nvm use 22` prima di installare o eseguire i test.
+- **`npm run lint` esegue `tsc --noEmit`, che richiede i tipi generati in `.next/types`.** Su un
+  checkout pulito lancia prima `npx next typegen` (o un `npm run build`), altrimenti il type-check
+  fallisce su route che esistono.
 
 ## Workflow: TDD, non negoziabile
 
