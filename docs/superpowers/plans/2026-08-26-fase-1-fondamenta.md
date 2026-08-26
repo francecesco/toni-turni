@@ -15,7 +15,7 @@
 - **Node 22**, gestore pacchetti `npm`. Target hardware: ZimaBoard x86_64, 8 GB RAM → nessuna dipendenza pesante senza motivo.
 - **TDD obbligatorio:** RED → GREEN → REFACTOR. Nessun codice di produzione senza un test rosso che lo giustifichi. Nessun "fatto" senza aver eseguito la suite e letto l'output.
 - **Fuso orario:** ogni orario di turno è wall clock di `Europe/Rome`. Gli eventi Google si costruiscono con `{ dateTime, timeZone: "Europe/Rome" }`, mai con offset fissi né UTC calcolato a mano.
-- **Testi UI in italiano**, identificatori e commenti di codice in **inglese**. I codici turno restano come sulla carta (`M`, `P`, `NOTTE`, `RP`): non tradurli.
+- **Identificatori e messaggi di commit in inglese; testi UI, commenti di codice e descrizioni dei test in italiano.** I codici turno restano come sulla carta (`M`, `P`, `NOTTE`, `RP`): non tradurli.
 - **Nessun segreto nel repository.** Solo variabili d'ambiente. `refreshToken` cifrato a riposo con `APP_ENCRYPTION_KEY` (32 byte base64).
 - **Ruoli:** `REFERENTE` (carica tabelle, modifica legenda, invita utenti) e `NURSE`. Autorizzazione verificata lato server, non solo in UI.
 - **Un commit per task**, test e implementazione insieme.

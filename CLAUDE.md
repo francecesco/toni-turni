@@ -126,8 +126,10 @@ Regole che ne derivano:
 - Il commit contiene test e implementazione insieme.
 
 ## Convenzioni
-- Nomi di identificatori, commenti e messaggi di commit in **inglese**; testi dell'interfaccia e
-  documenti in **italiano** (le utenti sono italiane).
+- Nomi di identificatori e messaggi di commit in **inglese**. Testi dell'interfaccia, commenti di
+  codice, descrizioni dei test e documenti in **italiano**: il progetto ha un solo manutentore
+  italiano e il dominio (turni, codici, ruoli) è italiano, quindi commentare in inglese aggiungerebbe
+  una traduzione mentale a ogni lettura senza far guadagnare nulla.
 - I codici turno restano in italiano come sulla carta (`M`, `P`, `NOTTE`, `RP`): sono il vocabolario
   del reparto, non tradurli.
 - Server Components per default; `"use client"` solo dove serve interattività.
