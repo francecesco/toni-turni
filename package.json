@@ -16,6 +16,7 @@
     "db:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.120.0",
     "@base-ui/react": "^1.7.0",
     "@prisma/client": "^6.19.3",
     "class-variance-authority": "^0.7.1",
