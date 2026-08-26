@@ -68,4 +68,21 @@ describe('wallClockToUtc', () => {
       '2026-08-01T05:00:00.000Z',
     )
   })
+
+  it('corregge l offset quando la prima stima cade dal lato sbagliato del cambio d ora', () => {
+    // 01:30 del 25 ottobre 2026 a Roma esiste due volte: la prima occorrenza è ancora
+    // ora legale (+2). Con un solo passaggio l offset stimato sarebbe +1 e il risultato
+    // cadrebbe sulla seconda occorrenza, un ora più tardi.
+    expect(wallClockToUtc('2026-10-25T01:30', ROME_TZ).toISOString()).toBe(
+      '2026-10-24T23:30:00.000Z',
+    )
+  })
+
+  it('gestisce un orario che il cambio d ora fa saltare del tutto', () => {
+    // 02:30 del 29 marzo 2026 non esiste a Roma: le lancette vanno da 02:00 a 03:00.
+    // Il secondo passaggio lo porta a 03:30 locali; con un solo passaggio finirebbe a 01:30.
+    expect(wallClockToUtc('2026-03-29T02:30', ROME_TZ).toISOString()).toBe(
+      '2026-03-29T01:30:00.000Z',
+    )
+  })
 })
