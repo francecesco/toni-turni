@@ -25,10 +25,12 @@ export function decideRegistration(
   email: string,
   ctx: { existingUsers: number; invitedEmails: string[] },
 ): RegistrationDecision {
-  if (ctx.existingUsers === 0) return { allowed: true, role: 'REFERENTE' }
+  if (ctx.existingUsers === 0) return { allowed: true, role: roleForNewUser(ctx.existingUsers) }
 
   const normalized = normalizeEmail(email)
   const invited = ctx.invitedEmails.some((candidate) => normalizeEmail(candidate) === normalized)
 
-  return invited ? { allowed: true, role: 'NURSE' } : { allowed: false, reason: 'not_invited' }
+  return invited
+    ? { allowed: true, role: roleForNewUser(ctx.existingUsers) }
+    : { allowed: false, reason: 'not_invited' }
 }
