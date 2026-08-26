@@ -8,7 +8,7 @@ import { normalizeRosterPhoto } from '../src/modules/ingest/normalize'
 import { extractRoster } from '../src/modules/extract/extract'
 import { fallbackProviderFromEnv, providerFromEnv } from '../src/modules/extract/providers'
 import { DEFAULT_SHIFT_CODES } from '../src/modules/codes/defaults'
-import { compareExtraction, type ExpectedRoster } from './accuracy'
+import { compareExtraction, validateExpectedRoster } from './accuracy'
 
 const FIXTURES = join(process.cwd(), 'fixtures')
 
@@ -30,12 +30,28 @@ async function main(): Promise<void> {
   // diverso da zero perché uno script che finisce "verde" con zero celle misurate
   // nasconderebbe il problema.
   const failedPhotos: string[] = []
+  // Se anche una sola fixture misurata non è verificata, il TOTALE finale non può
+  // sembrare un dato definitivo.
+  let riferimentoNonVerificato = false
 
   for (const expectedFileName of expectedFiles) {
     const photoFileName = expectedFileName.replace('.expected.json', '.jpeg')
-    const expected = JSON.parse(readFileSync(join(FIXTURES, expectedFileName), 'utf8')) as ExpectedRoster
+    const rawFixture = JSON.parse(readFileSync(join(FIXTURES, expectedFileName), 'utf8')) as unknown
+
+    const validated = validateExpectedRoster(rawFixture)
+    if (!validated.ok) {
+      console.error(`${expectedFileName}: fixture non valida — ${validated.error}`)
+      failedPhotos.push(photoFileName)
+      continue
+    }
+    const expected = validated.value
 
     console.log(`\n=== ${photoFileName} (provider: ${provider.name}) ===`)
+    if (expected.verified === false) {
+      riferimentoNonVerificato = true
+      console.log('*** ATTENZIONE: riferimento NON verificato da una persona che conosce il reparto ***')
+      if (expected._avvertenza) console.log(`    ${expected._avvertenza}`)
+    }
     const image = await normalizeRosterPhoto(readFileSync(join(FIXTURES, photoFileName)))
     console.log(`immagine normalizzata: ${image.width}x${image.height}, ${Math.round(image.bytes / 1024)} KB`)
 
@@ -59,11 +75,29 @@ async function main(): Promise<void> {
     console.log(`tentativi: ${outcome.attempts} | tempo: ${seconds}s | provider usato: ${outcome.provider} (${outcome.model})`)
     console.log(`intestazione: ${outcome.extraction.ward} ${outcome.extraction.month}/${outcome.extraction.year} (atteso: ${expected.ward} ${expected.month}/${expected.year})`)
     console.log(`accuratezza: ${report.correct}/${report.total} celle (${percentage.toFixed(1)}%), mancanti ${report.missing}, in eccesso ${report.spurious}`)
+    if (expected.verified === false) {
+      console.log('    ^ ATTENZIONE: percentuale calcolata contro un riferimento NON verificato')
+    }
 
     console.log('per colonna:')
     for (const [column, stats] of Object.entries(report.byColumn).sort(([a], [b]) => a.localeCompare(b))) {
       const pct = stats.total === 0 ? 0 : (stats.correct / stats.total) * 100
       console.log(`  ${column.padEnd(12)} ${stats.correct}/${stats.total} (${pct.toFixed(0)}%)`)
+    }
+
+    if (report.handCorrectedAccuracy) {
+      const { truePositives, falsePositives, falseNegatives, precision, recall } = report.handCorrectedAccuracy
+      const pct = (value: number | null) => (value === null ? 'n/d' : `${(value * 100).toFixed(0)}%`)
+      console.log(
+        `correzioni a mano riconosciute: precisione ${pct(precision)}, recall ${pct(recall)} ` +
+          `(veri positivi ${truePositives}, falsi positivi ${falsePositives}, falsi negativi ${falseNegatives})`,
+      )
+    }
+
+    console.log('per fascia di confidenza:')
+    for (const [fascia, stats] of Object.entries(report.byConfidenceBucket)) {
+      const pct = stats.total === 0 ? 0 : (stats.correct / stats.total) * 100
+      console.log(`  ${fascia.padEnd(8)} ${stats.correct}/${stats.total} (${pct.toFixed(0)}%)`)
     }
 
     if (report.wrong.length > 0) {
@@ -72,6 +106,10 @@ async function main(): Promise<void> {
         console.log(`  giorno ${String(mistake.day).padStart(2)} ${mistake.column.padEnd(12)} atteso "${mistake.expected}" letto "${mistake.actual}"`)
       }
       if (report.wrong.length > 40) console.log(`  ... e altre ${report.wrong.length - 40}`)
+    }
+
+    if (expected._daVerificare) {
+      console.log(`punto meno certo della trascrizione: ${expected._daVerificare}`)
     }
   }
 
@@ -88,6 +126,9 @@ async function main(): Promise<void> {
         ? `su ${measuredCount} foto`
         : `su ${measuredCount} foto misurate di ${expectedFiles.length} (fallite: ${failedPhotos.join(', ')})`
     console.log(`\n=== TOTALE: ${totalCorrect}/${totalCells} celle (${overallPercentage.toFixed(1)}%) ${coverage} ===`)
+    if (riferimentoNonVerificato) {
+      console.log('*** ATTENZIONE: la percentuale sopra include almeno una fixture NON verificata da una persona che conosce il reparto ***')
+    }
   }
 
   if (failedPhotos.length > 0) {
