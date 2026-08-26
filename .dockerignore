@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+data
+docs
+fixtures
+*.log
+.env
+.env.*
+prisma/seed.js

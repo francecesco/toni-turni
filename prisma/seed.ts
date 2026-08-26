@@ -33,7 +33,9 @@ export async function seedShiftCodes(prisma: PrismaClient): Promise<number> {
   return created
 }
 
-if (process.argv[1]?.endsWith('seed.ts')) {
+// seed.js e' l'output compilato da esbuild eseguito nell immagine Docker
+// (vedi Dockerfile): il controllo deve riconoscere entrambe le estensioni.
+if (process.argv[1]?.endsWith('seed.ts') || process.argv[1]?.endsWith('seed.js')) {
   const prisma = new PrismaClient()
   seedShiftCodes(prisma)
     .then((created) => console.log(`Codici turno inseriti: ${created}`))

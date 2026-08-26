@@ -1,7 +1,9 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  /* config options here */
-};
+  // Necessario per l immagine Docker: Next copia solo il runtime che serve.
+  output: 'standalone',
+}
 
-export default nextConfig;
+export default nextConfig
+
