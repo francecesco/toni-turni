@@ -8,6 +8,11 @@ export default async function LoginPage({
   const messages: Record<string, string> = {
     state: 'Sessione di accesso scaduta. Riprova.',
     not_invited: 'Questo indirizzo non è stato invitato. Chiedi alla referente di aggiungerti.',
+    denied: 'Accesso annullato.',
+    google: 'Accesso con Google non riuscito. Riprova.',
+    email_not_verified:
+      'Questo indirizzo Google non risulta verificato: usa un account verificato o contatta la referente.',
+    retry: 'Accesso non riuscito, riprova.',
   }
 
   return (

@@ -16,6 +16,8 @@ export function googleClient(): OAuth2Client {
   })
 }
 
+export class EmailNotVerifiedError extends Error {}
+
 export function buildGoogleAuthUrl(state: string): string {
   return googleClient().generateAuthUrl({
     access_type: 'offline', // necessario per ottenere il refresh token
@@ -38,6 +40,13 @@ export async function exchangeGoogleCode(
   })
   const payload = ticket.getPayload()
   if (!payload?.email) throw new Error('Google non ha restituito un indirizzo email')
+
+  // L intero modello di autorizzazione (chi diventa referente, chi risulta invitata)
+  // si basa su questa email: senza il controllo, basterebbe un indirizzo non
+  // verificato per impersonare chiunque.
+  if (payload.email_verified !== true) {
+    throw new EmailNotVerifiedError('Google non ha verificato questo indirizzo email')
+  }
 
   return {
     email: payload.email,

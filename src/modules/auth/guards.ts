@@ -17,7 +17,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   const user = await prisma.user.findUnique({ where: { id: session.userId } })
   if (!user) return null
 
-  return { id: user.id, email: user.email, displayName: user.displayName, role: user.role as Role }
+  return { id: user.id, email: user.email, displayName: user.displayName, role: user.role }
 }
 
 export async function requireUser(): Promise<CurrentUser> {

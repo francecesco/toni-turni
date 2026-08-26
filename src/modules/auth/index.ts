@@ -8,6 +8,6 @@ export {
   verifySession,
 } from './token'
 export { closeSessionCookie, openSessionCookie, readSessionCookie } from './session'
-export { GOOGLE_SCOPES, buildGoogleAuthUrl, exchangeGoogleCode } from './google'
+export { EmailNotVerifiedError, GOOGLE_SCOPES, buildGoogleAuthUrl, exchangeGoogleCode } from './google'
 export type { CurrentUser } from './guards'
 export { getCurrentUser, requireReferente, requireUser } from './guards'
