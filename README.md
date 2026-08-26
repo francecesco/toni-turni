@@ -95,16 +95,20 @@ IMAGE_RETENTION_DAYS=90                   # cancellazione automatica delle foto 
 2. Abilita **Google Calendar API**.
 3. In *Credenziali* crea un **ID client OAuth 2.0** di tipo *Applicazione web*.
 4. Aggiungi come redirect URI autorizzato: `https://tuo-dominio/api/auth/google/callback`.
-5. Nella schermata consenso aggiungi lo scope `https://www.googleapis.com/auth/calendar.events` e
-   inserisci le utenti come *test users* (nessuna verifica Google necessaria per un uso familiare).
+5. Nella schermata consenso aggiungi gli scope `openid`, `email`, `profile` (per il login) e
+   `https://www.googleapis.com/auth/calendar.events` (per gli eventi), poi inserisci le utenti come
+   *test users*: per un uso familiare non serve la verifica Google.
 6. Copia client ID e secret in `.env`.
 
 L'app chiede solo il permesso sugli eventi del calendario, non l'accesso all'account completo.
 
 ### Primo avvio
 
-1. Apri `https://tuo-dominio` e registra il primo utente: diventa automaticamente **referente**.
-2. Invita le colleghe; ognuna collega il proprio Google dal proprio profilo.
+1. Apri `https://tuo-dominio` e accedi con Google: il primo accesso diventa automaticamente
+   **referente**. Non ci sono password: si entra con l'account Google, lo stesso consenso che serve
+   per il calendario.
+2. Invita le colleghe inserendo la loro email in *Impostazioni → Utenti*: solo le email invitate
+   possono accedere.
 3. Verifica in *Impostazioni → Codici turno* che orari e significati corrispondano al reparto.
 4. Carica la prima foto e associa una volta per tutte le colonne della tabella alle utenti.
 

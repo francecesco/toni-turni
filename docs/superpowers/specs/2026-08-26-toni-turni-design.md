@@ -66,13 +66,21 @@ Il resto della cartella è interno e non va importato da fuori.
 | `codes` | Dizionario codici turno → orari e tipo evento, configurabile a runtime | AI, calendari |
 | `review` | Griglia di conferma: evidenzia bassa confidenza, correzioni a penna, codici ignoti | AI, calendari |
 | `calendar` | OAuth Google, calendario dedicato, diff e sync idempotente | AI, foto |
-| `auth` | Sessioni, ruoli, mapping colonna della tabella → utente | AI, calendari |
+| `auth` | Login con Google, sessioni, ruoli, allowlist inviti, mapping colonna → utente | AI, calendari |
 
 Il vincolo di isolamento che conta: `extract` produce **dati grezzi con confidenza per cella**,
 `codes` traduce codice → orario, `calendar` non sa nulla dell'AI. Si può cambiare provider, o
 inserire una tabella interamente a mano senza AI, senza toccare gli altri moduli.
 
 ### Modello dati (Prisma, bozza)
+
+**Autenticazione: solo Google, nessuna password.** L'app richiede comunque il consenso Google per
+scrivere sul calendario, quindi lo stesso consenso vale da login: un solo flusso, nessuna password da
+custodire o reimpostare. Scope richiesti: `openid`, `email`, `profile`, `calendar.events`.
+
+Il primo utente che entra diventa `REFERENTE`. Dopo di lui l'accesso è chiuso: possono entrare solo le
+email presenti in `Invite`, inserite dalla referente. Senza questa allowlist qualunque account Google
+potrebbe registrarsi.
 
 ```prisma
 model User {
@@ -91,6 +99,13 @@ model GoogleAccount {
   refreshToken  String   // cifrato a riposo con APP_ENCRYPTION_KEY
   calendarId    String?  // calendario dedicato creato dall'app
   status        String   @default("ok")       // ok | needs_reauth
+}
+
+model Invite {
+  email     String   @id                     // allowlist: solo queste email possono registrarsi
+  invitedBy String
+  createdAt DateTime @default(now())
+  usedAt    DateTime?
 }
 
 model ColumnAlias {
@@ -231,7 +246,9 @@ Le foto contengono dati personali di terzi (nomi delle colleghe e loro presenze/
 - Retention configurabile: cancellazione automatica delle immagini dopo N giorni (default 90).
 - Ogni infermiera vede solo la propria colonna. La referente vede tutto, per necessità operativa.
 - `refreshToken` di Google cifrato a riposo con `APP_ENCRYPTION_KEY`.
-- Scope Google richiesto: solo `calendar.events` sul calendario creato dall'app, non l'intero account.
+- Scope Google richiesti: `openid`, `email`, `profile` per il login e `calendar.events` per gli eventi.
+  Nessun accesso a Gmail, Drive o contatti.
+- Nessuna password gestita dall'app: nessun database di hash, nessun reset da implementare.
 
 ## 9. Domande ancora aperte
 
@@ -244,7 +261,8 @@ Impostazioni.
 
 ## 10. Fasi di sviluppo
 
-1. **Fondamenta** — progetto Next.js, Prisma/SQLite, Docker, auth con ruoli, seed dei codici turno.
+1. **Fondamenta** — progetto Next.js, Prisma/SQLite, Docker, login Google con ruoli e inviti, legenda
+   turni con orari configurabili.
 2. **Ingest + estrazione** — upload, normalizzazione, `VisionProvider` Groq, schema Zod, golden test.
 3. **Review** — griglia di conferma, mapping colonne → utenti, gestione codici ignoti.
 4. **Sync Google** — OAuth, calendario dedicato, motore di diff idempotente.
