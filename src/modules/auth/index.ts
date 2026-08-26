@@ -1,5 +1,5 @@
 export type { Role, RegistrationDecision } from './policy'
-export { decideRegistration, normalizeEmail, roleForNewUser } from './policy'
+export { decideRegistration, isValidEmail, normalizeEmail, roleForNewUser } from './policy'
 export {
   DEFAULT_TTL_SECONDS,
   OAUTH_STATE_COOKIE,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decideRegistration, normalizeEmail, roleForNewUser } from '@/modules/auth/policy'
+import { decideRegistration, isValidEmail, normalizeEmail, roleForNewUser } from '@/modules/auth/policy'
 
 describe('normalizeEmail', () => {
   it('mette in minuscolo e rimuove gli spazi', () => {
@@ -15,6 +15,28 @@ describe('roleForNewUser', () => {
   it('gli utenti successivi sono infermiere', () => {
     expect(roleForNewUser(1)).toBe('NURSE')
     expect(roleForNewUser(7)).toBe('NURSE')
+  })
+})
+
+describe('isValidEmail', () => {
+  it('accetta un indirizzo email normale', () => {
+    expect(isValidEmail('anna@example.com')).toBe(true)
+  })
+
+  it('rifiuta una stringa vuota', () => {
+    expect(isValidEmail('')).toBe(false)
+  })
+
+  it('rifiuta un indirizzo senza @', () => {
+    expect(isValidEmail('anna.example.com')).toBe(false)
+  })
+
+  it('rifiuta un indirizzo senza dominio', () => {
+    expect(isValidEmail('anna@')).toBe(false)
+  })
+
+  it('rifiuta un indirizzo con spazi interni', () => {
+    expect(isValidEmail('anna rossi@example.com')).toBe(false)
   })
 })
 

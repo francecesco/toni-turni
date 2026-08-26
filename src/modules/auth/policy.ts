@@ -4,6 +4,11 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase()
 }
 
+/** Validazione minima ma sufficiente: niente spazi, un @, un dominio con un punto. */
+export function isValidEmail(email: string): boolean {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)
+}
+
 export function roleForNewUser(existingUsers: number): Role {
   return existingUsers === 0 ? 'REFERENTE' : 'NURSE'
 }
