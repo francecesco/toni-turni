@@ -2,9 +2,9 @@ import type { Point } from '@/lib/homography'
 import { GridNotFoundError, type TableQuad } from './grid-types'
 
 /**
- * Il riquadro trovato deve occupare almeno questa frazione dell area dell
- * immagine. Le due foto di calibrazione occupano il 53-56%; un valore molto
- * piu piccolo indica quasi certamente un rilevamento sbagliato (rumore di
+ * Il riquadro trovato deve occupare almeno questa frazione dell'area dell'
+ * immagine. Le due foto di calibrazione occupano il 53-70%; un valore molto
+ * più piccolo indica quasi certamente un rilevamento sbagliato (rumore di
  * sfondo, non la tabella).
  */
 const MIN_AREA_FRACTION = 0.15
@@ -14,12 +14,19 @@ const MIN_ASPECT = 0.15
 const MAX_ASPECT = 6
 
 /**
- * Scarto massimo, in gradi, fra l orientamento del lato superiore e quello
- * del lato inferiore (e fra sinistro e destro). La deriva prospettica reale
- * misurata sulle foto di calibrazione e di 1-2 gradi: una tabella stampata
- * non puo avere lati che divergono molto di piu.
+ * Scarto massimo, in gradi, fra l'orientamento del lato superiore e quello del
+ * lato inferiore (e fra sinistro e destro). Sui riquadri realmente rilevati la
+ * divergenza misurata è 3,8° fra superiore e inferiore (settembre) e 3,4° fra
+ * sinistro e destro (agosto): 8° lascia un margine di poco più del doppio sul
+ * caso peggiore osservato. Più stretto non si può senza rischiare di rifiutare
+ * una foto buona scattata un po' più di sbieco.
+ *
+ * Attenzione a cosa questo controllo *non* fa: un riquadro sbagliato di una
+ * riga intera ha lati che divergono di ~2°, quindi passa. Contro quell'errore
+ * la difesa è l'interpolazione dei lati sui filetti veri (`fitEdge` in
+ * `grid-lines`), non questa soglia.
  */
-const MAX_EDGE_ANGLE_DIFF_DEG = 25
+const MAX_EDGE_ANGLE_DIFF_DEG = 8
 
 function shoelaceArea(quad: TableQuad): number {
   const pts = [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]
@@ -43,18 +50,22 @@ function angleDiffDeg(a1: number, a2: number): number {
 }
 
 /**
- * Verifica che il quadrilatero trovato sia plausibile come tabella stampata,
- * prima di restituirlo. L omografia (in @/lib/homography) rifiuta solo punti
- * esattamente allineati con una soglia assoluta: quattro angoli quasi
- * allineati - il modo in cui sbaglia un rilevamento imperfetto - passerebbero
- * quella soglia e produrrebbero un raddrizzamento silenziosamente storto.
- * Qui si controllano area, proporzioni e parallelismo dei lati.
+ * Verifica che il quadrilatero sia plausibile come tabella stampata, prima di
+ * usarlo. L'omografia (in `@/lib/homography`) rifiuta solo punti esattamente
+ * allineati con una soglia assoluta: quattro angoli quasi allineati — il modo in
+ * cui sbaglia un rilevamento imperfetto — passerebbero quella soglia e
+ * produrrebbero un raddrizzamento silenziosamente storto. Qui si controllano
+ * area, proporzioni e parallelismo dei lati.
+ *
+ * È pubblica di proposito: qualunque strada porti a un quadrilatero — angoli
+ * indicati a mano dall'utente in fase di conferma, un riquadro ricalcolato —
+ * deve passare da qui prima di arrivare al raddrizzamento.
  */
 export function validateQuad(quad: TableQuad, imageWidth: number, imageHeight: number): void {
   const area = shoelaceArea(quad)
   const areaFraction = area / (imageWidth * imageHeight)
   if (areaFraction < MIN_AREA_FRACTION) {
-    throw new GridNotFoundError('Il riquadro trovato e troppo piccolo rispetto alla foto')
+    throw new GridNotFoundError('Il riquadro trovato è troppo piccolo rispetto alla foto')
   }
 
   const topWidth = quad.topRight.x - quad.topLeft.x
@@ -64,7 +75,7 @@ export function validateQuad(quad: TableQuad, imageWidth: number, imageHeight: n
   const avgWidth = (topWidth + bottomWidth) / 2
   const avgHeight = (leftHeight + rightHeight) / 2
   if (avgWidth <= 0 || avgHeight <= 0) {
-    throw new GridNotFoundError('Il quadrilatero trovato e degenere')
+    throw new GridNotFoundError('Il quadrilatero trovato è degenere')
   }
   const aspect = avgWidth / avgHeight
   if (aspect < MIN_ASPECT || aspect > MAX_ASPECT) {

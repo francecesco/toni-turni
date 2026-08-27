@@ -1,32 +1,73 @@
-import { GridNotFoundError, type RgbImage, type Span } from './grid-types'
-
-// --- rilevamento dei filetti orizzontali (righe della tabella) ---
-
-/** Raggio della finestra di massimo locale, come frazione dell altezza. */
-const ROW_RADIUS_FRAC = 0.02
-/** Un pixel conta come "scuro" se piu scuro del massimo locale di almeno questo. */
-const ROW_MIN_DEPTH = 6
-/** Tolleranza (basso/alto) sul passo fra righe consecutive per considerarle parte della stessa griglia. */
-const ROW_ALIGN_TOL_LOW = 0.5
-const ROW_ALIGN_TOL_HIGH = 2.2
-/** Sotto questo numero di filetti allineati, non ci si fida che sia una tabella. */
-const MIN_ALIGNED_LINES = 15
-
-// --- rilevamento dei filetti verticali (colonne della tabella) ---
-
-const COL_RADIUS_FRAC = 0.012
-const COL_MIN_DEPTH = 6
-/** Distanza minima fra due filetti verticali contigui, come frazione della larghezza pagina. */
-const COL_SUPPRESS_FRAC = 0.05
-const MIN_COLUMN_BOUNDARIES = 3
+import type { Point } from '@/lib/homography'
+import {
+  fitComb,
+  fitLine,
+  findBorderRule,
+  findValleys,
+  lineAt,
+  median,
+  sideMax,
+  traceRules,
+  trackBoundaries,
+  type Comb,
+  type Dip,
+  type Line,
+} from './grid-numeric'
+import { GridNotFoundError, type RgbImage } from './grid-types'
 
 /**
- * Ampiezza della striscia laterale usata per stimare la deriva prospettica
- * (angoli non allineati su un rettangolo), come frazione della larghezza
- * della tabella.
+ * Il rilevamento dei filetti della griglia sull'immagine: profili di contrasto
+ * locale, sequenze di filetti dentro una striscia, interpolazione dei quattro
+ * lati della tabella.
+ *
+ * Le distanze di ricerca derivano dal **passo misurato** fra filetti
+ * consecutivi, non dalle dimensioni della foto. È la differenza fra un
+ * rilevatore che funziona su questo reparto e uno che funziona su queste due
+ * foto: chi fotografa il foglio da più lontano dimezza il passo in pixel senza
+ * cambiare niente della tabella. Le sole grandezze in pixel sono quelle di un
+ * filetto stampato — il suo spessore e il suo contrasto sulla carta — e sono
+ * proprietà del foglio, non dell'inquadratura.
  */
-const TRAPEZOID_STRIP_FRAC = 0.1
-const MIN_STRIP_WIDTH = 20
+
+/** Un filetto stampato è più scuro della carta accanto almeno di questo (su 255). */
+const MIN_CONTRAST = 12
+/**
+ * Raggi, in pixel, con cui si misura il contrasto di un pixel rispetto ai suoi
+ * vicini *attraverso* il filetto. Non sono una taratura dell'inquadratura: un
+ * filetto stampato è spesso pochi pixel, e questi tre valori coprono le scale a
+ * cui una foto leggibile lo può rendere. Si tiene la scala che spiega meglio il
+ * profilo, quindi non c'è un valore giusto da indovinare.
+ */
+const CONTRAST_RADII = [4, 8, 16]
+/**
+ * Un filetto attraversa la striscia: si accetta come filetto solo una posizione
+ * in cui almeno metà dei pixel della striscia è localmente scura. È ciò che
+ * distingue un filetto dal testo dentro le celle, che è scuro ma non attraversa
+ * niente — e il testo è la ragione per cui una striscia stretta, che è l'unico
+ * modo di non sfocare la prospettiva, prima non funzionava.
+ */
+const RULE_PRESENCE = 50
+/** Passo minimo credibile fra due filetti: sotto, la tabella sarebbe illeggibile comunque. */
+const MIN_STEP = 6
+/** Sotto questo numero di filetti allineati, non ci si fida che sia una tabella (un mese ha ≥28 righe). */
+const MIN_ALIGNED_LINES = 15
+/** Sotto questo numero di confini di colonna, non c'è una tabella. */
+const MIN_COLUMN_BOUNDARIES = 3
+
+/** Larghezza massima di un filetto, in frazione del passo misurato: più larga è un'ombra o un bordo. */
+const RULE_WIDTH_FRAC = 0.5
+
+/** Quante strisce si usano per interpolare ciascun lato del riquadro. */
+const STRIP_COUNT = 5
+/** Ampiezza di una striscia, in frazione del lato della tabella. */
+const STRIP_FRAC = 0.08
+const MIN_STRIP_SIZE = 12
+/** Scarto massimo di un angolo dal lato interpolato, in frazione del passo. */
+const EDGE_TOL_FRAC = 0.35
+/** Sotto questo numero di strisce concordi, il lato non è affidabile. */
+const MIN_EDGE_POINTS = 3
+/** Profondità minima del filetto di bordo, in frazione della profondità mediana dei filetti. */
+const BORDER_DEPTH_FRAC = 0.5
 
 export function toGreyscale(rgb: RgbImage): Float64Array {
   const { data, width, height, channels } = rgb
@@ -38,334 +79,406 @@ export function toGreyscale(rgb: RgbImage): Float64Array {
   return grey
 }
 
-/** Massimo locale su una finestra [i-r, i+r], calcolato in O(n) con una deque monotona. */
-function rollingMax(values: Float64Array, radius: number): Float64Array {
-  const n = values.length
-  const out = new Float64Array(n)
-  const deque: number[] = []
-  for (let i = 0; i < n; i += 1) {
-    while (deque.length && deque[0] < i - radius) deque.shift()
-    while (deque.length && values[deque[deque.length - 1]] <= values[i]) deque.pop()
-    deque.push(i)
-    const center = i - radius
-    if (center >= 0) out[center] = values[deque[0]]
-  }
-  for (let i = n; i < n + radius; i += 1) {
-    while (deque.length && deque[0] < i - radius) deque.shift()
-    const center = i - radius
-    if (center >= 0 && center < n) out[center] = values[deque[0]]
-  }
-  return out
+/** Il rettangolo di immagine su cui si cercano i filetti. */
+export interface Box {
+  x0: number
+  x1: number
+  y0: number
+  y1: number
 }
 
-/** Luminosita media per riga (o colonna), nel rettangolo [x0,x1) x [y0,y1). */
-function meanProfile(
+/**
+ * Profilo di "filettosità" lungo un asse: per ogni posizione, 100 meno la
+ * percentuale di pixel della striscia che sono localmente più scuri dei loro
+ * vicini attraverso il filetto. Un filetto stampato tende a 0, la carta a 100,
+ * il testo dentro le celle resta alto perché occupa solo una parte della
+ * striscia. È un profilo di contrasto locale, quindi non lo disturbano né
+ * l'illuminazione non uniforme né le evidenziature colorate.
+ */
+export function ruleProfile(
   grey: Float64Array,
   width: number,
   axis: 'row' | 'col',
-  x0: number,
-  x1: number,
-  y0: number,
-  y1: number,
+  box: Box,
+  radius: number,
+  contrast: number,
 ): number[] {
-  const profile: number[] = []
-  if (axis === 'row') {
-    for (let y = y0; y < y1; y += 1) {
-      let sum = 0
-      for (let x = x0; x < x1; x += 1) sum += grey[y * width + x]
-      profile.push(sum / (x1 - x0))
+  const along = axis === 'row' ? box.y1 - box.y0 : box.x1 - box.x0
+  const across = axis === 'row' ? box.x1 - box.x0 : box.y1 - box.y0
+  const dark = new Float64Array(along)
+  const line = new Float64Array(along)
+
+  for (let j = 0; j < across; j += 1) {
+    for (let i = 0; i < along; i += 1) {
+      const x = axis === 'row' ? box.x0 + j : box.x0 + i
+      const y = axis === 'row' ? box.y0 + i : box.y0 + j
+      line[i] = grey[y * width + x]
     }
-  } else {
-    for (let x = x0; x < x1; x += 1) {
-      let sum = 0
-      for (let y = y0; y < y1; y += 1) sum += grey[y * width + x]
-      profile.push(sum / (y1 - y0))
+    const before = sideMax(line, radius, -1)
+    const after = sideMax(line, radius, 1)
+    for (let i = 0; i < along; i += 1) {
+      if (Math.min(before[i], after[i]) - line[i] >= contrast) dark[i] += 1
     }
   }
+
+  const profile: number[] = []
+  for (let i = 0; i < along; i += 1) profile.push(100 * (1 - dark[i] / across))
   return profile
 }
 
-interface Dip {
-  index: number
-  depth: number
+/** La sequenza di filetti trovata in una striscia, con il passo misurato. */
+export interface RuleSequence {
+  /** Posizioni dei filetti in coordinate immagine. */
+  lines: number[]
+  /** Passo misurato fra filetti consecutivi. */
+  step: number
+  /** Raggio di contrasto che ha spiegato meglio il profilo: è la scala fisica del filetto. */
+  contrastRadius: number
+  /** Tutte le valli del profilo alla scala giusta: servono a cercare il filetto di bordo. */
+  dips: Dip[]
 }
 
 /**
- * Trova gli avvallamenti del profilo rispetto al proprio massimo locale: un
- * filetto scuro fa scendere la luminosita sotto quella della carta bianca
- * circostante, indipendentemente da quanto sia luminosa la pagina in quel
- * punto (utile con evidenziature colorate o illuminazione non uniforme).
- * Scarta gli avvallamenti troppo vicini ai bordi del profilo, dove il massimo
- * locale e calcolato su una finestra incompleta e quindi inaffidabile.
+ * Trova la sequenza di filetti dentro il rettangolo dato. Due passaggi: il
+ * primo *misura* il passo, provando le scale di contrasto e tenendo quella che
+ * spiega meglio il profilo; il secondo insegue la sequenza filetto per filetto
+ * con una tolleranza derivata da quel passo, così la deriva prospettica non la
+ * spezza. Restituisce null se nel rettangolo non c'è nessuna sequenza periodica
+ * di filetti.
  */
-function findDips(profile: number[], radius: number, minDepth: number): Dip[] {
-  const values = Float64Array.from(profile)
-  const baseline = rollingMax(values, radius)
-  const dips: Dip[] = []
-  let runStart = -1
+export function detectRules(
+  grey: Float64Array,
+  width: number,
+  axis: 'row' | 'col',
+  box: Box,
+): RuleSequence | null {
+  const along = axis === 'row' ? box.y1 - box.y0 : box.x1 - box.x0
+  const offset = axis === 'row' ? box.y0 : box.x0
+  const maxStep = Math.floor(along / (MIN_ALIGNED_LINES - 1))
+  if (maxStep < MIN_STEP) return null
 
-  const closeRun = (end: number): void => {
-    let bestIndex = runStart
-    let bestDepth = -Infinity
-    for (let k = runStart; k < end; k += 1) {
-      const depth = baseline[k] - values[k]
-      if (depth > bestDepth) {
-        bestDepth = depth
-        bestIndex = k
+  // I raggi si provano dal più piccolo: allargare la finestra rende "scuro"
+  // sempre più roba (il massimo locale può solo crescere), quindi un raggio
+  // grande trova più filetti ma anche più falsi. Si tiene il primo raggio che
+  // spiega una sequenza abbastanza lunga, e si sale solo se non ci riesce —
+  // com'è necessario quando i filetti sono spessi perché la foto è grande.
+  let best: { comb: Comb; valleys: Dip[]; radius: number } | null = null
+  for (const radius of CONTRAST_RADII) {
+    if (radius * 2 >= along) break
+    const valleys = findValleys(ruleProfile(grey, width, axis, box, radius, MIN_CONTRAST), RULE_PRESENCE)
+    const comb = fitComb(valleys, MIN_STEP, maxStep)
+    if (!comb) continue
+    if (best === null || comb.score > best.comb.score) best = { comb, valleys, radius }
+    if (comb.lines.length >= MIN_ALIGNED_LINES) break
+  }
+  if (!best) return null
+
+  const { comb, radius } = best
+  const maxWidth = Math.max(3, Math.round(comb.step * RULE_WIDTH_FRAC))
+  const valleys = best.valleys.filter((v) => v.width <= maxWidth)
+  const seeds = comb.lines.filter((l) => valleys.some((v) => v.index === l))
+  const lines = seeds.length >= 2 ? traceRules(valleys, seeds, comb.step) : comb.lines
+
+  return {
+    lines: lines.map((l) => l + offset),
+    step: comb.step,
+    contrastRadius: radius,
+    dips: valleys.map((v) => ({ ...v, index: v.index + offset })),
+  }
+}
+
+/**
+ * Estende la sequenza al filetto di bordo della griglia stampata, se c'è: la
+ * riga del titolo di questa tabella è più alta delle righe dei giorni, quindi il
+ * suo filetto cade fuori passo e la sequenza regolare si ferma prima. Senza
+ * questo passaggio il riquadro taglia a metà l'intestazione.
+ */
+function extendToBorders(sequence: RuleSequence): number[] {
+  const { lines, step, dips } = sequence
+  const depths = dips
+    .filter((d) => lines.includes(d.index))
+    .map((d) => d.depth)
+  const limits = {
+    minDepth: median(depths) * BORDER_DEPTH_FRAC,
+    maxWidth: Math.max(3, Math.round(step * RULE_WIDTH_FRAC)),
+  }
+
+  const first = findBorderRule(dips, lines[0], -1, step, limits)
+  const last = findBorderRule(dips, lines[lines.length - 1], +1, step, limits)
+  return [...(first === null ? [] : [first]), ...lines, ...(last === null ? [] : [last])]
+}
+
+/** I centri delle strisce con cui si campiona un lato della tabella. */
+function stripCentres(from: number, to: number): number[] {
+  const size = to - from
+  return Array.from({ length: STRIP_COUNT }, (_, i) => from + (size * (i + 0.5)) / STRIP_COUNT)
+}
+
+function stripHalfSize(from: number, to: number): number {
+  return Math.max(MIN_STRIP_SIZE, Math.round(((to - from) * STRIP_FRAC) / 2))
+}
+
+/**
+ * Interpola il lato del riquadro passante per gli estremi misurati in ciascuna
+ * striscia, scartando le strisce che non ci cadono sopra. È il controllo che
+ * distingue un riquadro giusto da uno sbagliato di una riga: se in una striscia
+ * l'ultimo filetto trovato è quello *penultimo* delle altre, il suo scarto dal
+ * lato interpolato vale un passo intero e la striscia viene esclusa. Se le
+ * strisce concordi sono meno di tre, il rilevamento si dichiara incapace invece
+ * di restituire un lato inventato.
+ */
+export function fitEdge(
+  points: readonly { x: number; y: number }[],
+  step: number,
+  cosa: string,
+): Line {
+  const tol = Math.max(2, step * EDGE_TOL_FRAC)
+  const work = [...points]
+
+  while (work.length > MIN_EDGE_POINTS) {
+    const line = fitLine(work)
+    let worst = -1
+    let worstResidual = 0
+    for (let i = 0; i < work.length; i += 1) {
+      const residual = Math.abs(work[i].y - lineAt(line, work[i].x))
+      if (residual > worstResidual) {
+        worstResidual = residual
+        worst = i
       }
     }
-    dips.push({ index: bestIndex, depth: bestDepth })
+    if (worstResidual <= tol) return line
+    work.splice(worst, 1)
   }
 
-  for (let i = 0; i < values.length; i += 1) {
-    const isDark = baseline[i] - values[i] >= minDepth
-    if (isDark && runStart === -1) runStart = i
-    if (!isDark && runStart !== -1) {
-      closeRun(i)
-      runStart = -1
+  if (work.length < MIN_EDGE_POINTS) {
+    throw new GridNotFoundError(`Troppe strisce discordi per interpolare ${cosa} del riquadro`)
+  }
+  const line = fitLine(work)
+  for (const point of work) {
+    if (Math.abs(point.y - lineAt(line, point.x)) > tol) {
+      throw new GridNotFoundError(`I filetti non definiscono ${cosa} del riquadro in modo coerente`)
     }
   }
-  if (runStart !== -1) closeRun(values.length)
-
-  return dips.filter((d) => d.index >= radius && d.index < values.length - radius)
+  return line
 }
 
-/** Tiene solo il piu profondo fra gli avvallamenti a meno di minDist l uno dall altro. */
-function suppressNearby(dips: Dip[], minDist: number): Dip[] {
-  const sorted = [...dips].sort((a, b) => b.depth - a.depth)
-  const kept: Dip[] = []
-  for (const dip of sorted) {
-    if (kept.every((k) => Math.abs(k.index - dip.index) >= minDist)) kept.push(dip)
-  }
-  return kept.sort((a, b) => a.index - b.index)
-}
-
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b)
-  const mid = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+/** Innesco del rilevamento: il passo della griglia e dove sta la tabella, all'incirca. */
+export interface RowBootstrap {
+  step: number
+  contrastRadius: number
+  span: { start: number; end: number }
 }
 
 /**
- * Tiene solo i punti la cui distanza da almeno un vicino e compatibile con il
- * passo mediano della sequenza: individua cosi la porzione realmente regolare
- * di una lista di posizioni (i filetti della tabella), scartando le righe di
- * titolo o di intestazione che cadono fuori passo.
+ * Primo passaggio: misura il passo della griglia e l'estensione verticale
+ * approssimativa della tabella su una striscia centrale della pagina. Si usa una
+ * striscia stretta e non tutta la larghezza perché la deriva prospettica sfoca i
+ * filetti: sulla foto di settembre l'ultimo filetto scende di 40 px da un capo
+ * all'altro della tabella, più di un passo di riga intero.
  */
-function keepRegularlySpaced(points: number[], tolLow: number, tolHigh: number): number[] {
-  if (points.length < 3) return points
-  const gaps: number[] = []
-  for (let i = 1; i < points.length; i += 1) gaps.push(points[i] - points[i - 1])
-  const step = median(gaps)
-  const lo = step * tolLow
-  const hi = step * tolHigh
+export function bootstrapRows(
+  grey: Float64Array,
+  width: number,
+  x: { start: number; end: number },
+  y: { start: number; end: number },
+): RowBootstrap {
+  const size = x.end - x.start
+  let best: RuleSequence | null = null
 
-  const kept: number[] = []
-  for (let i = 0; i < points.length; i += 1) {
-    const prevOk = i > 0 && gaps[i - 1] >= lo && gaps[i - 1] <= hi
-    const nextOk = i < gaps.length && gaps[i] >= lo && gaps[i] <= hi
-    if (prevOk || nextOk) kept.push(points[i])
+  // Si provano tre strisce: la tabella non è necessariamente al centro del
+  // fotogramma, e una striscia che cade fuori dalla tabella non troverebbe
+  // niente. Si tiene quella con più filetti.
+  for (const centre of [0.25, 0.5, 0.75]) {
+    const x0 = Math.round(x.start + size * (centre - 0.1))
+    const x1 = Math.round(x.start + size * (centre + 0.1))
+    const sequence = detectRules(grey, width, 'row', { x0, x1, y0: y.start, y1: y.end })
+    if (sequence && (best === null || sequence.lines.length > best.lines.length)) best = sequence
   }
-  return kept
+
+  if (!best || best.lines.length < MIN_ALIGNED_LINES) {
+    throw new GridNotFoundError('Nessuna sequenza regolare di filetti orizzontali riconoscibile')
+  }
+  return {
+    step: best.step,
+    contrastRadius: best.contrastRadius,
+    span: { start: best.lines[0], end: best.lines[best.lines.length - 1] },
+  }
 }
 
 /**
- * Cerca il filetto piu marcato in un intorno di approxY, senza pretendere di
- * ritrovare un intera sequenza regolare. Restituisce null se non c e un
- * avvallamento sufficientemente netto: utile per capire se oltre l ultima
- * riga trovata ce ne sia davvero un altra, o se la tabella finisce li.
+ * Estensione orizzontale approssimativa della tabella, misurata su una fascia
+ * centrale della sua altezza. Come per le righe, la fascia è stretta perché la
+ * deriva prospettica sposta un filetto verticale di una ventina di pixel da
+ * cima a fondo della tabella: su tutta l'altezza il filetto si sfoca e non
+ * supera più la soglia di presenza.
  */
-function findLineNear(
+export function bootstrapColumns(
   grey: Float64Array,
   width: number,
-  x0: number,
-  x1: number,
-  approxY: number,
-  searchRadius: number,
-  y0: number,
-  y1: number,
-): number | null {
-  const ay0 = Math.max(y0, Math.round(approxY - searchRadius))
-  const ay1 = Math.min(y1, Math.round(approxY + searchRadius))
-  if (ay1 - ay0 < 2 || x1 - x0 < 2) return null
-
-  const profile = meanProfile(grey, width, 'row', x0, x1, ay0, ay1)
-  let bestIndex = -1
-  let bestValue = Infinity
-  let maxValue = -Infinity
-  for (let i = 0; i < profile.length; i += 1) {
-    if (profile[i] < bestValue) {
-      bestValue = profile[i]
-      bestIndex = i
-    }
-    if (profile[i] > maxValue) maxValue = profile[i]
-  }
-  if (bestIndex === -1 || maxValue - bestValue < ROW_MIN_DEPTH) return null
-  return ay0 + bestIndex
+  x: { start: number; end: number },
+  y: { start: number; end: number },
+  rowStep: number,
+  contrastRadius: number,
+): { start: number; end: number } {
+  const size = y.end - y.start
+  const y0 = Math.round(y.start + size * 0.4)
+  const y1 = Math.round(y.start + size * 0.6)
+  const boundaries = detectColumnBoundaries(grey, width, x, y0, y1, rowStep, contrastRadius)
+  return { start: boundaries[0], end: boundaries[boundaries.length - 1] }
 }
 
-/** Righe della tabella nella fascia [x0,x1) della pagina: prima e ultima riga allineata alla griglia. */
-export function detectRowSpan(
+/** I filetti orizzontali della tabella, misurati in più strisce verticali. */
+export interface HorizontalEdges {
+  top: Line
+  bottom: Line
+  /** Passo di riga misurato: è la scala fisica della griglia. */
+  step: number
+}
+
+/**
+ * Individua i lati superiore e inferiore della tabella. In ciascuna striscia
+ * verticale si cerca la sequenza completa di filetti orizzontali e si prendono
+ * il primo e l'ultimo: i due lati vengono poi interpolati su quei punti, quindi
+ * sono *paralleli ai filetti veri* e non a una loro media. Con un lato inferiore
+ * non parallelo ai filetti, il raddrizzamento non raddrizza la tabella:
+ * raddrizza il quadrilatero, e l'ultima riga esce dal bordo.
+ */
+export function detectHorizontalEdges(
   grey: Float64Array,
   width: number,
-  height: number,
-  x0: number,
-  x1: number,
-  y0: number,
-  y1: number,
-): Span {
-  const radius = Math.max(1, Math.round(height * ROW_RADIUS_FRAC))
-  const profile = meanProfile(grey, width, 'row', x0, x1, y0, y1)
-  const dips = suppressNearby(findDips(profile, radius, ROW_MIN_DEPTH), radius)
-  const aligned = keepRegularlySpaced(
-    dips.map((d) => d.index + y0),
-    ROW_ALIGN_TOL_LOW,
-    ROW_ALIGN_TOL_HIGH,
-  )
-  if (aligned.length < MIN_ALIGNED_LINES) {
+  x: { start: number; end: number },
+  y: { start: number; end: number },
+): HorizontalEdges {
+  const half = stripHalfSize(x.start, x.end)
+  const firsts: { x: number; y: number }[] = []
+  const lasts: { x: number; y: number }[] = []
+  const steps: number[] = []
+
+  for (const centre of stripCentres(x.start, x.end)) {
+    const x0 = Math.max(x.start, Math.round(centre - half))
+    const x1 = Math.min(x.end, Math.round(centre + half))
+    if (x1 - x0 < 2) continue
+    const sequence = detectRules(grey, width, 'row', { x0, x1, y0: y.start, y1: y.end })
+    if (!sequence || sequence.lines.length < MIN_ALIGNED_LINES) continue
+
+    const lines = extendToBorders(sequence)
+    firsts.push({ x: centre, y: lines[0] })
+    lasts.push({ x: centre, y: lines[lines.length - 1] })
+    steps.push(sequence.step)
+  }
+
+  if (steps.length < MIN_EDGE_POINTS) {
     throw new GridNotFoundError('Nessuna sequenza regolare di filetti orizzontali riconoscibile')
   }
 
-  // L ultima riga di una tabella (e talvolta la prima) puo restare "fusa" con
-  // la penultima nella ricerca qui sopra, perche lo spazio bianco sotto la
-  // tabella e troppo lontano per far salire la base di riferimento locale
-  // usata per riconoscere l avvallamento. Si verifica quindi se esiste un
-  // altro filetto un passo oltre, con una ricerca mirata piu ad ampio raggio.
-  const gaps: number[] = []
-  for (let i = 1; i < aligned.length; i += 1) gaps.push(aligned[i] - aligned[i - 1])
-  const step = median(gaps)
-  const extendRadius = Math.max(4, Math.round(step * 0.4))
-
-  const beyondStart = findLineNear(grey, width, x0, x1, aligned[0] - step, extendRadius, y0, y1)
-  const beyondEnd = findLineNear(grey, width, x0, x1, aligned[aligned.length - 1] + step, extendRadius, y0, y1)
-
+  const step = median(steps)
   return {
-    start: beyondStart ?? aligned[0],
-    end: beyondEnd ?? aligned[aligned.length - 1],
+    top: fitEdge(firsts, step, 'il lato superiore'),
+    bottom: fitEdge(lasts, step, 'il lato inferiore'),
+    step,
   }
 }
 
 /**
- * Confini di colonna nella fascia di righe [y0,y1): il primo e sempre il bordo
- * sinistro della pagina (si assume che la tabella sia stampata vicino al
- * margine sinistro del foglio), gli altri sono i filetti verticali via via
- * incontrati spostandosi a destra.
+ * Confini di colonna nella fascia di righe [y0,y1): i filetti verticali della
+ * griglia, dal primo all'ultimo. Nessuna decisione su quali colonne portino
+ * turni: chiedere al rilevatore quali colonne sono delle infermiere significa
+ * chiedergli di indovinare una semantica. Le colonne di servizio (aiuto turno,
+ * totali) restano dentro il riquadro e si escludono a livello di banda.
  */
 export function detectColumnBoundaries(
   grey: Float64Array,
   width: number,
-  pageLeft: number,
-  pageRight: number,
+  x: { start: number; end: number },
   y0: number,
   y1: number,
+  rowStep: number,
+  contrastRadius: number,
 ): number[] {
-  const radius = Math.max(1, Math.round(width * COL_RADIUS_FRAC))
-  const suppressDist = Math.max(1, Math.round(width * COL_SUPPRESS_FRAC))
-  const profile = meanProfile(grey, width, 'col', pageLeft, pageRight, y0, y1)
-  const dips = suppressNearby(findDips(profile, radius, COL_MIN_DEPTH), suppressDist)
-  const boundaries = [pageLeft, ...dips.map((d) => d.index + pageLeft)]
+  const box = { x0: x.start, x1: x.end, y0, y1 }
+  const profile = ruleProfile(grey, width, 'col', box, contrastRadius, MIN_CONTRAST)
+  const maxWidth = Math.max(3, Math.round(rowStep * RULE_WIDTH_FRAC))
+  const valleys = findValleys(profile, RULE_PRESENCE, maxWidth)
+
+  // Le prime e le ultime posizioni del profilo non hanno carta da entrambi i
+  // lati, quindi lì `ruleProfile` non può distinguere un filetto da un gradino:
+  // si scartano, altrimenti il bordo del foglio diventerebbe il lato sinistro.
+  const margin = contrastRadius
+  const boundaries = valleys
+    .filter((v) => v.index >= margin && v.index < profile.length - margin)
+    .map((v) => v.index + x.start)
+
   if (boundaries.length < MIN_COLUMN_BOUNDARIES) {
     throw new GridNotFoundError('Nessun confine di colonna riconoscibile nella tabella')
   }
   return boundaries
 }
 
+/** I filetti verticali estremi della tabella, seguiti attraverso più fasce orizzontali. */
+export interface VerticalEdges {
+  left: Line
+  right: Line
+}
+
+/** Tolleranza di aggancio fra fasce contigue, in frazione del passo di riga. */
+const TRACK_TOL_FRAC = 0.5
+/** Frazione minima di fasce in cui un filetto deve comparire per contare come tale. */
+const MIN_TRACK_COVERAGE = 0.6
+
 /**
- * Trova dove finiscono le colonne con davvero dei turni scritti e comincia la
- * fascia di colonne pressoche vuote che spesso segue (aiuto turno, totali):
- * la luminosita media di una colonna piena di scritte e sensibilmente piu
- * bassa di quella delle colonne vuote intorno. Se non si riconosce una
- * transizione netta, la tabella viene presa fino all ultimo confine trovato.
+ * Individua i lati sinistro e destro della tabella. In ciascuna fascia
+ * orizzontale si cercano i filetti verticali, poi si segue ciascun filetto da
+ * una fascia all'altra: il lato sinistro è il filetto più a sinistra fra quelli
+ * che attraversano davvero la tabella.
+ *
+ * Il lato sinistro è quindi un filetto rilevato, non il margine della pagina: in
+ * entrambe le foto di calibrazione il foglio è tagliato dal fotogramma e il
+ * margine vale 0 per caso, quindi usarlo nasconderebbe l'errore invece di
+ * evitarlo. E dev'essere un filetto *inseguito*, non semplicemente il primo
+ * trovato: sulla foto di settembre, nella fascia più in alto, la linea più a
+ * sinistra è l'ombra fra il foglio e quello appoggiato accanto.
  */
-function findContentBoundaryIndex(segmentMeans: number[]): number {
-  const window = 2
-  let bestIndex = segmentMeans.length - 1
-  let bestScore = -Infinity
-  for (let i = 0; i < segmentMeans.length - 1; i += 1) {
-    const before = segmentMeans.slice(Math.max(0, i - window + 1), i + 1)
-    const after = segmentMeans.slice(i + 1, i + 1 + window)
-    const avgBefore = before.reduce((s, v) => s + v, 0) / before.length
-    const avgAfter = after.reduce((s, v) => s + v, 0) / after.length
-    const score = avgAfter - avgBefore
-    if (score > bestScore) {
-      bestScore = score
-      bestIndex = i
+export function detectVerticalEdges(
+  grey: Float64Array,
+  width: number,
+  x: { start: number; end: number },
+  y: { start: number; end: number },
+  rowStep: number,
+  contrastRadius: number,
+): VerticalEdges {
+  const half = stripHalfSize(y.start, y.end)
+  const bands: { at: number; positions: number[] }[] = []
+
+  for (const centre of stripCentres(y.start, y.end)) {
+    const y0 = Math.max(y.start, Math.round(centre - half))
+    const y1 = Math.min(y.end, Math.round(centre + half))
+    if (y1 - y0 < 2) continue
+    try {
+      bands.push({
+        at: centre,
+        positions: detectColumnBoundaries(grey, width, x, y0, y1, rowStep, contrastRadius),
+      })
+    } catch {
+      continue
     }
   }
-  // Una transizione plausibile deve schiarire percettibilmente: altrimenti la
-  // tabella non ha colonne vuote di margine e finisce all ultimo confine.
-  return bestScore > 4 ? bestIndex : segmentMeans.length - 1
-}
 
-export function detectRightEdge(grey: Float64Array, width: number, boundaries: number[], y0: number, y1: number): number {
-  const segmentMeans: number[] = []
-  for (let i = 0; i < boundaries.length - 1; i += 1) {
-    const profile = meanProfile(grey, width, 'col', boundaries[i], boundaries[i + 1], y0, y1)
-    segmentMeans.push(profile.reduce((s, v) => s + v, 0) / profile.length)
+  if (bands.length < MIN_EDGE_POINTS) {
+    throw new GridNotFoundError('Nessun confine di colonna riconoscibile nella tabella')
   }
-  const contentEnd = findContentBoundaryIndex(segmentMeans)
-  // Include una colonna oltre l ultima con contenuto: alcuni moduli usano la
-  // prima colonna dopo i turni per annotazioni del personale di supporto.
-  const rightIndex = Math.min(contentEnd + 2, boundaries.length - 1)
-  return boundaries[rightIndex]
-}
 
-/**
- * Individua con precisione, in una sottile striscia verticale, dove si trova
- * il filetto orizzontale gia noto (approssimativamente) all altezza approxY:
- * serve a catturare la deriva prospettica agli angoli della tabella. A
- * differenza di una nuova ricerca di una sequenza regolare - che vicino ai
- * margini della tabella ha meno colonne su cui mediare ed e piu incerta -
- * qui si cerca solo il punto piu scuro in un intorno del filetto gia trovato
- * sull intera larghezza, un problema molto piu semplice e robusto.
- */
-function locateLineNear(
-  grey: Float64Array,
-  width: number,
-  height: number,
-  xCenter: number,
-  stripWidth: number,
-  approxY: number,
-  searchRadius: number,
-): number {
-  const half = Math.max(1, Math.round(stripWidth / 2))
-  const x0 = Math.max(0, xCenter - half)
-  const x1 = Math.min(width, xCenter + half)
-  return findLineNear(grey, width, x0, x1, approxY, searchRadius, 0, height) ?? approxY
-}
+  const chains = trackBoundaries(bands, rowStep * TRACK_TOL_FRAC)
+  const needed = Math.max(MIN_EDGE_POINTS, Math.ceil(bands.length * MIN_TRACK_COVERAGE))
+  const crossing = chains.filter((c) => c.length >= needed)
+  if (crossing.length < MIN_COLUMN_BOUNDARIES) {
+    throw new GridNotFoundError('Troppi pochi filetti verticali attraversano la tabella')
+  }
 
-/** Le quattro y dei vertici della tabella, con la deriva prospettica catturata agli angoli. */
-export interface QuadCorners {
-  topLeftY: number
-  topRightY: number
-  bottomLeftY: number
-  bottomRightY: number
-}
-
-/**
- * Individua le quattro y dei vertici della tabella (le x sono gia note: i
- * bordi sinistro e destro trovati in precedenza), cercando il filetto
- * orizzontale localmente in una striscia stretta vicino a ciascun angolo:
- * cosi facendo il quadrilatero cattura la deriva prospettica invece di
- * assumere righe perfettamente orizzontali.
- */
-export function detectQuadCorners(
-  grey: Float64Array,
-  width: number,
-  height: number,
-  left: number,
-  right: number,
-  rowSpan: Span,
-): QuadCorners {
-  const stripWidth = Math.max(MIN_STRIP_WIDTH, Math.round((right - left) * TRAPEZOID_STRIP_FRAC))
-  const searchRadius = Math.max(10, Math.round(height * ROW_RADIUS_FRAC))
-  const leftX = left + stripWidth / 2
-  const rightX = right - stripWidth / 2
+  const positionOf = (chain: Point[]): number => median(chain.map((p) => p.y))
+  const sorted = [...crossing].sort((a, b) => positionOf(a) - positionOf(b))
 
   return {
-    topLeftY: locateLineNear(grey, width, height, leftX, stripWidth, rowSpan.start, searchRadius),
-    topRightY: locateLineNear(grey, width, height, rightX, stripWidth, rowSpan.start, searchRadius),
-    bottomLeftY: locateLineNear(grey, width, height, leftX, stripWidth, rowSpan.end, searchRadius),
-    bottomRightY: locateLineNear(grey, width, height, rightX, stripWidth, rowSpan.end, searchRadius),
+    left: fitEdge(sorted[0], rowStep, 'il lato sinistro'),
+    right: fitEdge(sorted[sorted.length - 1], rowStep, 'il lato destro'),
   }
 }
