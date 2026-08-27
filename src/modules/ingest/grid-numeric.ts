@@ -1,4 +1,5 @@
 import type { Point } from '@/lib/homography'
+import { GridNotFoundError } from './grid-types'
 
 /**
  * Le primitive numeriche del rilevamento della griglia, senza immagini né
@@ -42,9 +43,12 @@ const PHASES_PER_STEP = 3
 
 /**
  * Massimo dei valori che stanno **da un solo lato**: su `[i-radius, i-1]` con
- * `direction = -1`, su `[i+1, i+radius]` con `direction = +1`. Dove la finestra
- * esce dal profilo restituisce `-Infinity`, così chi lo usa sa che da quel lato
- * non c'è un riferimento invece di credere a un riferimento inventato.
+ * `direction = -1`, su `[i+1, i+radius]` con `direction = +1`. La finestra viene
+ * troncata dove esce dal profilo, e solo se ne esce del tutto — cioè al primo
+ * campione, dove da quel lato non c'è nessun vicino — restituisce `-Infinity`,
+ * così chi lo usa sa che quel lato non ha un riferimento invece di credere a un
+ * riferimento inventato. Chi ha bisogno di una finestra piena deve scartare i
+ * `radius` campioni agli estremi (lo fa `dropMargin` in `grid-lines`).
  *
  * Guardare i due lati separatamente è ciò che distingue un filetto da un
  * gradino: un filetto stampato ha carta più chiara *da entrambe le parti*, il
@@ -148,6 +152,23 @@ function bestPhases(residues: Int32Array, tol: number): number[] {
   return chosen
 }
 
+/**
+ * Toglie dalle due estremità le posizioni separate dal resto della sequenza da
+ * una posizione vuota. Un buco è credibile **dentro** una sequenza — un filetto
+ * sbiadito, una cella evidenziata — ma alle estremità no: non c'è niente da
+ * scavalcare, e quello che sta oltre il buco appartiene a qualcos'altro. Sulla
+ * foto di agosto quel qualcos'altro è il bordo del foglio con la propria riga
+ * d'ombra, che il profilo a due lati non sa distinguere da un filetto: senza
+ * questa potatura il pettine si allunga fino al bordo del foglio con lo stesso
+ * punteggio del pettine giusto, e vince per numero di filetti.
+ */
+function trimIsolatedEnds(hooked: readonly { k: number; index: number }[]): { k: number; index: number }[] {
+  const work = [...hooked]
+  while (work.length >= 2 && work[1].k - work[0].k > 1) work.shift()
+  while (work.length >= 2 && work[work.length - 1].k - work[work.length - 2].k > 1) work.pop()
+  return work
+}
+
 /** Aggancia i dip alle posizioni del pettine (step, phase); null se la spiegazione è troppo lacunosa. */
 function assignToComb(
   sorted: readonly Dip[],
@@ -155,21 +176,18 @@ function assignToComb(
   phase: number,
   tol: number,
 ): { lines: number[]; score: number } | null {
-  const lines: number[] = []
+  const hooked: { k: number; index: number }[] = []
   let currentK: number | null = null
   let currentBest: Dip | null = null
-  let firstK = 0
-  let lastK = 0
 
   const flush = (): void => {
-    if (currentBest) lines.push(currentBest.index)
+    if (currentBest && currentK !== null) hooked.push({ k: currentK, index: currentBest.index })
   }
 
   for (const dip of sorted) {
     const k = Math.round((dip.index - phase) / step)
     if (Math.abs(dip.index - (phase + k * step)) > tol) continue
     if (currentK === null) {
-      firstK = k
       currentK = k
       currentBest = dip
     } else if (k !== currentK) {
@@ -179,14 +197,14 @@ function assignToComb(
     } else if (dip.depth > currentBest!.depth) {
       currentBest = dip
     }
-    lastK = k
   }
   flush()
 
-  if (lines.length < MIN_COMB_LINES) return null
-  const positions = lastK - firstK + 1
-  if (lines.length < MIN_COMB_FILL * positions) return null
-  return { lines, score: 2 * lines.length - positions }
+  const kept = trimIsolatedEnds(hooked)
+  if (kept.length < MIN_COMB_LINES) return null
+  const positions = kept[kept.length - 1].k - kept[0].k + 1
+  if (kept.length < MIN_COMB_FILL * positions) return null
+  return { lines: kept.map((h) => h.index), score: 2 * kept.length - positions }
 }
 
 /**
@@ -228,13 +246,29 @@ export function fitComb(dips: readonly Dip[], minStep: number, maxStep: number):
 
 /** Tolleranza dell'aggancio durante l'inseguimento, in frazione del passo locale. */
 const TRACE_TOL_FRAC = 0.3
+/**
+ * Tolleranza per l'aggancio *scavalcando* una posizione, in frazione del passo.
+ * È molto più stretta di quella normale perché la spiegazione alternativa — «non
+ * è un filetto di questa tabella» — è molto più probabile: a due passi oltre
+ * l'ultimo filetto, sulla foto di agosto, c'è il bordo del foglio con la sua
+ * riga d'ombra, e con la tolleranza normale veniva agganciato (2,28 passi
+ * invece di 2, cioè 9 px su una tolleranza di 9,6).
+ */
+const TRACE_SKIP_TOL_FRAC = 0.15
 /** Peso del passo appena misurato nell'aggiornamento del passo locale. */
 const TRACE_STEP_MEMORY = 0.6
+/**
+ * Profondità minima di un filetto agganciato, in frazione della profondità
+ * mediana dei semi: un filetto della griglia è marcato come i suoi vicini,
+ * una linea tre volte più pallida è un'ombra o una piega della carta.
+ */
+const TRACE_DEPTH_FRAC = 0.35
 
-function nearestDip(dips: readonly Dip[], target: number, tol: number): Dip | null {
+function nearestDip(dips: readonly Dip[], target: number, tol: number, minDepth: number): Dip | null {
   let best: Dip | null = null
   let bestErr = Infinity
   for (const dip of dips) {
+    if (dip.depth < minDepth) continue
     const err = Math.abs(dip.index - target)
     if (err > tol) continue
     if (err < bestErr) {
@@ -252,43 +286,79 @@ function nearestDip(dips: readonly Dip[], target: number, tol: number): Dip | nu
  * perde i filetti alle estremità, che sono esattamente quelli che servono per
  * gli angoli del riquadro. Se al passo successivo non c'è nulla prova a
  * scavalcare una posizione, così un filetto sbiadito non tronca la sequenza.
+ *
+ * Uno scavalco vale però **solo se dall'altra parte la sequenza continua**: un
+ * buco è qualcosa che sta *dentro* la sequenza, e in coda non c'è niente da
+ * scavalcare. Senza questa condizione la sequenza si chiude su ciò che sta due
+ * passi oltre l'ultimo filetto, e sulla foto di agosto quel qualcosa è il bordo
+ * del foglio con la propria riga d'ombra — che il profilo a due lati non sa
+ * distinguere da un filetto, perché è più scura sia della carta sopra sia della
+ * scrivania sotto (misurato: carta 215, ombra 122, scrivania 142).
  */
 export function traceRules(dips: readonly Dip[], seed: readonly number[], step: number): number[] {
   if (seed.length === 0) return []
   const sorted = [...seed].sort((a, b) => a - b)
   const found = new Set<number>(sorted)
+  const seedDepths = dips.filter((d) => found.has(d.index)).map((d) => d.depth)
+  const minDepth = median(seedDepths) * TRACE_DEPTH_FRAC
 
   for (const direction of [1, -1] as const) {
     let current = direction === 1 ? sorted[sorted.length - 1] : sorted[0]
     let localStep = medianGap(sorted) || step
+    // gli agganci ottenuti scavalcando un buco e non ancora confermati da un
+    // aggancio al passo normale: se la sequenza si ferma qui, escono
+    let daConfermare: number[] = []
     for (;;) {
       const tol = Math.max(1, localStep * TRACE_TOL_FRAC)
-      const next = nearestDip(dips, current + direction * localStep, tol)
+      const next = nearestDip(dips, current + direction * localStep, tol, minDepth)
       if (next) {
         const gap = Math.abs(next.index - current)
         localStep = TRACE_STEP_MEMORY * localStep + (1 - TRACE_STEP_MEMORY) * gap
         current = next.index
         found.add(current)
+        daConfermare = []
         continue
       }
-      // un filetto sbiadito o coperto: si prova la posizione successiva
-      const skipped = nearestDip(dips, current + direction * 2 * localStep, tol)
+      // un filetto sbiadito o coperto: si prova la posizione successiva, ma con
+      // una tolleranza molto più stretta (vedi TRACE_SKIP_TOL_FRAC)
+      const skipTol = Math.max(1, localStep * TRACE_SKIP_TOL_FRAC)
+      const skipped = nearestDip(dips, current + direction * 2 * localStep, skipTol, minDepth)
       if (!skipped) break
       current = skipped.index
       found.add(current)
+      daConfermare.push(current)
     }
+    for (const provvisorio of daConfermare) found.delete(provvisorio)
   }
 
   return [...found].sort((a, b) => a - b)
 }
 
 /**
- * Cerca un ulteriore filetto oltre l'estremità della sequenza, fra mezzo passo
- * e due passi di distanza. La riga di intestazione di una tabella è più alta
- * delle righe dei giorni, quindi il suo filetto cade fuori passo e la sequenza
- * regolare non lo contiene: senza questa ricerca il riquadro taglia a metà
- * l'intestazione. I limiti su profondità e larghezza servono a non prendere per
- * filetto il testo dentro le celle né il bordo del foglio sullo sfondo.
+ * Distanza minima e massima, in passi, a cui si cerca il filetto di bordo oltre
+ * l'estremità della sequenza. Il minimo esclude il testo dentro l'ultima cella;
+ * il massimo dice quanto può essere alta la riga del titolo, che è la ragione
+ * per cui questa ricerca esiste (misurata: 1,0-1,3 righe normali).
+ *
+ * Il massimo deve stare **sotto i due passi**, ed è il punto importante: due
+ * passi oltre l'ultimo filetto c'è la posizione di un filetto *mancante*, e
+ * quella è competenza dell'inseguimento (`traceRules`), che la aggancia solo se
+ * la sequenza continua dall'altra parte. Lasciando arrivare fin lì anche questa
+ * ricerca, il bordo del foglio con la propria riga d'ombra rientrerebbe dalla
+ * porta di servizio: è più scuro della carta e della scrivania, sta esattamente
+ * dove finisce il foglio, e nessun criterio sul profilo lo distingue da un
+ * filetto.
+ */
+const BORDER_NEAR_FRAC = 0.5
+const BORDER_FAR_FRAC = 1.5
+
+/**
+ * Cerca un ulteriore filetto oltre l'estremità della sequenza, fra mezzo passo e
+ * un passo e mezzo di distanza. La riga di intestazione di una tabella è più
+ * alta delle righe dei giorni, quindi il suo filetto cade fuori passo e la
+ * sequenza regolare non lo contiene: senza questa ricerca il riquadro taglia a
+ * metà l'intestazione. I limiti su profondità e larghezza servono a non prendere
+ * per filetto il testo dentro le celle né il bordo del foglio sullo sfondo.
  */
 export function findBorderRule(
   dips: readonly Dip[],
@@ -297,8 +367,8 @@ export function findBorderRule(
   step: number,
   limits: { minDepth: number; maxWidth: number },
 ): number | null {
-  const near = from + direction * step * 0.5
-  const far = from + direction * step * 2
+  const near = from + direction * step * BORDER_NEAR_FRAC
+  const far = from + direction * step * BORDER_FAR_FRAC
   const lo = Math.min(near, far)
   const hi = Math.max(near, far)
 
@@ -395,7 +465,9 @@ export function lineAt(line: Line, t: number): number {
 export function intersect(horizontal: Line, vertical: Line): Point {
   const denom = 1 - horizontal.slope * vertical.slope
   if (Math.abs(denom) < 1e-9) {
-    throw new Error('Lati paralleli: non definiscono un angolo del riquadro')
+    // praticamente irraggiungibile (serve prodotto delle pendenze = 1), ma
+    // `detectTableQuad` promette di fallire solo con GridNotFoundError
+    throw new GridNotFoundError('I lati trovati non si incontrano: non definiscono un angolo del riquadro')
   }
   const x = (vertical.slope * horizontal.intercept + vertical.intercept) / denom
   return { x, y: horizontal.slope * x + horizontal.intercept }

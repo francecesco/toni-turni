@@ -14,12 +14,16 @@ const PAPER_SAT_MAX_THRESHOLD = 0.45
 /** La carta è chiara: almeno questa frazione del punto più luminoso della foto. */
 const PAPER_LIGHT_FRAC = 0.55
 const PAPER_LIGHT_FLOOR = 60
-/** Frazione minima di pixel-carta per considerare una riga/colonna dentro la pagina. */
+/**
+ * Frazione minima di pixel-carta per considerare una riga/colonna dentro la
+ * pagina. È anche, di fatto, il pavimento sulla dimensione del foglio: perché
+ * esistano sia una riga sia una colonna che superano questa densità, il foglio
+ * deve occupare almeno il 30% di ciascun lato della foto. Un controllo separato
+ * di copertura minima sarebbe quindi codice mai eseguito, e non c'è.
+ */
 const PAGE_MIN_DENSITY = 0.3
 /** Passo di sottocampionamento per la maschera carta (per individuare la pagina basta una stima). */
 const PAGE_MASK_STEP = 2
-/** Il foglio deve occupare almeno questa frazione di ciascun lato della foto. */
-const MIN_PAGE_COVERAGE = 0.2
 /** Densità minima di pixel-carta dentro il riquadro trovato, perché sia davvero un foglio. */
 const MIN_PAGE_FILL = 0.5
 /** Bin dell'istogramma di saturazione usato da Otsu. */
@@ -134,12 +138,6 @@ export function findPageBBox(rgb: RgbImage): { x: Span; y: Span } {
     throw new GridNotFoundError('Nessuna pagina riconoscibile nella foto')
   }
 
-  const coverageX = (xCells.end - xCells.start + 1) / cols
-  const coverageY = (yCells.end - yCells.start + 1) / rows
-  if (coverageX < MIN_PAGE_COVERAGE || coverageY < MIN_PAGE_COVERAGE) {
-    throw new GridNotFoundError('Il foglio riconosciuto è troppo piccolo per contenere una tabella turni')
-  }
-
   let paper = 0
   let cells = 0
   for (let ry = yCells.start; ry <= yCells.end; ry += 1) {
@@ -149,7 +147,7 @@ export function findPageBBox(rgb: RgbImage): { x: Span; y: Span } {
     }
   }
   if (paper / cells < MIN_PAGE_FILL) {
-    throw new GridNotFoundError('Nessuna pagina riconoscibile nella foto')
+    throw new GridNotFoundError('Nessun foglio unico riconoscibile nella foto: la carta trovata è sparsa')
   }
 
   return {

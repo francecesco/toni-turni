@@ -15,7 +15,8 @@
  * visibile vale un passo di riga, cioè una trentina di pixel, e un tratto spesso
  * lo coprirebbe. Ai lati sono aggiunti dei trattini al 25/50/75%, per giudicare
  * se il lato è *parallelo* ai filetti stampati e non solo se ci passa vicino agli
- * angoli.
+ * angoli. I confini di colonna rilevati sono tratteggiati in ciano: sono
+ * l'informazione su cui il Task 3 taglierà le bande.
  *
  * Uso: npx tsx scripts/visualize-quad.ts <cartella-output> [foto...]
  * Le foto sono nomi di file dentro `fixtures/`; senza argomenti usa le due foto
@@ -24,9 +25,10 @@
  */
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import sharp from 'sharp'
 import { detectTableQuad } from '../src/modules/ingest/grid'
-import type { Point } from '../src/lib/homography'
+import { applyHomography, invertHomography, solveHomography, type Point } from '../src/lib/homography'
 
 const DEFAULT_FIXTURES = ['roster-2026-08-3piano.jpeg', 'roster-2026-09-3piano.jpeg']
 
@@ -43,12 +45,36 @@ function tick(a: Point, b: Point, t: number, length: number): string {
 }
 
 async function run(name: string, outDir: string): Promise<void> {
-  const buffer = readFileSync(join(process.cwd(), 'fixtures', name))
+  const buffer = readFileSync(join(REPO_ROOT, 'fixtures', name))
   const quad = await detectTableQuad(buffer)
   console.log(name, JSON.stringify(quad))
 
   const meta = await sharp(buffer).metadata()
   const corners = [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]
+
+  // I confini di colonna rilevati, riportati nella foto: sono in coordinate del
+  // riquadro raddrizzato, quindi si tornano indietro con l'omografia inversa.
+  // Servono a giudicare a occhio se il Task 3 può tagliare le bande su questi
+  // confini invece che su frazioni fisse del riquadro.
+  const dalRiquadro = invertHomography(
+    solveHomography(
+      [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft],
+      [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 1, y: 1 },
+        { x: 0, y: 1 },
+      ],
+    ),
+  )
+  const colonne = quad.columns
+    .map((u) => {
+      const alto = applyHomography(dalRiquadro, { x: u, y: 0 })
+      const basso = applyHomography(dalRiquadro, { x: u, y: 1 })
+      return `<line x1="${alto.x}" y1="${alto.y}" x2="${basso.x}" y2="${basso.y}" stroke="cyan" stroke-width="1" stroke-dasharray="6 6" />`
+    })
+    .join('\n    ')
+
   const ticks = [
     [quad.topLeft, quad.topRight],
     [quad.bottomLeft, quad.bottomRight],
@@ -60,6 +86,7 @@ async function run(name: string, outDir: string): Promise<void> {
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${meta.width}" height="${meta.height}" viewBox="0 0 ${meta.width} ${meta.height}">
     <polygon points="${corners.map((p) => `${p.x},${p.y}`).join(' ')}" fill="none" stroke="red" stroke-width="1" />
+    ${colonne}
     ${ticks}
     <circle cx="${quad.topLeft.x}" cy="${quad.topLeft.y}" r="3" fill="lime" />
     <circle cx="${quad.topRight.x}" cy="${quad.topRight.y}" r="3" fill="blue" />
@@ -77,13 +104,21 @@ async function run(name: string, outDir: string): Promise<void> {
   console.log('scritto', outPath, meta.width, meta.height)
 }
 
+/**
+ * La radice del repository, dedotta dalla posizione di questo file. Non è
+ * `process.cwd()`: la cartella di lavoro dipende da dove si lancia il comando,
+ * e con `cd src && npx tsx ../scripts/visualize-quad.ts ..` la radice del
+ * repository sembrerebbe stare fuori dal repository.
+ */
+export const REPO_ROOT = join(import.meta.dirname, '..')
+
 /** La cartella di output deve esistere e stare fuori dal repository. */
-function checkOutDir(outDir: string): string {
+export function checkOutDir(outDir: string, root: string = REPO_ROOT): string {
   const target = resolve(outDir)
   if (!existsSync(target) || !statSync(target).isDirectory()) {
     throw new Error(`la cartella di output non esiste: ${target}`)
   }
-  const inside = relative(process.cwd(), target)
+  const inside = relative(root, target)
   if (!inside.startsWith('..')) {
     throw new Error(
       `la cartella di output sta dentro il repository (${inside || '.'}): scegline una fuori, ` +
@@ -103,7 +138,11 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error)
-  process.exit(1)
-})
+// solo quando lo script viene eseguito da riga di comando: importarlo per
+// provare `checkOutDir` non deve far partire il rilevamento su due foto
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : error)
+    process.exit(1)
+  })
+}

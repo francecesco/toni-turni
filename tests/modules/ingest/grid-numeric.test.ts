@@ -12,6 +12,7 @@ import {
   traceRules,
   trackBoundaries,
 } from '@/modules/ingest/grid-numeric'
+import { GridNotFoundError } from '@/modules/ingest/grid-types'
 
 /**
  * Le primitive numeriche del rilevamento della griglia. Sono il posto dove
@@ -35,11 +36,19 @@ describe('sideMax', () => {
     expect(avanti.slice(2, 7)).toEqual([0, 100, 100, 0, 0])
   })
 
-  it('dichiara -Infinity dove la finestra esce dal profilo, invece di inventare un riferimento', () => {
+  it('dichiara -Infinity solo dove da quel lato non c’è nessun vicino', () => {
     const valori = Float64Array.from([7, 8, 9])
 
     expect(sideMax(valori, 2, -1)[0]).toBe(-Infinity)
     expect(sideMax(valori, 2, 1)[2]).toBe(-Infinity)
+  })
+
+  it('altrove tronca la finestra invece di dichiararsi cieco: è un massimo parziale', () => {
+    const valori = Float64Array.from([50, 0, 0, 0, 0, 0])
+
+    // in posizione 1 la finestra [i-3, i-1] contiene solo l'indice 0
+    expect(sideMax(valori, 3, -1)[1]).toBe(50)
+    expect(sideMax(valori, 3, -1)[2]).toBe(50)
   })
 
   it('non include il valore nella propria finestra', () => {
@@ -106,6 +115,10 @@ describe('median e medianGap', () => {
 
   it('medianGap misura il passo fra punti consecutivi', () => {
     expect(medianGap([10, 40, 70, 101, 132])).toBe(30.5)
+  })
+
+  it('median di un elenco vuoto è 0, non NaN', () => {
+    expect(median([])).toBe(0)
   })
 
   it('medianGap è 0 con meno di due punti', () => {
@@ -199,6 +212,59 @@ describe('traceRules', () => {
     expect(tracciati[0]).toBe(posizioni[0])
   })
 
+  it('oltre l’ultimo filetto non scavalca su una linea che sta due passi più in là', () => {
+    // è il bordo del foglio sulla scrivania, con la sua riga d'ombra: scuro con
+    // carta chiara sopra, quindi indistinguibile da un filetto se non per il
+    // fatto che non sta nel passo della griglia. Su agosto sta 2,28 passi oltre
+    // l'ultimo filetto e veniva agganciato dal salto di una posizione, che
+    // esiste per sopravvivere a un filetto sbiadito.
+    const posizioni = Array.from({ length: 20 }, (_, i) => 100 + i * 32)
+    const bordoFoglio = posizioni[posizioni.length - 1] + 73 // 2,28 passi: i numeri di agosto
+
+    const tracciati = traceRules([...posizioni, bordoFoglio].map((p) => dip(p)), posizioni.slice(4, 12), 32)
+
+    expect(tracciati).toEqual(posizioni)
+  })
+
+  it('non aggancia un filetto molto più pallido degli altri', () => {
+    // un filetto della griglia è marcato come i suoi vicini; una linea tre volte
+    // più pallida è qualcos'altro (un'ombra, una piega della carta)
+    const posizioni = passoDerivante()
+    const pallido = { index: posizioni.at(-1)! + 36, depth: 8, width: 2 }
+
+    const tracciati = traceRules([...posizioni.map((p) => dip(p, 50)), pallido], posizioni.slice(4, 12), 32)
+
+    expect(tracciati).toEqual(posizioni)
+  })
+
+  /**
+   * Lo scavalco esiste per un filetto sbiadito o coperto **dentro** la sequenza.
+   * In coda alla sequenza non c'è niente da scavalcare: quello che sta due passi
+   * oltre l'ultimo filetto, con nulla dopo di sé, non è un filetto della tabella
+   * — sulla foto di agosto è il bordo del foglio con la sua riga d'ombra, che il
+   * profilo a due lati non sa distinguere da un filetto (è scura da entrambe le
+   * parti). La regola è quindi: un buco si scavalca solo se dall'altra parte la
+   * sequenza continua.
+   */
+  it('non chiude la sequenza su uno scavalco: se dopo non c’è niente, lo scavalco si disfa', () => {
+    const dips = [200, 230, 260, 290, 320, 380].map((index) => ({ index, depth: 40, width: 2 }))
+
+    // 380 sta due passi oltre 320 e non ha niente dopo: non entra
+    expect(traceRules(dips, [230, 260, 290], 30)).toEqual([200, 230, 260, 290, 320])
+  })
+
+  it('scavalca il buco quando la sequenza continua dall’altra parte', () => {
+    // 380 sta due passi oltre 320, ma dopo c'è 410 al passo giusto: il buco a
+    // 350 è un filetto sbiadito e la sequenza va avanti
+    const dips = [200, 230, 260, 290, 320, 380, 410].map((index) => ({ index, depth: 40, width: 2 }))
+
+    expect(traceRules(dips, [230, 260, 290], 30)).toEqual([200, 230, 260, 290, 320, 380, 410])
+  })
+
+  it('senza semi non insegue niente, invece di leggere un indice inesistente', () => {
+    expect(traceRules([{ index: 100, depth: 40, width: 2 }], [], 30)).toEqual([])
+  })
+
   it('non aggancia gli avvallamenti del testo dentro le celle', () => {
     const posizioni = passoDerivante()
     const testo = posizioni.flatMap((p) => [p + 12, p + 16])
@@ -241,8 +307,19 @@ describe('findBorderRule', () => {
   })
 
   it('cerca anche in avanti', () => {
-    const dips = [dip(100, 80), dip(155)]
-    expect(findBorderRule(dips, 100, +1, 30, { minDepth: 20, maxWidth: 5 })).toBe(155)
+    const dips = [dip(100, 80), dip(140)]
+    expect(findBorderRule(dips, 100, +1, 30, { minDepth: 20, maxWidth: 5 })).toBe(140)
+  })
+
+  it('non arriva a due passi, dove sta la posizione di un filetto mancante', () => {
+    // due passi oltre l'ultimo filetto c'è il posto di un filetto *mancante*, e
+    // quello lo aggancia l'inseguimento, che pretende che la sequenza continui
+    // dall'altra parte. Se anche questa ricerca arrivasse fin lì, il bordo del
+    // foglio con la sua riga d'ombra — profondo e sottile come un filetto —
+    // diventerebbe il lato del riquadro, sbagliato di due righe.
+    const bordoDelFoglio = [dip(100, 80), dip(160, 80)]
+
+    expect(findBorderRule(bordoDelFoglio, 100, +1, 30, { minDepth: 20, maxWidth: 5 })).toBeNull()
   })
 })
 
@@ -307,6 +384,32 @@ describe('fitLine e intersect', () => {
     const line = fitLine([{ x: 42, y: 7 }])
     expect(line.slope).toBe(0)
     expect(lineAt(line, 1000)).toBe(7)
+  })
+
+  it('senza punti restituisce la retta nulla invece di NaN', () => {
+    // i casi limite di una primitiva esportata vanno provati anche quando i
+    // chiamanti di oggi non li producono: un NaN che entra in un'intersezione
+    // non fa fallire niente, sposta il riquadro
+    expect(fitLine([])).toEqual({ slope: 0, intercept: 0 })
+  })
+
+  it('con punti tutti alla stessa ascissa non tira una retta verticale', () => {
+    // succede sui filetti seguiti in fasce che cadono tutte alla stessa
+    // ordinata: la retta ai minimi quadrati non esiste, e la media è la sola
+    // risposta onesta
+    const line = fitLine([
+      { x: 100, y: 10 },
+      { x: 100, y: 20 },
+      { x: 100, y: 60 },
+    ])
+    expect(line.slope).toBe(0)
+    expect(line.intercept).toBeCloseTo(30, 6)
+  })
+
+  it('rifiuta lati che non si incontrano, con l’errore del rilevamento', () => {
+    // pendenze il cui prodotto vale 1: i due lati sono paralleli e non c'è angolo
+    expect(() => intersect({ slope: 2, intercept: 100 }, { slope: 0.5, intercept: 50 })).toThrow(GridNotFoundError)
+    expect(() => intersect({ slope: 2, intercept: 100 }, { slope: 0.5, intercept: 50 })).toThrow(/non si incontrano/i)
   })
 
   it('interseca il lato superiore col lato sinistro', () => {

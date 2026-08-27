@@ -14,6 +14,22 @@ export interface TableQuad {
 }
 
 /**
+ * La tabella individuata nella foto: il riquadro e i confini di colonna
+ * rilevati. I confini sono in **coordinate del riquadro raddrizzato** — 0 sul
+ * lato sinistro, 1 sul destro — perché è lì che serviranno per tagliare le
+ * bande, e perché una frazione del lato superiore nella foto non è la stessa
+ * cosa: l'omografia non conserva i rapporti fra segmenti.
+ *
+ * Sono **candidati**, non colonne: il rilevatore non sa quali colonne portino
+ * turni (`AIUTO MATT.`, `TOT M` sono filetti come gli altri) e fra i confini
+ * trovati ci sono anche righe che non sono confini stampati. Il primo vale 0 e
+ * l'ultimo 1: sono i due lati del riquadro.
+ */
+export interface DetectedTable extends TableQuad {
+  columns: number[]
+}
+
+/**
  * La foto non contiene una griglia riconoscibile come tabella turni, oppure il
  * quadrilatero trovato non è plausibile. Va sempre gestito rifacendo lo scatto:
  * un'estrazione mancata si nota, un ritaglio storto produce turni sbagliati

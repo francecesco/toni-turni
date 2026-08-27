@@ -49,8 +49,29 @@ const CONTRAST_RADII = [4, 8, 16]
 const RULE_PRESENCE = 50
 /** Passo minimo credibile fra due filetti: sotto, la tabella sarebbe illeggibile comunque. */
 const MIN_STEP = 6
-/** Sotto questo numero di filetti allineati, non ci si fida che sia una tabella (un mese ha ≥28 righe). */
-const MIN_ALIGNED_LINES = 15
+/**
+ * Le tre soglie che prima erano un'unica costante, e che hanno mestieri diversi.
+ *
+ * `MIN_TABLE_RULES` è un controllo di **dominio**: la tabella di un mese ha una
+ * riga per giorno, quindi almeno 28 filetti orizzontali la delimitano. Vale solo
+ * per l'innesco, cioè per la domanda «questa foto contiene una tabella turni?».
+ * Misurato: 33-34 filetti su agosto (31 giorni + titolo + intestazione), 32-33
+ * su settembre (30 giorni).
+ *
+ * `MIN_RULES_FOR_MAX_STEP` limita il passo massimo cercato: un passo più grande
+ * di `lunghezza / (questo - 1)` non lascerebbe spazio a una sequenza. Tenerlo
+ * basso lascia margine (su queste foto ammette fino a 86 px contro un passo
+ * misurato di 32), e alzarlo a 28 lo dimezzerebbe.
+ *
+ * `MIN_STRIP_RULES` è il filtro con cui una striscia viene ammessa a votare per
+ * i lati: qui una sequenza incompleta è normale (un filetto sbiadito, una cella
+ * evidenziata), e pretendere il conteggio di dominio farebbe cadere strisce
+ * buone — fino a scendere sotto il numero minimo di strisce concordi e a far
+ * fallire il rilevamento su una foto valida.
+ */
+const MIN_TABLE_RULES = 28
+const MIN_RULES_FOR_MAX_STEP = 15
+const MIN_STRIP_RULES = 15
 /** Sotto questo numero di confini di colonna, non c'è una tabella. */
 const MIN_COLUMN_BOUNDARIES = 3
 
@@ -59,6 +80,16 @@ const RULE_WIDTH_FRAC = 0.5
 
 /** Quante strisce si usano per interpolare ciascun lato del riquadro. */
 const STRIP_COUNT = 5
+/** Quante posizioni si provano per l'innesco delle righe, lungo la pagina. */
+const BOOTSTRAP_PROBES = [0.25, 0.5, 0.75]
+/**
+ * Altezza della fascia con cui si innescano i confini di colonna, in **righe
+ * della tabella**: quattro righe bastano perché un filetto verticale attraversi
+ * la fascia, e la deriva prospettica su quattro righe è di pochi pixel. Misurato
+ * su agosto: con una fascia del 20% dell'altezza (210 px) i filetti si sfocano e
+ * la tabella risulta larga 225..1046 invece di 25..1175, cioè il 30% fuori.
+ */
+const BOOTSTRAP_BAND_ROWS = 4
 /** Ampiezza di una striscia, in frazione del lato della tabella. */
 const STRIP_FRAC = 0.08
 const MIN_STRIP_SIZE = 12
@@ -94,6 +125,16 @@ export interface Box {
  * il testo dentro le celle resta alto perché occupa solo una parte della
  * striscia. È un profilo di contrasto locale, quindi non lo disturbano né
  * l'illuminazione non uniforme né le evidenziature colorate.
+ *
+ * **Quello che questo profilo non sa fare** è distinguere un filetto stampato
+ * dal bordo del foglio quando il bordo porta la propria riga d'ombra: l'ombra è
+ * più scura sia della carta sopra sia della scrivania sotto, quindi soddisfa il
+ * criterio a due lati. Provato e misurato: pretendere anche «lo stesso tono dai
+ * due lati» costa i filetti veri (su agosto raddrizzato la sequenza scende da 34
+ * a 26 filetti), perché per pixel quel criterio è molto più rumoroso di quanto
+ * la separazione fra le mediane faccia sperare. La difesa sta quindi a valle,
+ * dove il candidato viene confrontato con i filetti già trovati: `traceRules`
+ * (profondità e continuità della sequenza) e `fitEdge` (consenso fra strisce).
  */
 export function ruleProfile(
   grey: Float64Array,
@@ -139,6 +180,15 @@ export interface RuleSequence {
 }
 
 /**
+ * Scarta le valli a meno di `margin` dagli estremi del profilo: lì `ruleProfile`
+ * non ha carta da entrambi i lati, quindi non può distinguere un filetto da un
+ * gradino, e il bordo del foglio diventerebbe un filetto.
+ */
+function dropMargin(valleys: Dip[], margin: number, length: number): Dip[] {
+  return valleys.filter((v) => v.index >= margin && v.index < length - margin)
+}
+
+/**
  * Trova la sequenza di filetti dentro il rettangolo dato. Due passaggi: il
  * primo *misura* il passo, provando le scale di contrasto e tenendo quella che
  * spiega meglio il profilo; il secondo insegue la sequenza filetto per filetto
@@ -154,7 +204,7 @@ export function detectRules(
 ): RuleSequence | null {
   const along = axis === 'row' ? box.y1 - box.y0 : box.x1 - box.x0
   const offset = axis === 'row' ? box.y0 : box.x0
-  const maxStep = Math.floor(along / (MIN_ALIGNED_LINES - 1))
+  const maxStep = Math.floor(along / (MIN_RULES_FOR_MAX_STEP - 1))
   if (maxStep < MIN_STEP) return null
 
   // I raggi si provano dal più piccolo: allargare la finestra rende "scuro"
@@ -165,11 +215,12 @@ export function detectRules(
   let best: { comb: Comb; valleys: Dip[]; radius: number } | null = null
   for (const radius of CONTRAST_RADII) {
     if (radius * 2 >= along) break
-    const valleys = findValleys(ruleProfile(grey, width, axis, box, radius, MIN_CONTRAST), RULE_PRESENCE)
+    const profile = ruleProfile(grey, width, axis, box, radius, MIN_CONTRAST)
+    const valleys = dropMargin(findValleys(profile, RULE_PRESENCE), radius, profile.length)
     const comb = fitComb(valleys, MIN_STEP, maxStep)
     if (!comb) continue
     if (best === null || comb.score > best.comb.score) best = { comb, valleys, radius }
-    if (comb.lines.length >= MIN_ALIGNED_LINES) break
+    if (comb.lines.length >= MIN_STRIP_RULES) break
   }
   if (!best) return null
 
@@ -195,9 +246,13 @@ export function detectRules(
  */
 function extendToBorders(sequence: RuleSequence): number[] {
   const { lines, step, dips } = sequence
-  const depths = dips
-    .filter((d) => lines.includes(d.index))
-    .map((d) => d.depth)
+  // La profondità di riferimento è quella dei filetti della sequenza. Se la
+  // sequenza viene dal pettine invece che dall'inseguimento, qualche sua
+  // posizione può non essere fra le valli sottili: in quel caso si usa la
+  // mediana di tutte le valli, perché un riferimento a zero renderebbe
+  // accettabile qualunque ombra — compreso il bordo del foglio.
+  const usate = dips.filter((d) => lines.includes(d.index)).map((d) => d.depth)
+  const depths = usate.length > 0 ? usate : dips.map((d) => d.depth)
   const limits = {
     minDepth: median(depths) * BORDER_DEPTH_FRAC,
     maxWidth: Math.max(3, Math.round(step * RULE_WIDTH_FRAC)),
@@ -219,22 +274,76 @@ function stripHalfSize(from: number, to: number): number {
 }
 
 /**
- * Interpola il lato del riquadro passante per gli estremi misurati in ciascuna
- * striscia, scartando le strisce che non ci cadono sopra. È il controllo che
- * distingue un riquadro giusto da uno sbagliato di una riga: se in una striscia
- * l'ultimo filetto trovato è quello *penultimo* delle altre, il suo scarto dal
- * lato interpolato vale un passo intero e la striscia viene esclusa. Se le
- * strisce concordi sono meno di tre, il rilevamento si dichiara incapace invece
- * di restituire un lato inventato.
+ * Interpola il lato del riquadro sui punti misurati in ciascuna striscia,
+ * tenendo solo quelli che concordano fra loro.
+ *
+ * È la difesa contro il difetto che questo task esiste per evitare: un lato che
+ * aggancia l'ultimo filetto da un'estremità e il penultimo dall'altra, cioè un
+ * riquadro sbagliato di una riga intera senza che nessuna coordinata risulti
+ * assurda (il cancello sull'angolo non lo vede: i lati divergono di ~2°).
+ *
+ * Il consenso si cerca sulle rette per ogni coppia di punti e si tiene
+ * l'insieme più numeroso entro tolleranza, invece di potare via il residuo
+ * peggiore un punto per volta: la potatura greedy, con quattro punti e uno fuori
+ * di un passo, toglie per primo un punto *buono* — il residuo massimo dei minimi
+ * quadrati cade in mezzo, non sul fuoriposto — e le tre rette rimaste spalmano
+ * il passo intero in residui che passano la tolleranza. La tolleranza è una
+ * frazione del passo **misurato**, quindi un punto fuori di un passo intero non
+ * può mai essere concorde.
+ *
+ * Se i punti concordi scendono sotto `MIN_EDGE_POINTS` il lato non si
+ * restituisce: si fallisce esplicitamente. Un lato inventato produce turni
+ * sbagliati, che è peggio di un'estrazione mancata.
  */
-export function fitEdge(
-  points: readonly { x: number; y: number }[],
-  step: number,
-  cosa: string,
-): Line {
+export function fitEdge(points: readonly Point[], step: number, cosa: string): Line {
   const tol = Math.max(2, step * EDGE_TOL_FRAC)
-  const work = [...points]
+  const troppoPochi = (concordi: number): GridNotFoundError =>
+    new GridNotFoundError(
+      `Troppo poche strisce concordi per interpolare ${cosa} del riquadro (${concordi} su ${points.length})`,
+    )
 
+  if (points.length < MIN_EDGE_POINTS) throw troppoPochi(points.length)
+
+  const inliersOf = (line: Line): Point[] =>
+    points.filter((p) => Math.abs(p.y - lineAt(line, p.x)) <= tol)
+  /**
+   * Consenso "morbido": ogni punto agganciato vale 1 se ci cade esattamente
+   * sopra e 0 se sta al limite della tolleranza. Contare i punti e basta non
+   * funziona: una retta inclinata quel tanto che basta può agganciare quattro
+   * punti presi metà da un filetto e metà da quello sotto, con residui grossi ma
+   * dentro tolleranza, e battere i tre punti che stanno esattamente su un filetto
+   * vero. Pesando i residui, i tre esatti valgono 3,0 e i quattro tirati 2,6.
+   */
+  const consensus = (line: Line, inliers: readonly Point[]): number =>
+    inliers.reduce((sum, p) => sum + (1 - Math.abs(p.y - lineAt(line, p.x)) / tol), 0)
+
+  let best: Point[] = []
+  let bestScore = -Infinity
+  for (let i = 0; i < points.length; i += 1) {
+    for (let j = i + 1; j < points.length; j += 1) {
+      if (points[i].x === points[j].x) continue
+      const candidate = fitLine([points[i], points[j]])
+      const inliers = inliersOf(candidate)
+      const score = consensus(candidate, inliers)
+      if (score > bestScore || (score === bestScore && inliers.length > best.length)) {
+        best = inliers
+        bestScore = score
+      }
+    }
+  }
+
+  if (best.length < MIN_EDGE_POINTS) throw troppoPochi(best.length)
+
+  // Rifinitura ai minimi quadrati sui soli punti concordi: la retta per due
+  // punti passa esattamente per quei due, e usare tutti i concordi la centra. Se
+  // la rifinitura fa uscire di tolleranza un punto lo si scarta e si rifà, ma
+  // non si scende sotto `MIN_EDGE_POINTS`: qui **non** c'è un ramo d'errore,
+  // perché con tre punti concordi non potrebbe scattare, e un controllo che non
+  // può scattare è peggio di un controllo assente — il codice sembra difeso e
+  // non lo è. La proprietà che serve («il lato restituito ha almeno
+  // `MIN_EDGE_POINTS` punti dentro tolleranza») è provata da un test diretto,
+  // non da un `throw` morto.
+  const work = [...best]
   while (work.length > MIN_EDGE_POINTS) {
     const line = fitLine(work)
     let worst = -1
@@ -249,17 +358,7 @@ export function fitEdge(
     if (worstResidual <= tol) return line
     work.splice(worst, 1)
   }
-
-  if (work.length < MIN_EDGE_POINTS) {
-    throw new GridNotFoundError(`Troppe strisce discordi per interpolare ${cosa} del riquadro`)
-  }
-  const line = fitLine(work)
-  for (const point of work) {
-    if (Math.abs(point.y - lineAt(line, point.x)) > tol) {
-      throw new GridNotFoundError(`I filetti non definiscono ${cosa} del riquadro in modo coerente`)
-    }
-  }
-  return line
+  return fitLine(work)
 }
 
 /** Innesco del rilevamento: il passo della griglia e dove sta la tabella, all'incirca. */
@@ -283,20 +382,27 @@ export function bootstrapRows(
   y: { start: number; end: number },
 ): RowBootstrap {
   const size = x.end - x.start
+  const half = stripHalfSize(x.start, x.end)
   let best: RuleSequence | null = null
 
-  // Si provano tre strisce: la tabella non è necessariamente al centro del
+  // Si provano tre posizioni: la tabella non è necessariamente al centro del
   // fotogramma, e una striscia che cade fuori dalla tabella non troverebbe
-  // niente. Si tiene quella con più filetti.
-  for (const centre of [0.25, 0.5, 0.75]) {
-    const x0 = Math.round(x.start + size * (centre - 0.1))
-    const x1 = Math.round(x.start + size * (centre + 0.1))
+  // niente. Si tiene quella con più filetti. È l'unico punto in cui l'ampiezza
+  // della ricerca è una frazione dell'area di ricerca invece che del passo della
+  // griglia, perché è qui che il passo viene misurato per la prima volta.
+  for (const probe of BOOTSTRAP_PROBES) {
+    const centre = x.start + size * probe
+    const x0 = Math.max(x.start, Math.round(centre - half))
+    const x1 = Math.min(x.end, Math.round(centre + half))
+    if (x1 - x0 < 2) continue
     const sequence = detectRules(grey, width, 'row', { x0, x1, y0: y.start, y1: y.end })
     if (sequence && (best === null || sequence.lines.length > best.lines.length)) best = sequence
   }
 
-  if (!best || best.lines.length < MIN_ALIGNED_LINES) {
-    throw new GridNotFoundError('Nessuna sequenza regolare di filetti orizzontali riconoscibile')
+  if (!best || best.lines.length < MIN_TABLE_RULES) {
+    throw new GridNotFoundError(
+      `Nessuna tabella turni riconoscibile: servono almeno ${MIN_TABLE_RULES} filetti orizzontali regolari, trovati ${best?.lines.length ?? 0}`,
+    )
   }
   return {
     step: best.step,
@@ -320,9 +426,10 @@ export function bootstrapColumns(
   rowStep: number,
   contrastRadius: number,
 ): { start: number; end: number } {
-  const size = y.end - y.start
-  const y0 = Math.round(y.start + size * 0.4)
-  const y1 = Math.round(y.start + size * 0.6)
+  const middle = (y.start + y.end) / 2
+  const half = Math.max(MIN_STRIP_SIZE, Math.round((rowStep * BOOTSTRAP_BAND_ROWS) / 2))
+  const y0 = Math.max(y.start, Math.round(middle - half))
+  const y1 = Math.min(y.end, Math.round(middle + half))
   const boundaries = detectColumnBoundaries(grey, width, x, y0, y1, rowStep, contrastRadius)
   return { start: boundaries[0], end: boundaries[boundaries.length - 1] }
 }
@@ -359,7 +466,7 @@ export function detectHorizontalEdges(
     const x1 = Math.min(x.end, Math.round(centre + half))
     if (x1 - x0 < 2) continue
     const sequence = detectRules(grey, width, 'row', { x0, x1, y0: y.start, y1: y.end })
-    if (!sequence || sequence.lines.length < MIN_ALIGNED_LINES) continue
+    if (!sequence || sequence.lines.length < MIN_STRIP_RULES) continue
 
     const lines = extendToBorders(sequence)
     firsts.push({ x: centre, y: lines[0] })
@@ -368,7 +475,9 @@ export function detectHorizontalEdges(
   }
 
   if (steps.length < MIN_EDGE_POINTS) {
-    throw new GridNotFoundError('Nessuna sequenza regolare di filetti orizzontali riconoscibile')
+    throw new GridNotFoundError(
+      `Solo ${steps.length} strisce su ${STRIP_COUNT} contengono una sequenza di filetti orizzontali: ne servono almeno ${MIN_EDGE_POINTS} per interpolare i lati`,
+    )
   }
 
   const step = median(steps)
@@ -418,6 +527,16 @@ export function detectColumnBoundaries(
 export interface VerticalEdges {
   left: Line
   right: Line
+  /**
+   * Tutti i filetti verticali che attraversano la tabella, dal più a sinistra al
+   * più a destra: `left` è il primo e `right` è l'ultimo. Non si buttano via
+   * perché sono i confini delle colonne, e ri-rilevarli a valle costerebbe un
+   * secondo rilevamento sulla stessa immagine. Sono **candidati**: la
+   * `detectColumnBoundaries` non sa quali colonne portino turni, e fra questi
+   * filetti ci sono anche righe che non sono confini di colonna (misurato su
+   * agosto: 14 catene, di cui due non corrispondono a un confine stampato).
+   */
+  boundaries: Line[]
 }
 
 /** Tolleranza di aggancio fra fasce contigue, in frazione del passo di riga. */
@@ -464,7 +583,13 @@ export function detectVerticalEdges(
   }
 
   if (bands.length < MIN_EDGE_POINTS) {
-    throw new GridNotFoundError('Nessun confine di colonna riconoscibile nella tabella')
+    // messaggio diverso da quello di `detectColumnBoundaries`: lì il problema è
+    // una singola fascia, qui è che i filetti verticali non si trovano lungo
+    // l'altezza della tabella. Con lo stesso messaggio, un test che asserisce il
+    // messaggio non distinguerebbe i due rami.
+    throw new GridNotFoundError(
+      `Nessun confine di colonna riconoscibile lungo l'altezza della tabella: solo ${bands.length} fasce su ${STRIP_COUNT} ne contengono`,
+    )
   }
 
   const chains = trackBoundaries(bands, rowStep * TRACK_TOL_FRAC)
@@ -477,8 +602,13 @@ export function detectVerticalEdges(
   const positionOf = (chain: Point[]): number => median(chain.map((p) => p.y))
   const sorted = [...crossing].sort((a, b) => positionOf(a) - positionOf(b))
 
+  const boundaries = sorted.map((chain, i) =>
+    fitEdge(chain, rowStep, i === 0 ? 'il lato sinistro' : i === sorted.length - 1 ? 'il lato destro' : 'un confine di colonna'),
+  )
+
   return {
-    left: fitEdge(sorted[0], rowStep, 'il lato sinistro'),
-    right: fitEdge(sorted[sorted.length - 1], rowStep, 'il lato destro'),
+    left: boundaries[0],
+    right: boundaries[boundaries.length - 1],
+    boundaries,
   }
 }

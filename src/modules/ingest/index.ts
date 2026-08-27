@@ -1,6 +1,6 @@
 export type { NormalizedImage } from './normalize'
 export { normalizeRosterPhoto } from './normalize'
-export type { TableQuad } from './grid'
+export type { DetectedTable, TableQuad } from './grid'
 export { detectTableQuad, GridNotFoundError, validateQuad } from './grid'
 export {
   deleteRosterImage,

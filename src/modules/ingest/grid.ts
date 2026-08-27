@@ -1,4 +1,5 @@
 import sharp from 'sharp'
+import { applyHomography, solveHomography } from '@/lib/homography'
 import {
   bootstrapColumns,
   bootstrapRows,
@@ -9,9 +10,9 @@ import {
 import { intersect, lineAt } from './grid-numeric'
 import { findPageBBox } from './grid-page'
 import { validateQuad } from './grid-quad'
-import { GridNotFoundError, type RgbImage, type TableQuad } from './grid-types'
+import { GridNotFoundError, type DetectedTable, type RgbImage, type TableQuad } from './grid-types'
 
-export type { TableQuad } from './grid-types'
+export type { DetectedTable, TableQuad } from './grid-types'
 export { GridNotFoundError } from './grid-types'
 export { validateQuad } from './grid-quad'
 
@@ -27,6 +28,14 @@ async function loadRgb(image: Buffer): Promise<RgbImage> {
   const { data, info } = await sharp(image).removeAlpha().raw().toBuffer({ resolveWithObject: true })
   return { data, width: info.width, height: info.height, channels: info.channels }
 }
+
+/** Il riquadro raddrizzato in coordinate normalizzate: 0..1 su entrambi i lati. */
+const QUADRATO_UNITARIO = [
+  { x: 0, y: 0 },
+  { x: 1, y: 0 },
+  { x: 1, y: 1 },
+  { x: 0, y: 1 },
+] as const
 
 /**
  * Individua il riquadro della tabella turni in una foto.
@@ -45,11 +54,17 @@ async function loadRgb(image: Buffer): Promise<RgbImage> {
  * si escludono a livello di banda. Chiedere al rilevatore quali colonne siano
  * delle infermiere significherebbe chiedergli di indovinare una semantica.
  *
+ * Insieme al riquadro tornano i **confini di colonna** rilevati, in coordinate
+ * del riquadro raddrizzato: servono a valle per tagliare le bande, e sono già
+ * stati misurati qui per trovare i lati sinistro e destro. Frazioni fisse del
+ * riquadro non servirebbero: misurate sulle due foto di calibrazione, i confini
+ * delle infermiere differiscono fino a 0,159 della larghezza.
+ *
  * Se un passaggio non trova quello che cerca, la funzione fallisce
  * esplicitamente con `GridNotFoundError`: un ritaglio sbagliato produce turni
  * sbagliati, che è peggio di un'estrazione mancata.
  */
-export async function detectTableQuad(image: Buffer): Promise<TableQuad> {
+export async function detectTableQuad(image: Buffer): Promise<DetectedTable> {
   const rgb = await loadRgb(image)
   const grey = toGreyscale(rgb)
   const page = findPageBBox(rgb)
@@ -80,5 +95,19 @@ export async function detectTableQuad(image: Buffer): Promise<TableQuad> {
 
   validateQuad(quad, rgb.width, rgb.height)
 
-  return quad
+  // 6. i confini di colonna, portati nel riquadro raddrizzato con l'omografia
+  // del riquadro stesso: ogni confine è una retta, e la sua ascissa nel
+  // raddrizzato è la stessa in cima e in fondo, quindi si prende la media dei
+  // due estremi (differiscono di ~0,005 per il rumore di misura)
+  const toRect = solveHomography(
+    [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft],
+    QUADRATO_UNITARIO,
+  )
+  const columns = vertical.boundaries.map((boundary) => {
+    const alto = applyHomography(toRect, intersect(horizontal.top, boundary))
+    const basso = applyHomography(toRect, intersect(horizontal.bottom, boundary))
+    return (alto.x + basso.x) / 2
+  })
+
+  return { ...quad, columns }
 }
