@@ -204,6 +204,17 @@ export default async function RosterPage({
                 <dd className="text-lg font-medium">{progresso.unknownCodes}</dd>
               </div>
             </dl>
+            {progresso.handCorrected > 0 && (
+              <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+                <strong>
+                  {progresso.handCorrected}{' '}
+                  {progresso.handCorrected === 1 ? 'cella corretta' : 'celle corrette'} a penna
+                </strong>
+                : sono quelle da rileggere sulla foto. È l unico punto in cui il lettore
+                automatico sbaglia davvero, e le trova tutte. Sono già evidenziate nella griglia
+                di conferma di ogni colonna.
+              </p>
+            )}
             {progresso.unknownCodes > 0 && (
               <p className="text-sm text-muted-foreground">
                 I codici che la legenda non conosce restano da risolvere: aggiungili in{' '}
