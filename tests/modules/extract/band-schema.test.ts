@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { BandSpec } from '@/modules/ingest/layout'
 import {
+  countBandCells,
   mergeBandExtractions,
   parseBandExtraction,
   type BandExtraction,
@@ -366,5 +367,58 @@ describe('mergeBandExtractions', () => {
 
     expect(extraction.cells[0].confidence).toBeCloseTo(0.31)
     expect(extraction.cells[0].handCorrected).toBe(true)
+  })
+})
+
+/**
+ * Quante delle celle **chieste** una banda ha davvero prodotto. È il conto che
+ * trasforma una risposta valida e corta in un buco dichiarato: nella Fase 2A
+ * questo modello ometteva 199 celle su 248 senza che nulla se ne accorgesse.
+ */
+describe('countBandCells', () => {
+  it('conta le celle attese come giorni per colonne della banda', () => {
+    expect(countBandCells(spec([1, 2], 1, 15), { columns: [], cells: [] }).expected).toBe(30)
+    expect(countBandCells(spec([1], 17, 31), { columns: [], cells: [] }).expected).toBe(15)
+  })
+
+  it('conta una cella ripetuta una volta sola', () => {
+    const conto = countBandCells(spec([1], 1, 2), {
+      columns: ['RENATA'],
+      cells: [cell(1, 'RENATA', 'M'), cell(1, 'RENATA', 'M')],
+    })
+
+    expect(conto).toEqual({ read: 1, expected: 2 })
+  })
+
+  it('non conta le celle fuori dall intervallo di giorni della banda', () => {
+    const conto = countBandCells(spec([1], 1, 2), {
+      columns: ['RENATA'],
+      cells: [cell(1, 'RENATA', 'M'), cell(20, 'RENATA', 'P')],
+    })
+
+    expect(conto).toEqual({ read: 1, expected: 2 })
+  })
+
+  it('non conta due volte la stessa colonna scritta in due grafie', () => {
+    const conto = countBandCells(spec([1], 1, 2), {
+      columns: ['RENATA'],
+      cells: [cell(1, 'RENATA', 'M'), cell(1, 'renata', 'M')],
+    })
+
+    expect(conto).toEqual({ read: 1, expected: 2 })
+  })
+
+  it('vede completa la banda che ha risposto su ogni incrocio', () => {
+    const conto = countBandCells(spec([1, 2], 1, 2), {
+      columns: ['RENATA', 'ALEX'],
+      cells: [
+        cell(1, 'RENATA', 'M'),
+        cell(1, 'ALEX', ''),
+        cell(2, 'RENATA', ''),
+        cell(2, 'ALEX', 'P'),
+      ],
+    })
+
+    expect(conto).toEqual({ read: 4, expected: 4 })
   })
 })

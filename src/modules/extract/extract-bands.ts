@@ -1,15 +1,35 @@
 import type { RosterBand } from '@/modules/ingest/crop'
 import type { BandSpec } from '@/modules/ingest/layout'
 import { buildBandPrompt } from './band-prompt'
-import { mergeBandExtractions, parseBandExtraction, type BandExtraction } from './band-schema'
+import {
+  countBandCells,
+  mergeBandExtractions,
+  parseBandExtraction,
+  type BandExtraction,
+} from './band-schema'
 import { buildRepairPrompt } from './prompt'
 import type { Extraction } from './schema'
 import { VisionProviderError, VisionTruncatedError, type VisionProvider } from './providers'
 
-/** Una banda che non è stata letta: un buco **dichiarato**, non una cella assente. */
+/**
+ * Una banda che non è stata letta, o letta **solo in parte**: un buco
+ * **dichiarato**, non una cella assente.
+ *
+ * Le due specie di buco passano dallo stesso meccanismo (`missingBands`, stato
+ * `partial`) perché per l infermiera sono la stessa cosa — celle che nessuno ha
+ * letto — e si distinguono da `cells`: presente solo quando la banda ha
+ * risposto, e dice quante celle sono arrivate su quante erano attese.
+ */
 export interface BandFailure {
   spec: BandSpec
   error: string
+  /**
+   * Celle davvero lette e celle attese. Presente **solo** sulle bande lette a
+   * metà: le loro celle stanno nell estrazione, il buco è in quelle che
+   * mancano. Assente sulle bande che non hanno prodotto nessuna risposta
+   * valida.
+   */
+  cells?: { read: number; expected: number }
 }
 
 export interface BandsOutcome {
@@ -185,6 +205,12 @@ async function tryBand(
  * `partial`). L outcome è sempre restituito, anche con zero celle: se sia
  * utilizzabile lo decide il chiamante, non questa funzione — un turno che
  * sparisce in silenzio è il guasto peggiore di questo progetto.
+ *
+ * Nello stesso `failures` finisce anche la banda **letta a metà**: una risposta
+ * valida che porta meno celle di quelle chieste è il modo esatto in cui questo
+ * modello sbagliava nella Fase 2A (199 celle mancanti su 248), e senza questo
+ * controllo somiglierebbe a un foglio con le celle vuote. Le sue celle si
+ * tengono; il buco è nelle celle che mancano.
  */
 export async function extractRosterByBands(input: {
   bands: RosterBand[]
@@ -202,6 +228,32 @@ export async function extractRosterByBands(input: {
   const providerUsati = new Set<string>()
   let attempts = 0
 
+  /**
+   * Prende la lettura di una banda e, se è **corta**, ne dichiara il buco.
+   *
+   * Le celle lette si tengono in ogni caso: buttarle non riempirebbe il buco e
+   * perderebbe le celle che il modello ha letto bene. Il buco entra in
+   * `failures`, cioè nello stesso meccanismo delle bande non lette, e porta
+   * l estrazione allo stato `partial`: la Fase 3 mostra all infermiera che di
+   * quelle colonne, in quei giorni, manca qualcosa.
+   */
+  function accetta(spec: BandSpec, extraction: BandExtraction, providerName: string): void {
+    letture.push({ spec, extraction })
+    providerUsati.add(providerName)
+
+    const conto = countBandCells(spec, extraction)
+    if (conto.read >= conto.expected) return
+
+    const colonne = spec.columns.length === 1 ? '1 colonna' : `${spec.columns.length} colonne`
+    failures.push({
+      spec,
+      error:
+        `Banda letta solo in parte: ${conto.read} celle su ${conto.expected} attese ` +
+        `(giorni ${spec.dayFrom}-${spec.dayTo}, ${colonne})`,
+      cells: conto,
+    })
+  }
+
   for (let index = 0; index < input.bands.length; index += 1) {
     if (index > 0) await pace(index)
 
@@ -217,8 +269,7 @@ export async function extractRosterByBands(input: {
     rawOutputs.push(...primario.raws)
 
     if (primario.ok && primario.extraction) {
-      letture.push({ spec: band.spec, extraction: primario.extraction })
-      providerUsati.add(input.provider.name)
+      accetta(band.spec, primario.extraction, input.provider.name)
       continue
     }
 
@@ -228,8 +279,7 @@ export async function extractRosterByBands(input: {
       rawOutputs.push(...riserva.raws)
 
       if (riserva.ok && riserva.extraction) {
-        letture.push({ spec: band.spec, extraction: riserva.extraction })
-        providerUsati.add(input.fallback.name)
+        accetta(band.spec, riserva.extraction, input.fallback.name)
         continue
       }
 

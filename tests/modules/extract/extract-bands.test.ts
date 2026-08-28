@@ -76,7 +76,9 @@ describe('extractRosterByBands', () => {
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({
-      bands: [band(1, [1, 2], 1, 16), band(2, [3, 4], 1, 16)],
+      // una colonna e un giorno per banda: le bande rispondono su tutti gli
+      // incroci che dichiarano, quindi non c è nessun buco da dichiarare
+      bands: [band(1, [1], 1, 1), band(2, [2], 1, 1)],
       knownCodes: ['M', 'P'],
       header: HEADER,
       provider: p,
@@ -100,7 +102,7 @@ describe('extractRosterByBands', () => {
       new VisionProviderError('quota esaurita'),
       risposta([[1, 'ALEX', 'P']]),
     )
-    const bande = [band(1, [1], 1, 16), band(2, [2], 1, 16), band(3, [3], 1, 16)]
+    const bande = [band(1, [1], 1, 1), band(2, [2], 1, 1), band(3, [3], 1, 1)]
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({
@@ -170,7 +172,7 @@ describe('extractRosterByBands', () => {
     const { pace, chiamate } = pacerFinto()
 
     const outcome = await extractRosterByBands({
-      bands: [band(1, [1], 1, 16)],
+      bands: [band(1, [1], 1, 1)],
       knownCodes: [],
       header: HEADER,
       provider: p,
@@ -226,7 +228,7 @@ describe('extractRosterByBands', () => {
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({
-      bands: [band(1, [1], 1, 16)],
+      bands: [band(1, [1], 1, 1)],
       knownCodes: [],
       header: HEADER,
       provider: p,
@@ -245,7 +247,7 @@ describe('extractRosterByBands', () => {
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({
-      bands: [band(1, [1], 1, 16)],
+      bands: [band(1, [1], 1, 1)],
       knownCodes: [],
       header: HEADER,
       provider: primario,
@@ -477,5 +479,128 @@ describe('createTokenPacer', () => {
     // della specie peggiore, devono stare sotto il tetto
     const bandePerMinuto = 60_000 / intervallo
     expect(bandePerMinuto * pesoBandaPeggiore).toBeLessThanOrEqual(GROQ_FREE_TOKENS_PER_MINUTE)
+  })
+})
+
+/**
+ * Il caso in cui questo stesso modello sbagliava nella Fase 2A: 199 celle
+ * mancanti su 248, non perché la chiamata fallisse ma perché la risposta era
+ * valida e **corta**. Una banda letta a metà è peggio di una banda non letta,
+ * perché somiglia a un foglio con le celle vuote: il buco deve essere
+ * dichiarato, mai silenzioso.
+ */
+describe('extractRosterByBands, bande lette solo in parte', () => {
+  it('dichiara un buco quando la banda restituisce meno celle di quelle chieste', async () => {
+    const p = provider(
+      'groq',
+      risposta([
+        [1, 'RENATA', 'M'],
+        [1, 'ALEX', 'P'],
+        [2, 'RENATA', 'N'],
+      ]),
+    )
+    const { pace } = pacerFinto()
+
+    // 15 giorni x 2 colonne = 30 celle attese, ne arrivano 3
+    const outcome = await extractRosterByBands({
+      bands: [band(1, [1, 2], 1, 15)],
+      knownCodes: [],
+      header: HEADER,
+      provider: p,
+      pace,
+    })
+
+    expect(outcome.failures).toHaveLength(1)
+    expect(outcome.failures[0].error).toContain('3')
+    expect(outcome.failures[0].error).toContain('30')
+    expect(outcome.failures[0].cells).toEqual({ read: 3, expected: 30 })
+    // le celle lette non si buttano: il buco è nelle celle che mancano
+    expect(outcome.extraction.cells).toHaveLength(3)
+  })
+
+  it('dichiara un buco anche quando la banda risponde con zero celle', async () => {
+    const p = provider('groq', risposta([]))
+    const { pace } = pacerFinto()
+
+    const outcome = await extractRosterByBands({
+      bands: [band(1, [1], 1, 16)],
+      knownCodes: [],
+      header: HEADER,
+      provider: p,
+      pace,
+    })
+
+    expect(outcome.failures).toHaveLength(1)
+    expect(outcome.failures[0].cells).toEqual({ read: 0, expected: 16 })
+    expect(outcome.extraction.cells).toEqual([])
+  })
+
+  it('non dichiara nessun buco quando la banda è completa', async () => {
+    const p = provider(
+      'groq',
+      risposta([
+        [1, 'RENATA', 'M'],
+        [1, 'ALEX', ''],
+        [2, 'RENATA', ''],
+        [2, 'ALEX', 'P'],
+      ]),
+    )
+    const { pace } = pacerFinto()
+
+    const outcome = await extractRosterByBands({
+      bands: [band(1, [1, 2], 1, 2)],
+      knownCodes: [],
+      header: HEADER,
+      provider: p,
+      pace,
+    })
+
+    expect(outcome.failures).toEqual([])
+    expect(outcome.extraction.cells).toHaveLength(4)
+  })
+
+  /**
+   * Una cella ripetuta e una cella fuori dall intervallo non riempiono il buco:
+   * quello che conta è quante delle celle **chieste** sono arrivate, non quante
+   * righe di JSON il modello ha scritto.
+   */
+  it('non lascia che duplicati e celle fuori intervallo riempiano il buco', async () => {
+    const p = provider(
+      'groq',
+      risposta([
+        [1, 'RENATA', 'M'],
+        [1, 'RENATA', 'M'],
+        [9, 'RENATA', 'P'],
+      ]),
+    )
+    const { pace } = pacerFinto()
+
+    const outcome = await extractRosterByBands({
+      bands: [band(1, [1], 1, 2)],
+      knownCodes: [],
+      header: HEADER,
+      provider: p,
+      pace,
+    })
+
+    expect(outcome.failures).toHaveLength(1)
+    expect(outcome.failures[0].cells).toEqual({ read: 1, expected: 2 })
+  })
+
+  /** Una banda non letta per niente resta un buco senza conteggio di celle. */
+  it('distingue la banda non letta da quella letta a metà', async () => {
+    const p = provider('groq', new VisionProviderError('quota esaurita'))
+    const { pace } = pacerFinto()
+
+    const outcome = await extractRosterByBands({
+      bands: [band(1, [1], 1, 16)],
+      knownCodes: [],
+      header: HEADER,
+      provider: p,
+      pace,
+    })
+
+    expect(outcome.failures).toHaveLength(1)
+    expect(outcome.failures[0].cells).toBeUndefined()
   })
 })

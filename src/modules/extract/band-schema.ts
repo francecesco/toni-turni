@@ -94,6 +94,38 @@ export function parseBandExtraction(
   return { ok: true, value: result.data }
 }
 
+/**
+ * Quante delle celle **chieste** la banda ha davvero prodotto, e quante ne
+ * erano attese.
+ *
+ * Le attese sono giorni per colonne: una banda dichiara il proprio intervallo di
+ * giorni e le proprie colonne, quindi il numero di celle che deve produrre è
+ * noto prima di guardare la risposta. Le lette si contano sugli **incroci
+ * distinti dentro l intervallo**, non sulle righe di JSON: una cella ripetuta e
+ * una cella fuori intervallo non riempiono il buco che lasciano le celle
+ * mancanti.
+ *
+ * Serve a trasformare una risposta valida e **corta** in un buco dichiarato:
+ * nella Fase 2A questo stesso modello ometteva 199 celle su 248 con risposte
+ * che passavano la validazione, e una banda letta a metà è peggio di una banda
+ * non letta perché somiglia a un foglio con le celle vuote.
+ */
+export function countBandCells(
+  spec: Pick<BandSpec, 'columns' | 'dayFrom' | 'dayTo'>,
+  extraction: BandExtraction,
+): { read: number; expected: number } {
+  const viste = new Set<string>()
+  for (const cell of extraction.cells) {
+    if (cell.day < spec.dayFrom || cell.day > spec.dayTo) continue
+    viste.add(`${cell.day}:${normalizeColumn(cell.column)}`)
+  }
+
+  return {
+    read: viste.size,
+    expected: (spec.dayTo - spec.dayFrom + 1) * spec.columns.length,
+  }
+}
+
 /** Due codici sono lo stesso se differiscono solo per spazi o maiuscole. */
 function stessoCodice(a: string, b: string): boolean {
   return normalizeColumn(a) === normalizeColumn(b)

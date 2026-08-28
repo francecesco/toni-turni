@@ -225,6 +225,7 @@ async function main(): Promise<void> {
   let totalCorrect = 0
   let totalBands = 0
   let totalFailedBands = 0
+  let totalPartialBands = 0
   let totalTokens = 0
   const inputPerBanda: number[] = []
   // Un estrazione fallita (chiave mancante, provider giù, JSON irreparabile) non è
@@ -313,9 +314,11 @@ async function main(): Promise<void> {
     })
     const secondi = (Date.now() - start) / 1000
 
-    const fallite = new Set(outcome.failures.map((f) => f.spec))
+    const fallite = new Set(outcome.failures.filter((f) => f.cells === undefined).map((f) => f.spec))
+    const aMeta = new Set(outcome.failures.filter((f) => f.cells !== undefined).map((f) => f.spec))
     totalBands += bands.length
-    totalFailedBands += outcome.failures.length
+    totalFailedBands += fallite.size
+    totalPartialBands += aMeta.size
 
     console.log(
       `estrazione: ${secondi.toFixed(0)}s totali, di cui ${(msDiAttesa / 1000).toFixed(0)}s di attesa di pacing | ` +
@@ -331,7 +334,7 @@ async function main(): Promise<void> {
       const totale = sommaToken(chiamate, 'totalTokens')
       const ms = chiamate.reduce((a, c) => a + c.ms, 0)
       const codici = chiamate.map((c) => c.status).join(',') || 'nessuna risposta'
-      const esito = fallite.has(banda.spec) ? 'FALLITA' : 'ok'
+      const esito = fallite.has(banda.spec) ? 'FALLITA' : aMeta.has(banda.spec) ? 'A META' : 'ok'
 
       if (input !== null) inputPerBanda.push(input)
       if (totale !== null) totalTokens += totale
@@ -346,14 +349,21 @@ async function main(): Promise<void> {
     }
 
     if (outcome.failures.length > 0) {
-      console.log(`bande non lette (${outcome.failures.length}) — sono buchi dichiarati, non celle assenti:`)
+      // Due specie di buco, dallo stesso meccanismo: la banda che non ha risposto e
+      // la banda che ha risposto **corta**. La seconda è il modo in cui questo
+      // modello sbagliava in Fase 2A, quindi va distinta a schermo.
+      const aMeta = outcome.failures.filter((f) => f.cells !== undefined).length
+      console.log(
+        `bande con buchi dichiarati (${outcome.failures.length}, di cui ${aMeta} lette a metà) — ` +
+          'sono buchi dichiarati, non celle assenti:',
+      )
       for (const failure of outcome.failures) {
         console.log(
           `  giorni ${failure.spec.dayFrom}-${failure.spec.dayTo} col=[${failure.spec.columns.join(',')}]: ${failure.error}`,
         )
       }
     } else {
-      console.log('bande non lette: nessuna')
+      console.log('bande con buchi dichiarati: nessuna')
     }
 
     console.log(`conflitti di fusione: ${outcome.conflicts}`)
@@ -448,7 +458,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `bande: ${totalBands} in tutto, ${totalFailedBands} non lette | ` +
+    `bande: ${totalBands} in tutto, ${totalFailedBands} non lette, ${totalPartialBands} lette a metà | ` +
       `tempo totale ${((Date.now() - inizioMisura) / 1000 / 60).toFixed(1)} minuti | ` +
       `token consumati ${totalTokens}`,
   )
