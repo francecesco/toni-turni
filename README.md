@@ -174,6 +174,28 @@ della mezzanotte, ora legale, diff del sync.
 Convenzioni, confini dei moduli e regole invarianti sono in [CLAUDE.md](CLAUDE.md); il design
 completo in [docs/superpowers/specs/2026-08-26-toni-turni-design.md](docs/superpowers/specs/2026-08-26-toni-turni-design.md).
 
+### Accesso di prova senza Google (solo sviluppo)
+
+Finché le credenziali Google non sono configurate, l'unico modo di entrare sarebbe il login OAuth.
+Per provare l'interfaccia c'è una scorciatoia **che vale solo fuori dalla produzione**:
+
+```bash
+# 1. serve un utente già nel database (una volta sola, se non c'è già):
+npx tsx --env-file=.env -e "import {PrismaClient} from '@prisma/client'; const p = new PrismaClient(); \
+  p.user.create({ data: { email: 'tu@example.com', displayName: 'Tu', role: 'REFERENTE' } }) \
+  .then(() => console.log('creata')).finally(() => p.\$disconnect())"
+
+# 2. avvia il server nominando le email ammesse:
+DEV_LOGIN_EMAILS=tu@example.com npm run dev
+```
+
+All'avvio compare un avviso in chiaro nei log, e in `/login` un pulsante «Entra come …» per ogni
+email elencata. `DEV_LOGIN_EMAILS` è insieme l'interruttore e l'elenco chiuso: senza la variabile
+non esiste nessun accesso di prova, e le email nominate devono esistere già nel database (nessun
+utente viene creato). Con `NODE_ENV=production` è ignorata e `POST /api/auth/dev-login` risponde
+404. Non collega nessun account Google: il sync continuerà — correttamente — a chiedere di
+autorizzare Google.
+
 Prima di considerare l'accesso funzionante, esegui una volta la
 [verifica manuale del flusso Google OAuth](docs/verifica-manuale-oauth.md): è l'unica parte non
 coperta dai test automatici.
