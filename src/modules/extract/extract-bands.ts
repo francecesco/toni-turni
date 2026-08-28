@@ -34,21 +34,35 @@ export type BandPacer = (index: number, retryAfterSeconds?: number) => Promise<v
 export const GROQ_FREE_TOKENS_PER_MINUTE = 8000
 
 /**
- * Quanto pesa una banda nel budget al minuto.
+ * Quanto pesa una banda nel budget al minuto. **Tarato sul dato misurato**, non
+ * su una stima.
  *
  * Groq conta i token di output **prenotati** con `max_completion_tokens`, non
  * solo quelli usati: 4000 (il default di `GROQ_MAX_OUTPUT_TOKENS`) sono
- * prenotati a ogni chiamata anche se una banda ne produce poche decine. Ai 4000
- * si aggiunge l input, immagine compresa: la misura nota è che una richiesta
- * con 8000 token prenotati e la foto **intera** pesava 10369, cioè ~2369 di
- * input; una banda è un ritaglio più piccolo, quindi 1500 è una stima prudente
- * per difetto del suo peso in input.
+ * prenotati a ogni chiamata anche se una banda ne produce ~1600. Ai 4000 si
+ * aggiunge l input, immagine compresa, e la misura su 24 bande (due foto) dice
+ * quanto vale:
  *
- * 5500 su 8000 al minuto fa un intervallo di 41,25 s fra due bande: 24 bande
- * (le 10 di agosto più le 14 di settembre) sono ~16,5 minuti di sole immagini.
- * È lento, ed è il vincolo del piano, non una scelta.
+ * - banda normale: input **1577-1581** → peso **5581**;
+ * - banda larga, quella che include le colonne di aiuto e che è anche la più
+ *   grande in pixel: input **2601-2605** → peso **6605**;
+ * - banda a colonna singola: input 1832-1836 → peso 5836.
+ *
+ * Il valore precedente era 5500, dedotto da una stima di ~1500 token di input:
+ * sotto il peso reale anche della banda più leggera, e infatti si sono viste
+ * **3 risposte 429**, assorbite dal ritentativo con `retry-after` senza perdere
+ * bande, ma spendendo quota due volte su quelle tre.
+ *
+ * 6700 copre la banda peggiore misurata con un margine, e fa un intervallo di
+ * ~50 s fra due bande: 24 bande sono ~20 minuti di sole immagini. È lento, ed è
+ * il vincolo del piano, non una scelta.
+ *
+ * **Non si abbassa `GROQ_MAX_OUTPUT_TOKENS` per accorciare l attesa.** Portarlo
+ * a ~2500 farebbe scendere il peso a ~4100 e l intervallo a ~31 s, ma l output
+ * vero è ~1600 con punte a 1713 su una banda di sole due colonne: un
+ * troncamento è una **banda persa**, e quel rischio non vale nove secondi.
  */
-export const DEFAULT_TOKENS_PER_BAND = 5500
+export const DEFAULT_TOKENS_PER_BAND = 6700
 
 function attendi(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))

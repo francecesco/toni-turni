@@ -455,7 +455,17 @@ describe('createTokenPacer', () => {
     expect(o.attese).toEqual([30_000])
   })
 
-  it('col ritmo di default resta sotto il tetto del piano gratuito di Groq', async () => {
+  it('col ritmo di default copre la banda piu pesante misurata, prenotati compresi', async () => {
+    // Numeri della misura reale su 24 bande (due foto): l input per banda e
+    // 1577-1581 nel caso normale e 2601-2605 sulle bande larghe, quelle che
+    // includono le colonne di aiuto. Groq mette nel budget al minuto anche i
+    // token di output **prenotati** con `max_completion_tokens`, quindi la
+    // banda peggiore pesa 2605 + 4000 = 6605. Col ritmo tarato su 5500 si sono
+    // vista 3 risposte 429.
+    const INPUT_BANDA_PEGGIORE = 2605
+    const OUTPUT_PRENOTATI = 4000
+    const pesoBandaPeggiore = INPUT_BANDA_PEGGIORE + OUTPUT_PRENOTATI
+
     const o = orologio()
     const pace = createTokenPacer({ now: o.now, sleep: o.sleep })
 
@@ -463,8 +473,9 @@ describe('createTokenPacer', () => {
 
     const intervallo = o.attese[0]
     expect(intervallo).toBeGreaterThan(0)
-    // quante bande stanno in un minuto per il costo di una banda: sotto il tetto
+    // quante bande stanno in un minuto a questo ritmo: anche se sono tutte
+    // della specie peggiore, devono stare sotto il tetto
     const bandePerMinuto = 60_000 / intervallo
-    expect(bandePerMinuto * 4000).toBeLessThanOrEqual(GROQ_FREE_TOKENS_PER_MINUTE)
+    expect(bandePerMinuto * pesoBandaPeggiore).toBeLessThanOrEqual(GROQ_FREE_TOKENS_PER_MINUTE)
   })
 })
