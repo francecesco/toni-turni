@@ -132,13 +132,28 @@ export interface BandSpec {
   columns: number[]
   dayFrom: number
   dayTo: number
-  /** Il ritaglio delle righe dei giorni. */
+  /**
+   * La striscia del blocco dei giorni, da comporre **a sinistra** del ritaglio.
+   * È sempre la colonna 0, cioè i due lati del blocco dei giorni: quel blocco
+   * serve in ogni banda, perché è l'unica cosa che dice a quale giorno
+   * appartiene una cella.
+   *
+   * Non ha `top` né `height` perché prende quelli del ritaglio: è la ragione per
+   * cui la composizione è esatta invece di approssimata. Le due strisce sono
+   * tagliate dalla stessa immagine raddrizzata, alla stessa ordinata e con la
+   * stessa altezza, quindi le loro righe combaciano riga per riga senza
+   * registrazione — e dopo il warp dell'omografia le righe sono orizzontali per
+   * costruzione, quindi non c'è nemmeno una deriva prospettica da compensare.
+   */
+  days: { left: number; width: number }
+  /** Il ritaglio delle sole colonne del gruppo, righe dei giorni. */
   crop: Crop
   /**
-   * Striscia d'intestazione da anteporre al ritaglio, o `null` se l'intestazione
-   * è già dentro (prima metà del mese). Ha per costruzione la stessa `left` e la
-   * stessa `width` del ritaglio, quindi l'allineamento delle colonne fra le due
-   * strisce è esatto e non c'è nulla da registrare.
+   * Striscia d'intestazione da anteporre alla banda, o `null` se l'intestazione
+   * è già dentro (prima metà del mese). Vale per **entrambe** le strisce
+   * affiancate: si taglia alla stessa `left`/`width` di `days` e a quelle di
+   * `crop`, e le due metà si compongono nello stesso ordine, quindi le colonne
+   * dell'intestazione stanno sopra le colonne a cui appartengono.
    */
   header: { top: number; height: number } | null
 }
@@ -146,10 +161,22 @@ export interface BandSpec {
 /**
  * Pianifica le bande verticali da mandare al modello una alla volta.
  *
- * Ogni banda parte da `left = 0`: il blocco dei giorni entra così in tutte
- * senza comporre nulla, e dopo il raddrizzamento è allineato alle righe. Ogni
- * banda mostra anche la riga dei nomi, perché è su quel nome che si chiavano le
- * celle.
+ * Ogni banda è la **composizione** di due strisce: il blocco dei giorni e le
+ * colonne del gruppo, affiancate. Non un unico ritaglio che parte dal lato
+ * sinistro del riquadro: quello faceva crescere la larghezza di gruppo in
+ * gruppo, e l'ultima banda mostrava mezza tabella intera — cioè la stessa
+ * configurazione che, misurata, dà il 18,5% di celle corrette. Composta, ogni
+ * banda ha la forma misurata al 100% (blocco dei giorni più due colonne) e una
+ * dimensione praticamente costante fra le bande.
+ *
+ * La composizione è esatta perché le due strisce sono tagliate dalla stessa
+ * immagine **già raddrizzata**, alla stessa ordinata e con la stessa altezza:
+ * dopo il warp dell'omografia le righe sono orizzontali per costruzione, quindi
+ * non c'è nessuno sfasamento fra la riga del giorno a sinistra e la cella a
+ * destra. È la stessa tecnica già usata per la striscia d'intestazione.
+ *
+ * Ogni banda mostra anche la riga dei nomi, perché è su quel nome che si
+ * chiavano le celle.
  *
  * Il mese si taglia in due metà: il filetto di metà mese è l'unico praticamente
  * orizzontale in entrambe le foto, quindi è la cucitura meno rischiosa.
@@ -211,11 +238,14 @@ export function planBands(
 
   const bande: BandSpec[] = []
 
-  // la colonna 0 è il blocco dei giorni: entra in ogni banda, non fa gruppo
+  // la colonna 0 è il blocco dei giorni: si affianca a ogni banda, non fa gruppo
+  const giorni = { left: bordi[0], width: bordi[1] - bordi[0] }
+
   for (let prima = 1; prima < colonne; prima += columnsPerBand) {
     const gruppo: number[] = []
     for (let c = prima; c < Math.min(prima + columnsPerBand, colonne); c += 1) gruppo.push(c)
 
+    const sinistra = bordi[gruppo[0]]
     const destra = bordi[gruppo[gruppo.length - 1] + 1]
 
     for (const meta of meta_mese) {
@@ -223,7 +253,13 @@ export function planBands(
         columns: gruppo,
         dayFrom: meta.dayFrom,
         dayTo: meta.dayTo,
-        crop: { left: 0, top: meta.top, width: destra, height: meta.bottom - meta.top },
+        days: giorni,
+        crop: {
+          left: sinistra,
+          top: meta.top,
+          width: destra - sinistra,
+          height: meta.bottom - meta.top,
+        },
         header: meta.header,
       })
     }

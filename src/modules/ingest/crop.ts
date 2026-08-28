@@ -27,11 +27,13 @@ const TARGET_BAND_HEIGHT = 1300
  * Mpx e costava circa 4020 token: il tetto di Groq è 8000 token al minuto e conta
  * anche quelli prenotati per l'uscita, quindi le bande non possono crescere.
  *
- * Il tetto morde sulle bande di destra: siccome ogni ritaglio parte da `left = 0`,
- * la banda dell'ultimo gruppo di colonne è larga tutto il riquadro, e per starci
- * dentro scende a circa 38 pixel per riga invece di 72. Restano leggibili (vedi
- * il rapporto del Task 3+4), ma è la ragione per cui `columnsPerBand` non va
- * alzato senza rimisurare.
+ * Da quando le bande sono **composte** (blocco dei giorni affiancato al gruppo di
+ * colonne) la loro larghezza è quasi costante e vicina a quella del ritaglio di
+ * riferimento, quindi il tetto morde poco: su agosto lima la banda più grossa da
+ * 756x1300 a 731x1258, cioè 70 pixel per riga contro i 77 del riferimento. Resta
+ * come tetto vero e proprio, non come correzione: è quello che regge se
+ * `columnsPerBand` viene alzato, e in quel caso i pixel per riga scendono e la
+ * leggibilità va rimisurata.
  */
 const MAX_BAND_PIXELS = 920_000
 
@@ -149,25 +151,77 @@ export async function deskewRoster(
   return { data, width: rect.width, height: rect.height, columns }
 }
 
+/** Un pezzo di immagine già materializzato, con le sue dimensioni in pixel. */
+interface Piece {
+  data: Buffer
+  width: number
+  height: number
+}
+
 /** Il pezzo di `rect` descritto dal rettangolo in frazioni, come PNG. */
 async function ritaglia(
   rect: RawImage,
   frazioni: { left: number; top: number; width: number; height: number },
-): Promise<Buffer> {
+): Promise<Piece> {
   const left = fra(Math.round(frazioni.left * rect.width), 0, rect.width - 1)
   const top = fra(Math.round(frazioni.top * rect.height), 0, rect.height - 1)
+  const width = fra(Math.round(frazioni.width * rect.width), 1, rect.width - left)
+  const height = fra(Math.round(frazioni.height * rect.height), 1, rect.height - top)
 
-  return sharp(rect.data, {
+  const data = await sharp(rect.data, {
     raw: { width: rect.width, height: rect.height, channels: rect.channels as 1 | 2 | 3 | 4 },
   })
-    .extract({
-      left,
-      top,
-      width: fra(Math.round(frazioni.width * rect.width), 1, rect.width - left),
-      height: fra(Math.round(frazioni.height * rect.height), 1, rect.height - top),
-    })
+    .extract({ left, top, width, height })
     .png()
     .toBuffer()
+
+  return { data, width, height }
+}
+
+/**
+ * Affianca due pezzi, il primo a sinistra. Serve a comporre il blocco dei giorni
+ * con le colonne del gruppo, e la stessa cosa per la striscia d'intestazione.
+ *
+ * L'allineamento verticale è **esatto**, non approssimato: i due pezzi vengono
+ * tagliati dalla stessa immagine raddrizzata con la stessa `top` e la stessa
+ * `height` in frazioni, quindi `ritaglia` li arrotonda agli stessi pixel e le
+ * loro righe sono le stesse righe. Nessuna registrazione, nessuno sfasamento —
+ * ed è la ragione per cui la composizione si può fare solo *dopo* il warp
+ * dell'omografia, dove le righe della tabella sono orizzontali per costruzione.
+ */
+async function affianca(sinistra: Piece, destra: Piece): Promise<Piece> {
+  const width = sinistra.width + destra.width
+  const height = sinistra.height
+
+  const data = await sharp({
+    create: { width, height, channels: 3, background: '#ffffff' },
+  })
+    .composite([
+      { input: sinistra.data, top: 0, left: 0 },
+      { input: destra.data, top: 0, left: sinistra.width },
+    ])
+    .png()
+    .toBuffer()
+
+  return { data, width, height }
+}
+
+/** Sovrappone due pezzi, il primo in cima. Stessa larghezza per costruzione. */
+async function impila(sopra: Piece, sotto: Piece): Promise<Piece> {
+  const width = sopra.width
+  const height = sopra.height + sotto.height
+
+  const data = await sharp({
+    create: { width, height, channels: 3, background: '#ffffff' },
+  })
+    .composite([
+      { input: sopra.data, top: 0, left: 0 },
+      { input: sotto.data, top: sopra.height, left: 0 },
+    ])
+    .png()
+    .toBuffer()
+
+  return { data, width, height }
 }
 
 /**
@@ -178,11 +232,17 @@ async function ritaglia(
  * mezzo mese legge tutte le celle. Il collo di bottiglia sono le celle per
  * immagine, e queste bande sono il modo di ridurle.
  *
+ * Ogni banda è composta di due strisce affiancate: il blocco dei giorni e le
+ * colonne del gruppo. Non un unico ritaglio che parte dal lato sinistro del
+ * riquadro — quello faceva crescere la larghezza di banda in banda, e l'ultima
+ * mostrava mezza tabella intera, cioè la configurazione misurata al 18,5%.
+ *
  * Ogni banda porta in cima la riga dei nomi — anche quelle della seconda metà
  * del mese, dove la striscia d'intestazione viene anteposta al ritaglio — perché
- * è sul nome letto nell'intestazione che le celle vanno chiavate. La striscia e
- * il ritaglio hanno per costruzione la stessa larghezza e la stessa origine
- * orizzontale, quindi le colonne combaciano senza registrazione.
+ * è sul nome letto nell'intestazione che le celle vanno chiavate. Tutte le
+ * cuciture, orizzontali e verticali, sono esatte per costruzione: i pezzi
+ * affiancati condividono `top` e `height`, quelli impilati condividono `left` e
+ * `width`, quindi `ritaglia` li arrotonda agli stessi pixel.
  */
 export async function cropRosterBands(
   image: Buffer,
@@ -202,38 +262,44 @@ export async function cropRosterBands(
   const bande: RosterBand[] = []
 
   for (const spec of specifiche) {
-    const righe = await ritaglia(rect, spec.crop)
-    const meta = await sharp(righe).metadata()
-    let sorgente = righe
-    const width = meta.width
-    let height = meta.height
+    // il blocco dei giorni prende `top` e `height` dal ritaglio: è ciò che rende
+    // esatta la cucitura fra la riga del giorno e la cella che le sta accanto
+    const righe = await affianca(
+      await ritaglia(rect, {
+        left: spec.days.left,
+        top: spec.crop.top,
+        width: spec.days.width,
+        height: spec.crop.height,
+      }),
+      await ritaglia(rect, spec.crop),
+    )
 
+    // La composizione va materializzata prima del ridimensionamento: sharp
+    // ridimensiona la base *prima* di comporre, e le strisce non ci starebbero
+    // più.
+    let sorgente = righe
     if (spec.header) {
-      const testa = await ritaglia(rect, {
-        left: spec.crop.left,
-        top: spec.header.top,
-        width: spec.crop.width,
-        height: spec.header.height,
-      })
-      const metaTesta = await sharp(testa).metadata()
-      height = metaTesta.height + meta.height
-      // La composizione va materializzata prima del ridimensionamento: sharp
-      // ridimensiona la base *prima* di comporre, e le due strisce non ci
-      // starebbero più.
-      sorgente = await sharp({
-        create: { width, height, channels: 3, background: '#ffffff' },
-      })
-        .composite([
-          { input: testa, top: 0, left: 0 },
-          { input: righe, top: metaTesta.height, left: 0 },
-        ])
-        .png()
-        .toBuffer()
+      const testa = await affianca(
+        await ritaglia(rect, {
+          left: spec.days.left,
+          top: spec.header.top,
+          width: spec.days.width,
+          height: spec.header.height,
+        }),
+        await ritaglia(rect, {
+          left: spec.crop.left,
+          top: spec.header.top,
+          width: spec.crop.width,
+          height: spec.header.height,
+        }),
+      )
+      sorgente = await impila(testa, righe)
     }
 
+    const { width, height } = sorgente
     // Si scala sull'altezza, che è quello che decide i pixel per riga, ma non
-    // oltre il tetto di pixel: le bande di destra sono larghe tutto il riquadro
-    // e senza tetto sfonderebbero il budget di token.
+    // oltre il tetto di pixel: il budget di token di Groq conta anche quelli
+    // prenotati per l'uscita.
     const scala = Math.min(
       TARGET_BAND_HEIGHT / height,
       Math.sqrt(MAX_BAND_PIXELS / (width * height)),
@@ -243,7 +309,7 @@ export async function cropRosterBands(
 
     bande.push({
       spec,
-      image: await sharp(sorgente)
+      image: await sharp(sorgente.data)
         .resize(larghezzaFinale, altezzaFinale, { fit: 'fill', kernel: 'lanczos3' })
         .jpeg({ quality: options.quality ?? DEFAULT_QUALITY, mozjpeg: true })
         .toBuffer(),

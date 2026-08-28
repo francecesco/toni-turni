@@ -145,8 +145,8 @@ describe('cropRosterBands', () => {
     expect(bande.filter((b) => b.spec.header !== null)).toHaveLength(5)
 
     for (const banda of bande) {
-      const senzaIntestazione =
-        (banda.spec.crop.height * aspettoRiquadro) / banda.spec.crop.width
+      const larghezza = banda.spec.days.width + banda.spec.crop.width
+      const senzaIntestazione = (banda.spec.crop.height * aspettoRiquadro) / larghezza
       const conIntestazione = banda.height / banda.width
 
       if (banda.spec.header === null) {
@@ -155,11 +155,64 @@ describe('cropRosterBands', () => {
       } else {
         // seconda metà: la striscia dei nomi aggiunge altezza a pari larghezza
         const atteso =
-          ((banda.spec.crop.height + banda.spec.header.height) * aspettoRiquadro) /
-          banda.spec.crop.width
+          ((banda.spec.crop.height + banda.spec.header.height) * aspettoRiquadro) / larghezza
         expect(conIntestazione).toBeGreaterThan(senzaIntestazione)
         expect(conIntestazione).toBeCloseTo(atteso, 1)
       }
+    }
+  })
+
+  /**
+   * La banda è composta: la striscia dei giorni a sinistra, il ritaglio del
+   * gruppo di colonne a destra. Le proporzioni dell'immagine devono quindi
+   * corrispondere alla **somma** delle due larghezze, non alla sola larghezza
+   * del ritaglio. Se non corrispondessero, una delle due strisce sarebbe stata
+   * scalata o tagliata, e le celle non starebbero più sulla riga del giorno che
+   * gli sta accanto.
+   */
+  it('affianca la striscia dei giorni al ritaglio, con le proporzioni della somma', async () => {
+    for (const [path, giorni] of [
+      [AGOSTO, 31],
+      [SETTEMBRE, 30],
+    ] as const) {
+      const foto = readFileSync(path)
+      const raddrizzata = await deskewRoster(foto)
+      const aspettoRiquadro = raddrizzata.height / raddrizzata.width
+
+      for (const banda of await cropRosterBands(foto, { daysInMonth: giorni })) {
+        const larghezza = banda.spec.days.width + banda.spec.crop.width
+        const altezza =
+          banda.spec.crop.height + (banda.spec.header?.height ?? 0)
+        const atteso = (altezza * aspettoRiquadro) / larghezza
+
+        expect(
+          banda.height / banda.width,
+          `${path} colonne ${banda.spec.columns}`,
+        ).toBeCloseTo(atteso, 1)
+      }
+    }
+  })
+
+  /**
+   * Il difetto che la composizione rimuove: con ogni ritaglio che parte dal lato
+   * sinistro del riquadro, l'ultima banda mostrava mezza tabella intera — la
+   * configurazione misurata al 18,5% di celle corrette. Le bande vanno invece
+   * tutte della stessa dimensione, quella del ritaglio misurato al 100%.
+   */
+  it('tiene tutte le bande della dimensione del ritaglio misurato al 100%', async () => {
+    for (const [path, giorni] of [
+      [AGOSTO, 31],
+      [SETTEMBRE, 30],
+    ] as const) {
+      const bande = await cropRosterBands(readFileSync(path), { daysInMonth: giorni })
+      const larghezze = bande.map((b) => b.width)
+
+      // il ritaglio letto al 100% era 700 px di larghezza: nessuna banda
+      // arriva al doppio, e la più larga non è il doppio della più stretta
+      for (const banda of bande) {
+        expect(banda.width, `${path} colonne ${banda.spec.columns}`).toBeLessThan(1400)
+      }
+      expect(Math.max(...larghezze) / Math.min(...larghezze)).toBeLessThan(2)
     }
   })
 

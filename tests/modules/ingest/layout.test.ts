@@ -130,9 +130,52 @@ describe('planBands', () => {
     expect(planBands(SETTEMBRE, { daysInMonth: 30 })).toHaveLength(14)
   })
 
-  it('include il blocco dei giorni in ogni ritaglio', () => {
+  it('affianca la striscia dei giorni a un ritaglio strettato, invece di partire dal lato sinistro', () => {
+    const puliti = SETTEMBRE_PULITI
     for (const banda of planBands(SETTEMBRE, { daysInMonth: 30 })) {
-      expect(banda.crop.left).toBe(0)
+      // la striscia dei giorni è il blocco dei giorni intero: la colonna 0
+      expect(banda.days.left).toBeCloseTo(puliti[0], 6)
+      expect(banda.days.width).toBeCloseTo(puliti[1] - puliti[0], 6)
+      // e il ritaglio comincia dal confine sinistro del *suo* gruppo, non da 0
+      expect(banda.crop.left).toBeCloseTo(puliti[banda.columns[0]], 6)
+      expect(banda.crop.left).toBeGreaterThanOrEqual(banda.days.left + banda.days.width)
+    }
+  })
+
+  /**
+   * Il difetto che questa composizione esiste per rimuovere: con ogni ritaglio
+   * che parte da `left = 0` la larghezza cresce di gruppo in gruppo e l'ultima
+   * banda mostra mezza tabella intera, cioè la configurazione che ha dato il
+   * 18,5% di celle corrette. Comporre la striscia dei giorni *di fianco* al
+   * gruppo toglie la crescita: la larghezza di una banda dipende solo dalle
+   * **sue** colonne, quindi nessuna banda arriva vicino a mezza tabella e la
+   * dispersione fra le bande è quella delle larghezze di colonna.
+   *
+   * Le due misure, sotto `left = 0` e composte:
+   *
+   * | | banda più larga | più larga / più stretta |
+   * |---|---|---|
+   * | agosto, `left = 0` | 1,000 (mezza tabella intera) | 3,92 |
+   * | agosto, composta | 0,303 | 1,30 |
+   * | settembre, `left = 0` | 1,000 | 5,13 |
+   * | settembre, composta | 0,219 | 1,86 |
+   *
+   * L'1,86 di settembre non è dispersione della composizione: settembre ha 13 colonne di
+   * contenuto, quindi l'ultimo gruppo ne ha una sola e la sua banda è la più
+   * stretta. Una banda più stretta non è il difetto — il difetto è una banda più
+   * larga.
+   */
+  it('tiene la larghezza composta lontana da mezza tabella, invece di farla crescere di gruppo in gruppo', () => {
+    for (const [rilevati, giorni] of [
+      [AGOSTO, 31],
+      [SETTEMBRE, 30],
+    ] as const) {
+      const larghezze = planBands(rilevati, { daysInMonth: giorni }).map(
+        (b) => b.days.width + b.crop.width,
+      )
+
+      expect(Math.max(...larghezze)).toBeLessThan(0.4)
+      expect(Math.max(...larghezze) / Math.min(...larghezze)).toBeLessThan(2)
     }
   })
 
@@ -150,10 +193,14 @@ describe('planBands', () => {
     }
   })
 
-  it("il ritaglio arriva fino al confine destro dell'ultima colonna della banda", () => {
+  it("il ritaglio copre esattamente le colonne della banda, dal primo confine all'ultimo", () => {
     const puliti = AGOSTO_PULITI
     for (const banda of planBands(AGOSTO, { daysInMonth: 31 })) {
-      expect(banda.crop.width).toBeCloseTo(puliti[banda.columns.at(-1)! + 1], 6)
+      expect(banda.crop.left).toBeCloseTo(puliti[banda.columns[0]], 6)
+      expect(banda.crop.left + banda.crop.width).toBeCloseTo(
+        puliti[banda.columns.at(-1)! + 1],
+        6,
+      )
     }
   })
 
@@ -165,6 +212,9 @@ describe('planBands', () => {
       expect(banda.crop.height).toBeGreaterThan(0)
       expect(banda.crop.left + banda.crop.width).toBeLessThanOrEqual(1.0001)
       expect(banda.crop.top + banda.crop.height).toBeLessThanOrEqual(1.0001)
+      expect(banda.days.left).toBeGreaterThanOrEqual(0)
+      expect(banda.days.width).toBeGreaterThan(0)
+      expect(banda.days.left + banda.days.width).toBeLessThanOrEqual(1.0001)
     }
   })
 
