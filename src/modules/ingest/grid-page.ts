@@ -16,12 +16,30 @@ const PAPER_LIGHT_FRAC = 0.55
 const PAPER_LIGHT_FLOOR = 60
 /**
  * Frazione minima di pixel-carta per considerare una riga/colonna dentro la
- * pagina. È anche, di fatto, il pavimento sulla dimensione del foglio: perché
- * esistano sia una riga sia una colonna che superano questa densità, il foglio
- * deve occupare almeno il 30% di ciascun lato della foto. Un controllo separato
- * di copertura minima sarebbe quindi codice mai eseguito, e non c'è.
+ * pagina.
+ *
+ * Non è un pavimento sulla dimensione del foglio, e credere che lo fosse è
+ * costato l'eliminazione di `MIN_PAGE_COVERAGE`: questa soglia vincola
+ * l'estensione della carta **dentro** una riga e **dentro** una colonna, non
+ * l'estensione del riquadro che le contiene. Controesempio eseguito (vedi il
+ * test sulla carta a L): due barre di carta incrociate qualificano ciascuna le
+ * proprie righe e colonne, ma il loro riquadro comune è l'incrocio delle due
+ * barre — 39x39 px su una foto 800x800, cioè il 4,9% per lato.
  */
 const PAGE_MIN_DENSITY = 0.3
+/**
+ * Frazione minima di ciascun lato della foto che il riquadro della pagina deve
+ * coprire. Un foglio fotografato per essere letto occupa la maggior parte del
+ * fotogramma: sotto questa frazione quello che si è riconosciuto non è il
+ * foglio, e continuare produrrebbe un messaggio d'errore che dice la cosa
+ * sbagliata («non c'è una tabella») al posto di quella giusta.
+ *
+ * Misurato sulle due foto reali: il riquadro della pagina copre 0,998 e 0,999
+ * del lato orizzontale, 0,757 e 0,985 di quello verticale. Il caso peggiore
+ * (agosto in verticale, dove la scrivania si vede sopra e sotto il foglio) sta a
+ * **3,8 volte** la soglia.
+ */
+const MIN_PAGE_COVERAGE = 0.2
 /** Passo di sottocampionamento per la maschera carta (per individuare la pagina basta una stima). */
 const PAGE_MASK_STEP = 2
 /** Densità minima di pixel-carta dentro il riquadro trovato, perché sia davvero un foglio. */
@@ -136,6 +154,15 @@ export function findPageBBox(rgb: RgbImage): { x: Span; y: Span } {
   const yCells = spanOf('row')
   if (!xCells || !yCells) {
     throw new GridNotFoundError('Nessuna pagina riconoscibile nella foto')
+  }
+
+  const coperturaX = (xCells.end - xCells.start + 1) / cols
+  const coperturaY = (yCells.end - yCells.start + 1) / rows
+  if (coperturaX < MIN_PAGE_COVERAGE || coperturaY < MIN_PAGE_COVERAGE) {
+    throw new GridNotFoundError(
+      `Il foglio riconosciuto è troppo piccolo nel fotogramma (${Math.round(coperturaX * 100)}% x ` +
+        `${Math.round(coperturaY * 100)}% della foto): riscatta la foto più da vicino`,
+    )
   }
 
   let paper = 0

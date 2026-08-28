@@ -174,6 +174,14 @@ async function raddrizza(
 }
 
 describe('detectTableQuad', () => {
+  /** La geometria della sonda sul bordo del foglio: vedi `tabellaConBordoFoglio`. */
+  const PASSO_SONDA = 32
+  const RIGHE_SONDA = 32
+  const PRIMO_FILETTO = 200
+  const ULTIMO_FILETTO = PRIMO_FILETTO + PASSO_SONDA * (RIGHE_SONDA - 1)
+  const SX_SONDA = 120
+  const DX_SONDA = 1080
+
   for (const [nome, atteso] of Object.entries(CALIBRAZIONE)) {
     describe(nome, () => {
       it('mette ogni lato del riquadro sul filetto stampato, a entrambe le estremità', async () => {
@@ -526,6 +534,47 @@ describe('detectTableQuad', () => {
     await expect(detectTableQuad(immagine)).rejects.toThrow(/foglio unico/i)
   })
 
+  /**
+   * Il controesempio che ha fatto rimettere il controllo di copertura minima.
+   * L'inferenza con cui era stato eliminato — «perché esistano sia una riga sia
+   * una colonna che superano `PAGE_MIN_DENSITY`, il foglio deve occupare almeno
+   * il 30% di ciascun lato della foto, quindi un controllo separato di copertura
+   * sarebbe codice mai eseguito» — non regge: `PAGE_MIN_DENSITY` vincola
+   * l'estensione della carta *dentro* una riga e *dentro* una colonna, non
+   * l'estensione del **riquadro** delle righe e colonne qualificate.
+   *
+   * Carta a L: la barra orizzontale qualifica le sue righe (carta su tutta la
+   * larghezza) e la barra verticale le sue colonne, ma il riquadro che le
+   * contiene è solo l'incrocio delle due barre — 39x39 px su una foto 800x800,
+   * cioè il 4,9% per lato contro una soglia del 20%.
+   *
+   * Il rilevamento fallirebbe comunque a valle, ma col messaggio sbagliato («non
+   * c'è una tabella» invece di «il foglio riconosciuto è troppo piccolo»): una
+   * falsa invariante scritta nel codice è ciò che fa sbagliare la modifica
+   * successiva.
+   */
+  it('rifiuta una foto in cui il foglio riconosciuto è una frazione minima del fotogramma', async () => {
+    const lato = 800
+    const data = Buffer.alloc(lato * lato * 3)
+    for (let y = 0; y < lato; y += 1) {
+      for (let x = 0; x < lato; x += 1) {
+        const barraOrizzontale = y >= 380 && y < 420
+        const barraVerticale = x >= 100 && x < 140
+        const idx = (y * lato + x) * 3
+        const [r, g, b] = barraOrizzontale || barraVerticale ? [240, 240, 235] : [200, 90, 18]
+        data[idx] = r
+        data[idx + 1] = g
+        data[idx + 2] = b
+      }
+    }
+    const immagine = await sharp(data, { raw: { width: lato, height: lato, channels: 3 } })
+      .jpeg()
+      .toBuffer()
+
+    await expect(detectTableQuad(immagine)).rejects.toThrow(GridNotFoundError)
+    await expect(detectTableQuad(immagine)).rejects.toThrow(/foglio riconosciuto è troppo piccolo/i)
+  })
+
   it('rifiuta una griglia di soli filetti orizzontali, senza colonne', async () => {
     const immagine = await grigliaSintetica({
       width: 1200,
@@ -535,7 +584,11 @@ describe('detectTableQuad', () => {
       colonne: 0,
     })
 
-    await expect(detectTableQuad(immagine)).rejects.toThrow(/confine di colonna/i)
+    // il messaggio va asserito per intero: `/confine di colonna/` combacia anche
+    // con quello di `detectVerticalEdges`, che è un ramo diverso
+    await expect(detectTableQuad(immagine)).rejects.toThrow(
+      /^Nessun confine di colonna riconoscibile nella tabella$/,
+    )
   })
 
   it('rifiuta una griglia regolare che non ha le righe di un mese', async () => {
@@ -617,5 +670,123 @@ describe('detectTableQuad', () => {
 
     await expect(detectTableQuad(immagine)).rejects.toThrow(GridNotFoundError)
     await expect(detectTableQuad(immagine)).rejects.toThrow(/tabella turni riconoscibile.*28 filetti/i)
+  })
+  /**
+   * Una foto sintetica col **bordo del foglio** a una distanza scelta oltre
+   * l'ultimo filetto della tabella: è la sonda con cui la re-review ha mostrato
+   * che il riquadro esce alto una riga di troppo quando il bordo sta fra mezzo
+   * passo e un passo e mezzo.
+   *
+   * Le proprietà che la rendono il caso peggiore, e non un caso qualunque:
+   *
+   * - la riga d'ombra del bordo è più scura sia della carta sopra sia della
+   *   scrivania sotto, quindi il criterio a due lati di `ruleProfile` la accetta
+   *   come filetto (è la forma che un bordo di foglio ha in ogni foto reale);
+   * - un **secondo foglio** appoggiato più in basso fa arrivare la bbox della
+   *   pagina oltre il bordo, che è la situazione reale di agosto (`page.y`
+   *   212..1424 contro un bordo a 1403): senza questo il bordo cadrebbe fuori
+   *   dalla finestra di ricerca e non sarebbe un problema;
+   * - i filetti verticali si fermano all'ultimo filetto orizzontale, come su un
+   *   modulo stampato: sotto la tabella c'è il margine del foglio, non griglia.
+   */
+  async function tabellaConBordoFoglio(bordoPassi: number | null): Promise<Buffer> {
+    const width = 1200
+    const height = 1600
+    const channels = 3
+    const data = Buffer.alloc(width * height * channels)
+
+    const SCRIVANIA = [200, 90, 18]
+    const CARTA = [232, 232, 228]
+    const INCHIOSTRO = [45, 45, 45]
+    const OMBRA = [70, 62, 50]
+
+    const set = (x: number, y: number, c: number[]): void => {
+      if (x < 0 || x >= width || y < 0 || y >= height) return
+      const idx = (y * width + x) * channels
+      data[idx] = c[0]
+      data[idx + 1] = c[1]
+      data[idx + 2] = c[2]
+    }
+
+    const bordoY = bordoPassi === null ? null : Math.round(ULTIMO_FILETTO + PASSO_SONDA * bordoPassi)
+    const fineFoglio = bordoY ?? height
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const foglio = y >= 60 && y < fineFoglio && x >= 40 && x < width - 40
+        const secondoFoglio =
+          bordoY !== null && y >= bordoY + 90 && y < height - 20 && x >= 40 && x < width - 40
+        set(x, y, foglio || secondoFoglio ? CARTA : SCRIVANIA)
+      }
+    }
+    if (bordoY !== null) {
+      for (let y = bordoY; y < bordoY + 2; y += 1) for (let x = 0; x < width; x += 1) set(x, y, OMBRA)
+    }
+
+    for (let r = 0; r < RIGHE_SONDA; r += 1) {
+      const y = PRIMO_FILETTO + r * PASSO_SONDA
+      for (let dy = 0; dy < 2; dy += 1) for (let x = SX_SONDA; x <= DX_SONDA; x += 1) set(x, y + dy, INCHIOSTRO)
+    }
+    for (let c = 0; c <= 10; c += 1) {
+      const x = Math.round(SX_SONDA + ((DX_SONDA - SX_SONDA) * c) / 10)
+      for (let dx = 0; dx < 2; dx += 1) {
+        for (let y = PRIMO_FILETTO; y <= ULTIMO_FILETTO; y += 1) set(x + dx, y, INCHIOSTRO)
+      }
+    }
+    // qualcosa dentro le celle: una tabella di celle vuote non è una tabella
+    for (let r = 0; r < RIGHE_SONDA - 1; r += 1) {
+      for (let c = 0; c < 10; c += 1) {
+        const cx = Math.round(SX_SONDA + ((DX_SONDA - SX_SONDA) * (c + 0.5)) / 10)
+        const cy = PRIMO_FILETTO + r * PASSO_SONDA + PASSO_SONDA / 2
+        for (let dy = -6; dy <= 6; dy += 1) {
+          for (let dx = -5; dx <= 5; dx += 1) {
+            if (Math.abs(dx) + Math.abs(dy) < 7) set(cx + dx, cy + dy, INCHIOSTRO)
+          }
+        }
+      }
+    }
+
+    return sharp(data, { raw: { width, height, channels } }).jpeg({ quality: 95 }).toBuffer()
+  }
+
+  it('trova il lato inferiore giusto sulla foto sintetica senza bordo del foglio', async () => {
+    // il controllo che rende non vacuo il test seguente: senza il bordo del
+    // foglio questa foto si rileva, e si rileva bene
+    const quad = await detectTableQuad(await tabellaConBordoFoglio(null))
+
+    expect(Math.abs(quad.bottomLeft.y - ULTIMO_FILETTO)).toBeLessThan(2)
+    expect(Math.abs(quad.bottomRight.y - ULTIMO_FILETTO)).toBeLessThan(2)
+  })
+
+  /**
+   * Il caso che la re-review ha portato fino a `detectTableQuad`: con il bordo
+   * del foglio fra mezzo passo e un passo e mezzo oltre l'ultimo filetto, il
+   * riquadro usciva alto **una riga intera** con tutte le difese verdi. Il
+   * consenso fra le cinque strisce non lo vede (misura l'accordo fra strisce, e
+   * un bordo di foglio lo vedono tutte e cinque) e il conteggio di dominio
+   * nemmeno (un filetto in più passa il minimo, e niente resta fuori dal
+   * riquadro perché il filetto falso *è* il lato).
+   *
+   * Il contratto qui è «o il lato giusto, o un errore»: un riquadro sbagliato di
+   * una riga sposta ogni turno di un giorno, ed è il guasto peggiore di questo
+   * progetto.
+   */
+  it('non prende il bordo del foglio per lato inferiore, a nessuna distanza fino a due passi', async () => {
+    for (const passi of [1, 1.2, 1.4, 1.6, 2]) {
+      const immagine = await tabellaConBordoFoglio(passi)
+      let quad: TableQuad | null = null
+      try {
+        quad = await detectTableQuad(immagine)
+      } catch (errore) {
+        expect(errore, `bordo a ${passi} passi`).toBeInstanceOf(GridNotFoundError)
+        continue
+      }
+      expect(Math.abs(quad.bottomLeft.y - ULTIMO_FILETTO), `bordo a ${passi} passi`).toBeLessThan(
+        PASSO_SONDA * 0.5,
+      )
+      expect(Math.abs(quad.bottomRight.y - ULTIMO_FILETTO), `bordo a ${passi} passi`).toBeLessThan(
+        PASSO_SONDA * 0.5,
+      )
+    }
   })
 })

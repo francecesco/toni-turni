@@ -97,8 +97,35 @@ const MIN_STRIP_SIZE = 12
 const EDGE_TOL_FRAC = 0.35
 /** Sotto questo numero di strisce concordi, il lato non è affidabile. */
 const MIN_EDGE_POINTS = 3
+/**
+ * Frazione della tolleranza entro cui un punto contribuisce al consenso: oltre
+ * mezza tolleranza il contributo è **zero**, non un residuo piccolo.
+ *
+ * Non è una taratura, è la chiusura di un difetto misurato. Con quattro punti di
+ * cui due su un filetto e due su quello sotto, la retta per i due estremi è
+ * inclinata quel tanto che porta tutti e quattro dentro tolleranza con residui
+ * di 10,67 px su 11,2: pesando linearmente valeva 2,095 e batteva i due punti
+ * esatti (2,0), restituendo un lato sbagliato di 35,2 px — su nessuno dei due
+ * filetti. Con il contributo che si azzera a mezza tolleranza quella retta vale
+ * 2,0 come le altre, e il pareggio si rompe sul residuo massimo, che è la
+ * grandezza giusta: fra due spiegazioni con lo stesso consenso vince quella che
+ * spiega i suoi punti meglio.
+ *
+ * La tolleranza **piena** resta quella che decide chi è concorde, quindi un
+ * punto fra mezza e una tolleranza continua a entrare nella rifinitura ai minimi
+ * quadrati: cambia solo chi *sceglie* il lato, non chi lo calcola.
+ */
+const CONSENSUS_FULL_FRAC = 0.5
 /** Profondità minima del filetto di bordo, in frazione della profondità mediana dei filetti. */
 const BORDER_DEPTH_FRAC = 0.5
+/**
+ * La fascia in cui si cerca l'ultima riga della tabella, in frazioni del passo
+ * misurato a partire dal lato inferiore. Comincia un decimo di passo sopra il
+ * lato per non misurare il filetto stesso, e si ferma a nove decimi per non
+ * scavalcare il penultimo filetto.
+ */
+const LAST_ROW_FROM_FRAC = 0.9
+const LAST_ROW_TO_FRAC = 0.1
 
 export function toGreyscale(rgb: RgbImage): Float64Array {
   const { data, width, height, channels } = rgb
@@ -133,8 +160,11 @@ export interface Box {
  * due lati» costa i filetti veri (su agosto raddrizzato la sequenza scende da 34
  * a 26 filetti), perché per pixel quel criterio è molto più rumoroso di quanto
  * la separazione fra le mediane faccia sperare. La difesa sta quindi a valle,
- * dove il candidato viene confrontato con i filetti già trovati: `traceRules`
- * (profondità e continuità della sequenza) e `fitEdge` (consenso fra strisce).
+ * dove il candidato viene confrontato con i filetti già trovati — `traceRules`
+ * (profondità e continuità della sequenza) e `fitEdge` (consenso fra strisce) —
+ * e soprattutto in `validateLastRow`, che guarda una proprietà che questo
+ * profilo non contiene: una tabella è un reticolo, quindi la sua ultima riga è
+ * attraversata dai filetti verticali, e il margine del foglio no.
  */
 export function ruleProfile(
   grey: Float64Array,
@@ -304,30 +334,46 @@ export function fitEdge(points: readonly Point[], step: number, cosa: string): L
 
   if (points.length < MIN_EDGE_POINTS) throw troppoPochi(points.length)
 
-  const inliersOf = (line: Line): Point[] =>
-    points.filter((p) => Math.abs(p.y - lineAt(line, p.x)) <= tol)
+  const residual = (line: Line, p: Point): number => Math.abs(p.y - lineAt(line, p.x))
+  const inliersOf = (line: Line): Point[] => points.filter((p) => residual(line, p) <= tol)
   /**
    * Consenso "morbido": ogni punto agganciato vale 1 se ci cade esattamente
-   * sopra e 0 se sta al limite della tolleranza. Contare i punti e basta non
-   * funziona: una retta inclinata quel tanto che basta può agganciare quattro
-   * punti presi metà da un filetto e metà da quello sotto, con residui grossi ma
-   * dentro tolleranza, e battere i tre punti che stanno esattamente su un filetto
-   * vero. Pesando i residui, i tre esatti valgono 3,0 e i quattro tirati 2,6.
+   * sopra e 0 quando arriva a **mezza** tolleranza (vedi
+   * `CONSENSUS_FULL_FRAC`). Contare i punti e basta non funziona: una retta
+   * inclinata quel tanto che basta può agganciare quattro punti presi metà da un
+   * filetto e metà da quello sotto, con residui grossi ma dentro tolleranza, e
+   * battere i punti che stanno esattamente su un filetto vero. Pesare
+   * linearmente sull'intera tolleranza non basta a impedirlo: con cinque punti i
+   * tre esatti valgono 3,0 contro i 2,6 dei quattro tirati e vincono, ma con
+   * **quattro** punti il confronto è 2,0 contro 2,095 e vincono i tirati. Il
+   * peso che si azzera a mezza tolleranza chiude anche quel caso.
    */
   const consensus = (line: Line, inliers: readonly Point[]): number =>
-    inliers.reduce((sum, p) => sum + (1 - Math.abs(p.y - lineAt(line, p.x)) / tol), 0)
+    inliers.reduce(
+      (sum, p) => sum + Math.max(0, 1 - residual(line, p) / (tol * CONSENSUS_FULL_FRAC)),
+      0,
+    )
+  /** Il residuo peggiore fra i concordi: rompe i pareggi di consenso. */
+  const worstOf = (line: Line, inliers: readonly Point[]): number =>
+    inliers.reduce((peggio, p) => Math.max(peggio, residual(line, p)), 0)
 
   let best: Point[] = []
   let bestScore = -Infinity
+  let bestWorst = Infinity
   for (let i = 0; i < points.length; i += 1) {
     for (let j = i + 1; j < points.length; j += 1) {
       if (points[i].x === points[j].x) continue
       const candidate = fitLine([points[i], points[j]])
       const inliers = inliersOf(candidate)
       const score = consensus(candidate, inliers)
-      if (score > bestScore || (score === bestScore && inliers.length > best.length)) {
+      const worst = worstOf(candidate, inliers)
+      // A pari consenso vince il residuo massimo più piccolo, non il numero di
+      // concordi: preferire i concordi farebbe vincere proprio la retta tirata
+      // fra due filetti, che è quella che ne aggancia di più.
+      if (score > bestScore || (score === bestScore && worst < bestWorst)) {
         best = inliers
         bestScore = score
+        bestWorst = worst
       }
     }
   }
@@ -523,6 +569,66 @@ export function detectColumnBoundaries(
   return boundaries
 }
 
+/**
+ * Controlla che sopra il lato inferiore ci sia davvero **una riga di tabella** e
+ * non il margine del foglio.
+ *
+ * È la difesa contro il bordo del foglio agganciato come lato inferiore, e
+ * guarda l'unica proprietà che le altre difese non guardano: una tabella è un
+ * **reticolo**, quindi la sua ultima riga è attraversata dai filetti verticali;
+ * il margine di carta fra la tabella e il bordo del foglio non lo è.
+ *
+ * Perché serviva una proprietà nuova, misurato sulle due foto reali e sulla
+ * sonda sintetica: nessuna delle grandezze già in campo separa un bordo di
+ * foglio da un filetto stampato.
+ *
+ * | grandezza | filetto stampato | bordo del foglio (agosto) |
+ * |---|---|---|
+ * | contrasto a due lati | passa | **passa** (l'ombra è più scura sia della carta sopra sia della scrivania sotto) |
+ * | larghezza del dip | 1-4 campioni, mediana 2 | **1-2** |
+ * | profondità del dip | mediana 50 (100% della striscia) | **46,7** (93%) |
+ * | posizione | al passo | **al passo**, se il margine è un multiplo del passo |
+ * | consenso fra le 5 strisce | concorde | **concorde**: il bordo lo vedono tutte e cinque |
+ * | carta oltre il candidato (maschera di `grid-page`) | 0,000-0,998, **0,000 sull'ultimo filetto vero di settembre** | 0,858, perché sotto c'è un secondo foglio |
+ *
+ * L'ultima riga della tabella, invece, separa nettamente: misurati **24 confini
+ * di colonna** su agosto e **21** su settembre nella fascia dell'ultima riga,
+ * contro **zero** (`detectColumnBoundaries` fallisce) nella fascia di una riga
+ * *sotto* il lato inferiore, che è dove cadrebbe l'ultima riga se il lato fosse
+ * il bordo del foglio. Il minimo richiesto è `MIN_COLUMN_BOUNDARIES` = 3.
+ *
+ * Il controllo si applica **solo** al lato inferiore. Sopra non si può: la riga
+ * del titolo è più alta delle righe dei giorni e non è divisa in colonne, quindi
+ * la fascia della prima riga cade dentro il titolo — misurato, su settembre lì
+ * non si trova nessun confine di colonna. Il lato superiore resta difeso da
+ * `trimIsolatedEnds` e dal consenso fra strisce.
+ *
+ * La fascia si misura dal punto **più alto** del lato, così resta dentro la
+ * tabella su tutta la larghezza anche quando il lato è inclinato (su agosto il
+ * lato inferiore scende di 24 px da un capo all'altro, cioè tre quarti di riga).
+ */
+export function validateLastRow(
+  grey: Float64Array,
+  width: number,
+  x: { start: number; end: number },
+  bottom: Line,
+  rowStep: number,
+  contrastRadius: number,
+): void {
+  const piuAlto = Math.min(lineAt(bottom, x.start), lineAt(bottom, x.end))
+  const y0 = Math.round(piuAlto - rowStep * LAST_ROW_FROM_FRAC)
+  const y1 = Math.round(piuAlto - rowStep * LAST_ROW_TO_FRAC)
+
+  try {
+    detectColumnBoundaries(grey, width, x, y0, y1, rowStep, contrastRadius)
+  } catch {
+    throw new GridNotFoundError(
+      "L'ultima riga del riquadro non è attraversata dai filetti verticali: il lato inferiore " +
+        'trovato è il bordo del foglio o una piega, non l’ultimo filetto della tabella',
+    )
+  }
+}
+
 /** I filetti verticali estremi della tabella, seguiti attraverso più fasce orizzontali. */
 export interface VerticalEdges {
   left: Line
@@ -533,8 +639,24 @@ export interface VerticalEdges {
    * perché sono i confini delle colonne, e ri-rilevarli a valle costerebbe un
    * secondo rilevamento sulla stessa immagine. Sono **candidati**: la
    * `detectColumnBoundaries` non sa quali colonne portino turni, e fra questi
-   * filetti ci sono anche righe che non sono confini di colonna (misurato su
-   * agosto: 14 catene, di cui due non corrispondono a un confine stampato).
+   * filetti c'è anche qualche riga che non è un confine stampato.
+   *
+   * Il conteggio, misurato sulla profondità locale di ciascun candidato nel
+   * raddrizzato esatto e controllato a occhio a 3x: **14 catene su agosto e 18
+   * su settembre, e in entrambe le foto esattamente una** non corrisponde a un
+   * confine stampato — 0,5442 su agosto (in mezzo alla colonna di CRISTINA, sul
+   * bordo delle toppe di correttore, profondità 0,44x la mediana) e 0,0902 su
+   * settembre (in mezzo alla colonna di RENATA, profondità 1,24x la mediana).
+   * Cadono cioè nella posizione che costa di più.
+   *
+   * Le altre catene non attese sono **filetti veri**, non falsi positivi: quello
+   * fra il numero del giorno e il giorno della settimana (0,0289 e 0,0217) e i
+   * confini delle colonne di servizio, che stanno dentro il riquadro per
+   * costruzione. Contarle come falsi positivi, come faceva il commento
+   * precedente, sbaglia in entrambi i sensi: gonfia il numero e nasconde che il
+   * candidato pericoloso è uno solo e sta in mezzo alle colonne delle
+   * infermiere. Chi consuma questi confini deve **agganciare** quelli che gli
+   * servono, non contarli.
    */
   boundaries: Line[]
 }

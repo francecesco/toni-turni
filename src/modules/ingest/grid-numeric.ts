@@ -264,11 +264,31 @@ const TRACE_STEP_MEMORY = 0.6
  */
 const TRACE_DEPTH_FRAC = 0.35
 
-function nearestDip(dips: readonly Dip[], target: number, tol: number, minDepth: number): Dip | null {
+/**
+ * L'avvallamento più vicino al bersaglio, fra quelli che stanno **oltre** `from`
+ * nel verso della ricerca.
+ *
+ * Il vincolo di avanzamento non è un dettaglio: è ciò che fa terminare
+ * l'inseguimento. Senza di esso, con avvallamenti distanti 1 il passo locale
+ * parte da 1, la tolleranza vale 1 per il pavimento, e il bersaglio `from + 1`
+ * aggancia l'avvallamento in `from` stesso; il passo locale scende a 0,6 e poi a
+ * 0,36, il bersaglio non si sposta più e il ciclo non finisce. Con il vincolo,
+ * `from` cresce di almeno un indice intero a ogni aggancio ed è limitato dagli
+ * avvallamenti disponibili, quindi l'inseguimento termina per costruzione.
+ */
+function nearestDip(
+  dips: readonly Dip[],
+  from: number,
+  direction: 1 | -1,
+  target: number,
+  tol: number,
+  minDepth: number,
+): Dip | null {
   let best: Dip | null = null
   let bestErr = Infinity
   for (const dip of dips) {
     if (dip.depth < minDepth) continue
+    if ((dip.index - from) * direction <= 0) continue
     const err = Math.abs(dip.index - target)
     if (err > tol) continue
     if (err < bestErr) {
@@ -294,6 +314,13 @@ function nearestDip(dips: readonly Dip[], target: number, tol: number, minDepth:
  * del foglio con la propria riga d'ombra — che il profilo a due lati non sa
  * distinguere da un filetto, perché è più scura sia della carta sopra sia della
  * scrivania sotto (misurato: carta 215, ombra 122, scrivania 142).
+ *
+ * L'inseguimento **termina per costruzione**: ogni aggancio, normale o
+ * scavalcato, deve stare oltre la posizione corrente nel verso della ricerca
+ * (vedi `nearestDip`), quindi `current` è strettamente monotona su indici interi
+ * e limitata dagli avvallamenti disponibili. Prima la terminazione dipendeva da
+ * un'invariante di `findValleys` — avvallamenti distanti almeno 2 — che stava
+ * due funzioni più in là e non era scritta da nessuna parte.
  */
 export function traceRules(dips: readonly Dip[], seed: readonly number[], step: number): number[] {
   if (seed.length === 0) return []
@@ -310,7 +337,7 @@ export function traceRules(dips: readonly Dip[], seed: readonly number[], step: 
     let daConfermare: number[] = []
     for (;;) {
       const tol = Math.max(1, localStep * TRACE_TOL_FRAC)
-      const next = nearestDip(dips, current + direction * localStep, tol, minDepth)
+      const next = nearestDip(dips, current, direction, current + direction * localStep, tol, minDepth)
       if (next) {
         const gap = Math.abs(next.index - current)
         localStep = TRACE_STEP_MEMORY * localStep + (1 - TRACE_STEP_MEMORY) * gap
@@ -322,7 +349,7 @@ export function traceRules(dips: readonly Dip[], seed: readonly number[], step: 
       // un filetto sbiadito o coperto: si prova la posizione successiva, ma con
       // una tolleranza molto più stretta (vedi TRACE_SKIP_TOL_FRAC)
       const skipTol = Math.max(1, localStep * TRACE_SKIP_TOL_FRAC)
-      const skipped = nearestDip(dips, current + direction * 2 * localStep, skipTol, minDepth)
+      const skipped = nearestDip(dips, current, direction, current + direction * 2 * localStep, skipTol, minDepth)
       if (!skipped) break
       current = skipped.index
       found.add(current)

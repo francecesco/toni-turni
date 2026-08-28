@@ -261,6 +261,37 @@ describe('traceRules', () => {
     expect(traceRules(dips, [230, 260, 290], 30)).toEqual([200, 230, 260, 290, 320, 380, 410])
   })
 
+  /**
+   * L'inseguimento deve **avanzare**. Con semi distanti 1 il passo locale parte
+   * da 1, la tolleranza è 1 per il pavimento, e il bersaglio `current + 1`
+   * aggancia l'avvallamento in `current` stesso: il passo locale scende a 0,6 e
+   * poi a 0,36, il bersaglio non si sposta più e il `for (;;)` non termina.
+   * `found` è un `Set`, quindi non cresce e non c'è nemmeno il sintomo della
+   * memoria: il server si blocca e basta.
+   *
+   * Non è raggiungibile da `detectTableQuad` oggi — `findValleys` restituisce
+   * avvallamenti distanti almeno 2 per costruzione e `MIN_STEP` è 6 — ma
+   * `traceRules` è una primitiva esportata la cui terminazione dipendeva da
+   * un'invariante stabilita due funzioni più in là e scritta da nessuna parte.
+   * Adesso termina per costruzione: ogni aggancio, normale o scavalcato, deve
+   * stare **oltre** la posizione corrente nel verso della ricerca, quindi
+   * `current` è strettamente monotona su indici interi e limitata dagli
+   * avvallamenti disponibili.
+   */
+  it('termina anche quando gli avvallamenti distano 1 e il passo locale collassa', () => {
+    const dips = [2, 3, 6, 10, 13, 17, 20, 24, 27].map((index) => ({ index, depth: 40, width: 2 }))
+
+    const tracciati = traceRules(dips, [2, 3], 4)
+
+    expect(tracciati[0]).toBe(2)
+    expect(tracciati).toContain(3)
+    // la sequenza resta ordinata e senza ripetizioni, e non contiene niente che
+    // non sia un avvallamento
+    expect([...tracciati].sort((a, b) => a - b)).toEqual(tracciati)
+    expect(new Set(tracciati).size).toBe(tracciati.length)
+    for (const t of tracciati) expect(dips.map((d) => d.index)).toContain(t)
+  })
+
   it('senza semi non insegue niente, invece di leggere un indice inesistente', () => {
     expect(traceRules([{ index: 100, depth: 40, width: 2 }], [], 30)).toEqual([])
   })

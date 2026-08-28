@@ -2,10 +2,44 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
-import { cropRosterBands, deskewRoster, GridNotFoundError } from '@/modules/ingest'
+import {
+  cropRosterBands,
+  deskewRoster,
+  GridNotFoundError,
+  type DeskewedRoster,
+  type RosterBand,
+} from '@/modules/ingest'
 
 const AGOSTO = join(process.cwd(), 'fixtures', 'roster-2026-08-3piano.jpeg')
 const SETTEMBRE = join(process.cwd(), 'fixtures', 'roster-2026-09-3piano.jpeg')
+
+/**
+ * `cropRosterBands` e `deskewRoster` rilevano la tabella e la raddrizzano, che è
+ * di gran lunga la cosa più costosa della suite: con le opzioni di default il
+ * risultato è lo stesso per tutti i test, quindi si calcola una volta per foto.
+ * Le bande sono buffer di sola lettura e nessun test le modifica.
+ *
+ * I test che usano opzioni diverse dal default chiamano direttamente, perché
+ * quello che verificano è proprio l'effetto delle opzioni.
+ */
+const bandeCache = new Map<string, Promise<RosterBand[]>>()
+function bandeDi(path: string, daysInMonth: number): Promise<RosterBand[]> {
+  const chiave = `${path}:${daysInMonth}`
+  const gia = bandeCache.get(chiave)
+  if (gia) return gia
+  const calcolo = cropRosterBands(readFileSync(path), { daysInMonth })
+  bandeCache.set(chiave, calcolo)
+  return calcolo
+}
+
+const raddrizzateCache = new Map<string, Promise<DeskewedRoster>>()
+function raddrizzataDi(path: string): Promise<DeskewedRoster> {
+  const gia = raddrizzateCache.get(path)
+  if (gia) return gia
+  const calcolo = deskewRoster(readFileSync(path))
+  raddrizzateCache.set(path, calcolo)
+  return calcolo
+}
 
 /** Una foto senza tabella: carta bianca, nessun filetto. */
 async function foglioBianco(): Promise<Buffer> {
@@ -27,7 +61,7 @@ describe('deskewRoster', () => {
 
   it('raddrizza entrambe le foto nonostante gli orientamenti diversi', async () => {
     for (const path of [AGOSTO, SETTEMBRE]) {
-      const out = await deskewRoster(readFileSync(path))
+      const out = await raddrizzataDi(path)
       expect(out.width).toBeGreaterThan(0)
       expect(out.height).toBeGreaterThan(0)
     }
@@ -48,8 +82,8 @@ describe('deskewRoster', () => {
   })
 
   it('restituisce i confini di colonna già ripuliti, così nessuno raddrizza due volte', async () => {
-    const ago = await deskewRoster(readFileSync(AGOSTO))
-    const set = await deskewRoster(readFileSync(SETTEMBRE))
+    const ago = await raddrizzataDi(AGOSTO)
+    const set = await raddrizzataDi(SETTEMBRE)
 
     // 11 colonne su agosto (il foglio è tagliato dal fotogramma), 14 su settembre
     expect(ago.columns).toHaveLength(12)
@@ -66,13 +100,13 @@ describe('deskewRoster', () => {
 describe('cropRosterBands', () => {
   it('produce due bande per ogni coppia di colonne rilevate', async () => {
     // agosto: 10 colonne di contenuto → 5 coppie × 2 metà di mese
-    expect(await cropRosterBands(readFileSync(AGOSTO), { daysInMonth: 31 })).toHaveLength(10)
+    expect(await bandeDi(AGOSTO, 31)).toHaveLength(10)
     // settembre: 13 colonne di contenuto → 7 gruppi × 2 metà di mese
-    expect(await cropRosterBands(readFileSync(SETTEMBRE), { daysInMonth: 30 })).toHaveLength(14)
+    expect(await bandeDi(SETTEMBRE, 30)).toHaveLength(14)
   })
 
   it('ogni banda è un JPEG non vuoto', async () => {
-    const bande = await cropRosterBands(readFileSync(AGOSTO), { daysInMonth: 31 })
+    const bande = await bandeDi(AGOSTO, 31)
 
     for (const banda of bande) {
       expect(banda.image.byteLength).toBeGreaterThan(1000)
@@ -94,7 +128,7 @@ describe('cropRosterBands', () => {
       [AGOSTO, 31],
       [SETTEMBRE, 30],
     ] as const) {
-      for (const banda of await cropRosterBands(readFileSync(path), { daysInMonth: giorni })) {
+      for (const banda of await bandeDi(path, giorni)) {
         expect(banda.width * banda.height, `${path} colonne ${banda.spec.columns}`).toBeLessThanOrEqual(
           1_000_000,
         )
@@ -113,7 +147,7 @@ describe('cropRosterBands', () => {
       [AGOSTO, 31],
       [SETTEMBRE, 30],
     ] as const) {
-      for (const banda of await cropRosterBands(readFileSync(path), { daysInMonth: giorni })) {
+      for (const banda of await bandeDi(path, giorni)) {
         const righe = banda.spec.dayTo - banda.spec.dayFrom + 1 + 2 // + le due righe d'intestazione
         expect(banda.height / righe, `${path} colonne ${banda.spec.columns}`).toBeGreaterThan(30)
       }
@@ -121,7 +155,7 @@ describe('cropRosterBands', () => {
   })
 
   it('le bande coprono insieme tutte le colonne di contenuto e tutti i giorni', async () => {
-    const bande = await cropRosterBands(readFileSync(SETTEMBRE), { daysInMonth: 30 })
+    const bande = await bandeDi(SETTEMBRE, 30)
 
     const coperte = [...new Set(bande.flatMap((b) => b.spec.columns))].sort((a, b) => a - b)
     expect(coperte).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
@@ -137,10 +171,9 @@ describe('cropRosterBands', () => {
    * dall'altezza: la banda della seconda metà è più alta del suo solo ritaglio.
    */
   it("anteponendo l'intestazione, ogni banda della seconda metà porta i nomi", async () => {
-    const foto = readFileSync(AGOSTO)
-    const raddrizzata = await deskewRoster(foto)
+    const raddrizzata = await raddrizzataDi(AGOSTO)
     const aspettoRiquadro = raddrizzata.height / raddrizzata.width
-    const bande = await cropRosterBands(foto, { daysInMonth: 31 })
+    const bande = await bandeDi(AGOSTO, 31)
 
     expect(bande.filter((b) => b.spec.header !== null)).toHaveLength(5)
 
@@ -175,11 +208,10 @@ describe('cropRosterBands', () => {
       [AGOSTO, 31],
       [SETTEMBRE, 30],
     ] as const) {
-      const foto = readFileSync(path)
-      const raddrizzata = await deskewRoster(foto)
+      const raddrizzata = await raddrizzataDi(path)
       const aspettoRiquadro = raddrizzata.height / raddrizzata.width
 
-      for (const banda of await cropRosterBands(foto, { daysInMonth: giorni })) {
+      for (const banda of await bandeDi(path, giorni)) {
         const larghezza = banda.spec.days.width + banda.spec.crop.width
         const altezza =
           banda.spec.crop.height + (banda.spec.header?.height ?? 0)
@@ -204,7 +236,7 @@ describe('cropRosterBands', () => {
       [AGOSTO, 31],
       [SETTEMBRE, 30],
     ] as const) {
-      const bande = await cropRosterBands(readFileSync(path), { daysInMonth: giorni })
+      const bande = await bandeDi(path, giorni)
       const larghezze = bande.map((b) => b.width)
 
       // il ritaglio letto al 100% era 700 px di larghezza: nessuna banda

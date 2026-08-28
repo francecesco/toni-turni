@@ -5,6 +5,8 @@ import {
   detectRules,
   detectVerticalEdges,
   fitEdge,
+  ruleProfile,
+  validateLastRow,
 } from '@/modules/ingest/grid-lines'
 import { GridNotFoundError } from '@/modules/ingest/grid-types'
 import { lineAt } from '@/modules/ingest/grid-numeric'
@@ -106,6 +108,71 @@ describe('fitEdge', () => {
   })
 
   /**
+   * Lo sweep di **tutte** le configurazioni di fuoriposto: il contratto è che la
+   * retta restituita stia su **uno dei due filetti** su tutta la larghezza —
+   * quello vero o quello un passo sotto, a seconda di quale abbia la
+   * maggioranza — oppure che `fitEdge` fallisca. Una retta inclinata che
+   * aggancia metà dei punti da un filetto e metà dall'altro non sta su nessuno
+   * dei due: è il difetto da una riga intera, in silenzio, e con quattro punti
+   * il consenso morbido la preferiva alla retta giusta.
+   *
+   * Il meccanismo, misurato: con quattro punti di cui due sul filetto vero e due
+   * su quello sotto, la retta per i due buoni aggancia 2 punti con residuo 0
+   * (punteggio 2,0), mentre la retta per i due **estremi** è inclinata quel
+   * tanto che porta tutti e quattro dentro tolleranza con residui 10,67 su 11,2
+   * (punteggio 2,095) e vince, sbagliando di 35,2 px. Il commento di `fitEdge`
+   * diceva «i tre esatti valgono 3,0 e i quattro tirati 2,6»: vero con cinque
+   * punti, falso con quattro, dove il confronto è 2,0 contro 2,095.
+   *
+   * Perché conta: la catena del lato **destro** ha quattro punti su entrambe le
+   * foto di calibrazione (la fascia più in basso perde il filetto verticale più
+   * a destra) e il lato **superiore** di agosto pure (la potatura toglie la testa
+   * della striscia più a sinistra).
+   */
+  it('con qualunque configurazione di fuoriposto sta su un filetto vero o fallisce', () => {
+    for (const quanti of [4, 5]) {
+      const ascisse = Array.from({ length: quanti }, (_, i) => (1000 * i) / (quanti - 1))
+      const tol = PASSO * 0.35
+      let suUnFiletto = 0
+      let respinte = 0
+
+      // tutte le configurazioni tranne «nessuno fuoriposto» e «tutti fuoriposto»,
+      // che sono lo stesso filetto traslato
+      for (let maschera = 1; maschera < (1 << quanti) - 1; maschera += 1) {
+        const fuori = Array.from({ length: quanti }, (_, i) => (maschera >> i) & 1)
+        const punti = ascisse.map((x, i) => ({
+          x,
+          y: filettoVero(x) - (fuori[i] ? PASSO : 0),
+        }))
+        const etichetta = `n=${quanti} fuori=[${fuori.join(',')}]`
+
+        let line
+        try {
+          line = fitEdge(punti, PASSO, 'il lato inferiore')
+        } catch (errore) {
+          expect(errore, etichetta).toBeInstanceOf(GridNotFoundError)
+          respinte += 1
+          continue
+        }
+
+        const scartoDa = (offset: number): number =>
+          Math.max(...ascisse.map((x) => Math.abs(lineAt(line, x) - (filettoVero(x) - offset))))
+        const suVero = scartoDa(0) <= tol
+        const suSotto = scartoDa(PASSO) <= tol
+        expect(
+          suVero || suSotto,
+          `${etichetta}: la retta non sta su nessuno dei due filetti (scarto ${scartoDa(0).toFixed(1)} px dal vero, ${scartoDa(PASSO).toFixed(1)} px da quello sotto)`,
+        ).toBe(true)
+        suUnFiletto += 1
+      }
+
+      // lo sweep esercita davvero entrambi gli esiti
+      expect(suUnFiletto, `n=${quanti}`).toBeGreaterThan(0)
+      expect(suUnFiletto + respinte, `n=${quanti}`).toBe((1 << quanti) - 2)
+    }
+  })
+
+  /**
    * La proprietà che regge il contratto di `fitEdge`: o fallisce, o il lato che
    * restituisce ha almeno `MIN_EDGE_POINTS` strisce entro tolleranza. Serve
    * perché nella funzione **non c'è** un ramo d'errore dopo la rifinitura ai
@@ -185,6 +252,72 @@ function grigiaConFilettiOrizzontali(
   }
   return grey
 }
+
+/**
+ * `ruleProfile` è la primitiva su cui poggia tutto il rilevamento dei filetti:
+ * `detectRules`, `detectColumnBoundaries` e quindi i quattro lati del riquadro.
+ * Era esportata senza nessun test proprio, quindi le due cose che deve fare — e
+ * la terza che **non** sa fare, che è la ragione per cui esiste
+ * `validateLastRow` — non erano scritte in nessuna parte eseguibile.
+ */
+describe('ruleProfile', () => {
+  const width = 200
+  const height = 400
+  const RAGGIO = 4
+  const box = { x0: 50, x1: 150, y0: 100, y1: 300 }
+
+  it('porta a zero il profilo dove un filetto attraversa la striscia, e lo lascia a cento sulla carta', () => {
+    const grey = grigiaConFilettiOrizzontali(width, height, {
+      carta: 220,
+      filetti: [{ y: 200, valore: 60 }],
+    })
+
+    const profilo = ruleProfile(grey, width, 'row', box, RAGGIO, 12)
+
+    // il profilo è indicizzato da box.y0
+    expect(profilo[200 - box.y0]).toBe(0)
+    expect(profilo[150 - box.y0]).toBe(100)
+    expect(profilo).toHaveLength(box.y1 - box.y0)
+  })
+
+  /**
+   * È la ragione per cui la soglia di presenza è una grandezza fisica («un
+   * filetto attraversa almeno metà della striscia») e non un valore tarato: il
+   * testo dentro le celle è scuro quanto un filetto ma occupa solo una parte
+   * della striscia, quindi il profilo resta alto.
+   */
+  it('lascia alto il profilo dove è scura solo una parte della striscia, come il testo in una cella', () => {
+    const grey = new Float64Array(width * height).fill(220)
+    // una macchia scura su 30 delle 100 colonne della striscia
+    for (let y = 200; y < 202; y += 1) for (let x = 60; x < 90; x += 1) grey[y * width + x] = 60
+
+    const profilo = ruleProfile(grey, width, 'row', box, RAGGIO, 12)
+
+    expect(profilo[200 - box.y0]).toBeCloseTo(70, 5)
+    expect(profilo[200 - box.y0]).toBeGreaterThan(50)
+  })
+
+  /**
+   * Il limite dichiarato nella documentazione della funzione, reso eseguibile:
+   * la riga d'ombra di un bordo di foglio è più scura sia della carta sopra sia
+   * della scrivania sotto, quindi il criterio a due lati la accetta e il profilo
+   * scende a zero esattamente come su un filetto stampato. Nessuna soglia su
+   * questo profilo può separare i due casi: la difesa deve guardare altro (vedi
+   * `validateLastRow`).
+   */
+  it('non distingue un filetto dal bordo del foglio con la propria riga d’ombra', () => {
+    const grey = grigiaConFilettiOrizzontali(width, height, {
+      carta: 220,
+      filetti: [{ y: 200, valore: 60 }],
+      bordoFoglio: { y: 250, ombra: 60, scrivania: 115 },
+    })
+
+    const profilo = ruleProfile(grey, width, 'row', box, RAGGIO, 12)
+
+    expect(profilo[200 - box.y0]).toBe(0)
+    expect(profilo[250 - box.y0]).toBe(0)
+  })
+})
 
 describe('detectRules e il bordo del foglio', () => {
   const width = 200
@@ -335,5 +468,59 @@ describe('detectVerticalEdges', () => {
     expect(() => detectColumnBoundaries(grey, width, { start: 0, end: width }, 100, 140, passo, raggio)).toThrow(
       /confine di colonna/i,
     )
+  })
+})
+
+/**
+ * `validateLastRow` è la difesa contro il bordo del foglio agganciato come lato
+ * inferiore, e guarda una proprietà che nessun'altra difesa in campo guarda:
+ * una tabella è un **reticolo**, quindi la sua ultima riga è attraversata dai
+ * filetti verticali; il margine del foglio sotto la tabella no.
+ *
+ * Le altre difese non possono vederlo, ed è misurato: il profilo di contrasto
+ * accetta la riga d'ombra del bordo (è più scura sia della carta sopra sia
+ * della scrivania sotto), la posizione non lo tradisce (un bordo a un passo
+ * esatto sta dove starebbe un filetto), la larghezza non lo tradisce (misurate
+ * 1-2 campioni su agosto, come i filetti stampati, mediana 2), la profondità
+ * non lo tradisce (46,7 su una mediana di 50), e il consenso fra strisce
+ * nemmeno, perché un bordo di foglio lo vedono tutte e cinque.
+ */
+describe('validateLastRow', () => {
+  const width = 600
+  const height = 600
+  const passo = 30
+  const raggio = 4
+  const CIMA = 100
+  const FONDO = 400
+  const grey = grigiaConFilettiVerticali(width, height, [
+    { da: CIMA, a: FONDO, x: [60, 200, 340, 480] },
+  ])
+  const piatto = (y: number) => ({ slope: 0, intercept: y })
+
+  it("accetta un lato inferiore che ha l'ultima riga della tabella sopra di sé", () => {
+    expect(() =>
+      validateLastRow(grey, width, { start: 0, end: width }, piatto(FONDO), passo, raggio),
+    ).not.toThrow()
+  })
+
+  it('respinge un lato inferiore che ha sopra di sé il margine del foglio', () => {
+    // il lato sta una riga sotto l'ultimo filetto: la fascia dell'ultima riga
+    // cade nel margine, dove i filetti verticali non arrivano
+    expect(() =>
+      validateLastRow(grey, width, { start: 0, end: width }, piatto(FONDO + passo), passo, raggio),
+    ).toThrow(GridNotFoundError)
+    expect(() =>
+      validateLastRow(grey, width, { start: 0, end: width }, piatto(FONDO + passo), passo, raggio),
+    ).toThrow(/ultima riga.*filetti verticali/i)
+  })
+
+  it('accetta un lato inferiore inclinato, misurando la fascia dove resta dentro', () => {
+    // i filetti verticali arrivano fino a FONDO su tutta la larghezza: un lato
+    // che scende da FONDO-20 a FONDO va misurato dove la tabella c'è davvero,
+    // cioè sopra l'estremo più alto del lato
+    const inclinato = { slope: 20 / width, intercept: FONDO - 20 }
+    expect(() =>
+      validateLastRow(grey, width, { start: 0, end: width }, inclinato, passo, raggio),
+    ).not.toThrow()
   })
 })

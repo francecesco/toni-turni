@@ -6,6 +6,7 @@ import {
   detectHorizontalEdges,
   detectVerticalEdges,
   toGreyscale,
+  validateLastRow,
 } from './grid-lines'
 import { intersect, lineAt } from './grid-numeric'
 import { findPageBBox } from './grid-page'
@@ -85,7 +86,14 @@ export async function detectTableQuad(image: Buffer): Promise<DetectedTable> {
   }
   const vertical = detectVerticalEdges(grey, rgb.width, page.x, yTrue, horizontal.step, boot.contrastRadius)
 
-  // 5. gli angoli sono le intersezioni dei lati: ogni angolo sta su due filetti veri
+  // 5. sopra il lato inferiore ci deve essere una riga di tabella, non il
+  // margine del foglio: è la difesa contro il bordo del foglio agganciato come
+  // lato (vedi `validateLastRow`). Va **dopo** `detectVerticalEdges` di
+  // proposito: se in questa foto non ci sono affatto filetti verticali, il
+  // messaggio giusto è quello sui confini di colonna, non questo.
+  validateLastRow(grey, rgb.width, xApprox, horizontal.bottom, horizontal.step, boot.contrastRadius)
+
+  // 6. gli angoli sono le intersezioni dei lati: ogni angolo sta su due filetti veri
   const quad: TableQuad = {
     topLeft: intersect(horizontal.top, vertical.left),
     topRight: intersect(horizontal.top, vertical.right),
@@ -95,7 +103,7 @@ export async function detectTableQuad(image: Buffer): Promise<DetectedTable> {
 
   validateQuad(quad, rgb.width, rgb.height)
 
-  // 6. i confini di colonna, portati nel riquadro raddrizzato con l'omografia
+  // 7. i confini di colonna, portati nel riquadro raddrizzato con l'omografia
   // del riquadro stesso: ogni confine è una retta, e la sua ascissa nel
   // raddrizzato è la stessa in cima e in fondo, quindi si prende la media dei
   // due estremi (differiscono di ~0,005 per il rumore di misura)

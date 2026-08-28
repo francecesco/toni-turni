@@ -120,9 +120,13 @@ export function checkOutDir(outDir: string, root: string = REPO_ROOT): string {
   }
   const inside = relative(root, target)
   if (!inside.startsWith('..')) {
+    // il percorso relativo da solo è criptico: da `src` con output `..` vale
+    // `.`, e il messaggio diceva «sta dentro il repository (.)». Serve il
+    // percorso assoluto, che è quello che chi legge deve cambiare.
+    const dove = inside === '' ? 'ne è la radice' : `sta in ${inside}`
     throw new Error(
-      `la cartella di output sta dentro il repository (${inside || '.'}): scegline una fuori, ` +
-        'queste immagini sono foto di tabelle turni e non vanno in git',
+      `la cartella di output ${target} è dentro il repository ${root} (${dove}): scegline una ` +
+        'fuori, queste immagini sono foto di tabelle turni e non vanno in git',
     )
   }
   return target
