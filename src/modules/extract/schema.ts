@@ -67,8 +67,14 @@ export const extractionSchema = z
 export type Extraction = z.infer<typeof extractionSchema>
 export type ExtractedCell = z.infer<typeof extractedCellSchema>
 
-/** Isola il primo oggetto JSON bilanciato presente nel testo. */
-function sliceJsonObject(raw: string): string | null {
+/**
+ * Isola il primo oggetto JSON bilanciato presente nel testo.
+ *
+ * Esportata perché la serve anche `band-schema`: l estrazione a ritagli riceve
+ * lo stesso genere di risposta sporca (recinti markdown, frasi di cortesia) e
+ * duplicarne la lettura significherebbe farla divergere.
+ */
+export function sliceJsonObject(raw: string): string | null {
   const start = raw.indexOf('{')
   if (start === -1) return null
 
