@@ -55,36 +55,36 @@ const estrazioneBase = z.object({
  * due schemi e due copie possono divergere in silenzio.
  */
 const invarianti: Parameters<typeof estrazioneBase.superRefine>[0] = (value, ctx) => {
-    const dichiarate = new Set(value.columns.map(normalizeColumn))
-    const viste = new Set<string>()
-    const giorniNelMese = new Date(value.year, value.month, 0).getDate()
+  const dichiarate = new Set(value.columns.map(normalizeColumn))
+  const viste = new Set<string>()
+  const giorniNelMese = new Date(value.year, value.month, 0).getDate()
 
-    for (const cell of value.cells) {
-      if (!dichiarate.has(normalizeColumn(cell.column))) {
-        // 'custom' come stringa funziona sia in Zod 3 sia in Zod 4, dove
-        // z.ZodIssueCode non esiste più.
-        ctx.addIssue({
-          code: 'custom',
-          message: `La cella cita una colonna non dichiarata: ${cell.column}`,
-        })
-      }
-
-      if (cell.day > giorniNelMese) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `Il giorno ${cell.day} non esiste nel mese ${value.month}/${value.year} (che ne ha ${giorniNelMese})`,
-        })
-      }
-
-      const chiave = `${cell.day}:${normalizeColumn(cell.column)}`
-      if (viste.has(chiave)) {
-        ctx.addIssue({
-          code: 'custom',
-          message: `Cella duplicata per giorno e colonna: ${chiave}`,
-        })
-      }
-      viste.add(chiave)
+  for (const cell of value.cells) {
+    if (!dichiarate.has(normalizeColumn(cell.column))) {
+      // 'custom' come stringa funziona sia in Zod 3 sia in Zod 4, dove
+      // z.ZodIssueCode non esiste più.
+      ctx.addIssue({
+        code: 'custom',
+        message: `La cella cita una colonna non dichiarata: ${cell.column}`,
+      })
     }
+
+    if (cell.day > giorniNelMese) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Il giorno ${cell.day} non esiste nel mese ${value.month}/${value.year} (che ne ha ${giorniNelMese})`,
+      })
+    }
+
+    const chiave = `${cell.day}:${normalizeColumn(cell.column)}`
+    if (viste.has(chiave)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Cella duplicata per giorno e colonna: ${chiave}`,
+      })
+    }
+    viste.add(chiave)
+  }
 }
 
 /**
