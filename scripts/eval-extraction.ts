@@ -1,19 +1,200 @@
 /**
- * Misura l accuratezza dell estrazione contro le fixture, chiamando il provider REALE.
- * Non è un test: consuma token e non gira in CI. Uso: npm run eval
+ * Misura l accuratezza dell estrazione **a bande** contro le fixture, chiamando il
+ * provider REALE. Non è un test: consuma token e non gira in CI. Uso: npm run eval
+ *
+ * Il percorso misurato è quello di produzione, nello stesso ordine: si normalizza la
+ * foto, si raddrizza la tabella e si taglia in bande, si estrae **banda per banda col
+ * pacing reale**, si fonde e si confronta con la trascrizione di riferimento. Il
+ * pacing è la ragione per cui la misura dura ~17 minuti: il piano gratuito di Groq ha
+ * un tetto di token al minuto e le bande vanno distanziate, non è un blocco.
+ *
+ * `year`, `month` e `ward` **non** sono misurati: una banda non mostra
+ * l intestazione del foglio, quindi arrivano dal chiamante (qui dalla fixture) come
+ * arriveranno dall utente in produzione. La misura è sulle celle.
  */
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { normalizeRosterPhoto } from '../src/modules/ingest/normalize'
-import { extractRoster } from '../src/modules/extract/extract'
-import { fallbackProviderFromEnv, providerFromEnv } from '../src/modules/extract/providers'
 import { DEFAULT_SHIFT_CODES } from '../src/modules/codes/defaults'
-import { compareExtraction, validateExpectedRoster } from './accuracy'
+import { cropRosterBands } from '../src/modules/ingest/crop'
+import { normalizeRosterPhoto } from '../src/modules/ingest/normalize'
+import {
+  createTokenPacer,
+  extractRosterByBands,
+  DEFAULT_TOKENS_PER_BAND,
+  GROQ_FREE_TOKENS_PER_MINUTE,
+  type BandPacer,
+} from '../src/modules/extract/extract-bands'
+import { fallbackProviderFromEnv, providerFromEnv } from '../src/modules/extract/providers'
+import type { VisionProvider } from '../src/modules/extract/providers'
+import { compareExtraction, validateExpectedRoster, type ExpectedRoster } from './accuracy'
 
 const FIXTURES = join(process.cwd(), 'fixtures')
 
+/**
+ * Chiave d ambiente richiesta da ciascun provider, per fallire **subito**.
+ *
+ * Senza questa guardia una chiave mancante si scoprirebbe una banda alla volta, ognuna
+ * dopo la sua attesa di pacing: ~17 minuti per non misurare niente e un messaggio
+ * ripetuto 24 volte invece di uno chiaro.
+ */
+const CHIAVE_RICHIESTA: Record<string, string> = {
+  groq: 'GROQ_API_KEY',
+  anthropic: 'ANTHROPIC_API_KEY',
+}
+
+/**
+ * Token di output che Groq **prenota** a ogni chiamata, e che conta nel budget al
+ * minuto anche se la risposta ne usa poche decine. Il default vero sta in
+ * `src/modules/extract/providers/groq.ts`; qui serve solo a stimare quanto pesa una
+ * banda nel budget, cioè a tarare `DEFAULT_TOKENS_PER_BAND`.
+ */
+const TOKEN_DI_OUTPUT_PRENOTATI = Number(process.env.GROQ_MAX_OUTPUT_TOKENS ?? '') > 0
+  ? Number(process.env.GROQ_MAX_OUTPUT_TOKENS)
+  : 4000
+
+/**
+ * `tsx` non carica `.env` da sé, al contrario di `next`: senza questo la chiave non
+ * arriverebbe mai al provider e la misura fallirebbe su tutte le bande.
+ *
+ * `loadEnvFile` **non sovrascrive** le variabili già presenti nell ambiente, nemmeno
+ * quelle impostate a stringa vuota: `GROQ_API_KEY= npm run eval` continua quindi a
+ * valere "chiave assente", che è esattamente la verifica che deve restare possibile.
+ */
+function caricaEnvLocale(): void {
+  try {
+    process.loadEnvFile(join(process.cwd(), '.env'))
+  } catch {
+    // nessun .env: le variabili arrivano dall ambiente, ed è legittimo
+  }
+}
+
+/** Una chiamata al provider, con quello che ha pesato. */
+interface ChiamataAlModello {
+  status: number
+  ms: number
+  inputTokens: number | null
+  outputTokens: number | null
+  totalTokens: number | null
+}
+
+/** Registro della foto in corso: azzerato all inizio di ogni fixture. */
+let registro: ChiamataAlModello[] = []
+
+/**
+ * Intercetta le chiamate HTTP ai provider per leggerne il consumo di token.
+ *
+ * I token non passano dall interfaccia `VisionProvider` — e non è questo lo script
+ * che deve allargarla — ma sono il vincolo del piano gratuito, quindi vanno misurati:
+ * il costo in input per banda con cui è tarato il pacer è una **stima**, e solo il
+ * dato vero dice se è giusta.
+ */
+function osservaChiamateAlModello(): void {
+  const fetchOriginale = globalThis.fetch
+
+  const osservato: typeof fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    if (!/api\.(groq|anthropic)\.com/.test(url)) return fetchOriginale(input, init)
+
+    const inizio = Date.now()
+    const risposta = await fetchOriginale(input, init)
+    const ms = Date.now() - inizio
+
+    let inputTokens: number | null = null
+    let outputTokens: number | null = null
+    let totalTokens: number | null = null
+
+    if (risposta.ok) {
+      try {
+        // `clone()`: il corpo deve restare leggibile dal provider
+        const corpo = (await risposta.clone().json()) as {
+          usage?: {
+            prompt_tokens?: number
+            completion_tokens?: number
+            total_tokens?: number
+            input_tokens?: number
+            output_tokens?: number
+          }
+        }
+        const usage = corpo.usage
+        inputTokens = usage?.prompt_tokens ?? usage?.input_tokens ?? null
+        outputTokens = usage?.completion_tokens ?? usage?.output_tokens ?? null
+        totalTokens =
+          usage?.total_tokens ??
+          (inputTokens !== null && outputTokens !== null ? inputTokens + outputTokens : null)
+      } catch {
+        // corpo non decodificabile: i token restano ignoti, la misura prosegue
+      }
+    }
+
+    registro.push({ status: risposta.status, ms, inputTokens, outputTokens, totalTokens })
+    return risposta
+  }
+
+  globalThis.fetch = osservato
+}
+
+/** Giorni del mese: `month` è 1-based, e il giorno 0 del mese dopo è l ultimo di questo. */
+function giorniDelMese(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate()
+}
+
+function mediana(valori: number[]): number | null {
+  if (valori.length === 0) return null
+  const ordinati = [...valori].sort((a, b) => a - b)
+  const meta = Math.floor(ordinati.length / 2)
+  return ordinati.length % 2 === 1 ? ordinati[meta] : Math.round((ordinati[meta - 1] + ordinati[meta]) / 2)
+}
+
+function estremi(valori: number[]): string {
+  if (valori.length === 0) return 'n/d'
+  return `min ${Math.min(...valori)}, mediana ${mediana(valori)}, max ${Math.max(...valori)}`
+}
+
+function percentuale(correct: number, total: number): string {
+  return total === 0 ? 'n/d' : `${((correct / total) * 100).toFixed(1)}%`
+}
+
+/** Somma dei token di un gruppo di chiamate, `null` se nessuna li ha dichiarati. */
+function sommaToken(chiamate: ChiamataAlModello[], campo: 'inputTokens' | 'outputTokens' | 'totalTokens'): number | null {
+  const dichiarati = chiamate.map((c) => c[campo]).filter((v): v is number => v !== null)
+  return dichiarati.length === 0 ? null : dichiarati.reduce((a, b) => a + b, 0)
+}
+
+/**
+ * Accuratezza sulle sole celle di una metà del mese, riusando `compareExtraction` su
+ * un sottoinsieme del riferimento. Una banda è un gruppo di colonne per una metà del
+ * mese: incrociata con la ripartizione per colonna, questa è l accuratezza per banda.
+ */
+function meta(expected: ExpectedRoster, da: number, a: number): ExpectedRoster {
+  return { ...expected, cells: expected.cells.filter((c) => c.day >= da && c.day <= a) }
+}
+
+function verificaChiavi(provider: VisionProvider, fallback: VisionProvider | null): void {
+  for (const candidato of [provider, fallback]) {
+    if (candidato === null) continue
+    const chiave = CHIAVE_RICHIESTA[candidato.name]
+    if (chiave === undefined) continue
+    if ((process.env[chiave] ?? '').trim() !== '') continue
+
+    console.error(
+      `Manca la variabile d'ambiente ${chiave}, richiesta dal provider "${candidato.name}".`,
+    )
+    console.error(
+      'Questa misura chiama il provider reale: senza chiave ogni banda fallirebbe dopo la sua',
+    )
+    console.error('attesa di pacing, cioè ~17 minuti per non misurare niente.')
+    console.error("Metti la chiave in .env (non nel repository) oppure esportala nell'ambiente.")
+    process.exit(1)
+  }
+}
+
 async function main(): Promise<void> {
-  const expectedFiles = readdirSync(FIXTURES).filter((f) => f.endsWith('.expected.json'))
+  caricaEnvLocale()
+  osservaChiamateAlModello()
+
+  const expectedFiles = readdirSync(FIXTURES)
+    .filter((f) => f.endsWith('.expected.json'))
+    .sort()
   if (expectedFiles.length === 0) {
     console.error('Nessun file *.expected.json in fixtures/: senza verità di riferimento non si misura nulla.')
     process.exit(1)
@@ -21,10 +202,31 @@ async function main(): Promise<void> {
 
   const provider = providerFromEnv()
   const fallback = fallbackProviderFromEnv()
+  verificaChiavi(provider, fallback)
+
   const knownCodes = DEFAULT_SHIFT_CODES.map((def) => def.code)
+
+  // Un solo pacer per tutta la misura: il tetto è sui token al minuto e non si azzera
+  // fra una foto e l altra. Con un pacer per foto, la prima banda della seconda foto
+  // partirebbe subito dopo l ultima della prima e le due chiamate cadrebbero nello
+  // stesso minuto.
+  const pacer = createTokenPacer()
+  const intervallo = (60 * DEFAULT_TOKENS_PER_BAND) / GROQ_FREE_TOKENS_PER_MINUTE
+
+  console.log(
+    `provider: ${provider.name}${fallback ? ` (riserva: ${fallback.name})` : ' (nessuna riserva)'}`,
+  )
+  console.log(
+    `pacing: ${DEFAULT_TOKENS_PER_BAND} token stimati per banda su ${GROQ_FREE_TOKENS_PER_MINUTE} al minuto ` +
+      `= ${intervallo.toFixed(1)}s fra due bande`,
+  )
 
   let totalCells = 0
   let totalCorrect = 0
+  let totalBands = 0
+  let totalFailedBands = 0
+  let totalTokens = 0
+  const inputPerBanda: number[] = []
   // Un estrazione fallita (chiave mancante, provider giù, JSON irreparabile) non è
   // un dato di accuratezza: è un guasto, e va segnalato con un codice di uscita
   // diverso da zero perché uno script che finisce "verde" con zero celle misurate
@@ -33,6 +235,9 @@ async function main(): Promise<void> {
   // Se anche una sola fixture misurata non è verificata, il TOTALE finale non può
   // sembrare un dato definitivo.
   let riferimentoNonVerificato = false
+  let primaFoto = true
+
+  const inizioMisura = Date.now()
 
   for (const expectedFileName of expectedFiles) {
     const photoFileName = expectedFileName.replace('.expected.json', '.jpeg')
@@ -52,38 +257,143 @@ async function main(): Promise<void> {
       console.log('*** ATTENZIONE: riferimento NON verificato da una persona che conosce il reparto ***')
       if (expected._avvertenza) console.log(`    ${expected._avvertenza}`)
     }
+
     const image = await normalizeRosterPhoto(readFileSync(join(FIXTURES, photoFileName)))
     console.log(`immagine normalizzata: ${image.width}x${image.height}, ${Math.round(image.bytes / 1024)} KB`)
 
-    const start = Date.now()
-    const outcome = await extractRoster({ image: image.data, knownCodes, provider, fallback })
-    const seconds = ((Date.now() - start) / 1000).toFixed(1)
-
-    if (!outcome.ok) {
-      console.error(`estrazione FALLITA dopo ${outcome.attempts} tentativi in ${seconds}s: ${outcome.error}`)
-      console.error(`output grezzo: ${outcome.rawOutput?.slice(0, 500) ?? '(nessuno)'}`)
+    const daysInMonth = giorniDelMese(expected.year, expected.month)
+    const inizioTaglio = Date.now()
+    let bands
+    try {
+      bands = await cropRosterBands(image.data, { daysInMonth })
+    } catch (error) {
+      // Tabella non rilevata o confini inservibili: non c è niente da mandare al
+      // modello, e un ritaglio a caso produrrebbe turni sbagliati.
+      console.error(`taglio in bande FALLITO: ${error instanceof Error ? error.message : String(error)}`)
       failedPhotos.push(photoFileName)
       continue
     }
+    console.log(
+      `taglio: ${bands.length} bande in ${((Date.now() - inizioTaglio) / 1000).toFixed(1)}s ` +
+        `(${daysInMonth} giorni, ${bands[0].spec.columns.length} colonne per banda)`,
+    )
+
+    // Attesa fra le due foto: vedi il commento sul pacer condiviso.
+    if (!primaFoto) {
+      console.log(`attesa di pacing fra le due foto (fino a ${intervallo.toFixed(0)}s)...`)
+      await pacer(0)
+    }
+    primaFoto = false
+
+    registro = []
+    const inizioBanda: number[] = [0]
+    let atteseDaRateLimit = 0
+    let msDiAttesa = 0
+
+    // Il pacer reale, con in più la marcatura dei confini fra le bande: `pace(index)`
+    // senza `retryAfter` viene chiamato **prima** della banda `index`, quindi dice
+    // dove finiscono le chiamate della banda precedente. Le chiamate con
+    // `retryAfter` sono attese per rate limit dentro una banda, non confini.
+    const pace: BandPacer = async (index, retryAfterSeconds) => {
+      if (retryAfterSeconds === undefined) inizioBanda[index] = registro.length
+      else atteseDaRateLimit += 1
+      const t0 = Date.now()
+      await pacer(index, retryAfterSeconds)
+      msDiAttesa += Date.now() - t0
+    }
+
+    const start = Date.now()
+    const outcome = await extractRosterByBands({
+      bands,
+      knownCodes,
+      header: { year: expected.year, month: expected.month, ward: expected.ward },
+      provider,
+      fallback,
+      pace,
+    })
+    const secondi = (Date.now() - start) / 1000
+
+    const fallite = new Set(outcome.failures.map((f) => f.spec))
+    totalBands += bands.length
+    totalFailedBands += outcome.failures.length
+
+    console.log(
+      `estrazione: ${secondi.toFixed(0)}s totali, di cui ${(msDiAttesa / 1000).toFixed(0)}s di attesa di pacing | ` +
+        `${outcome.attempts} chiamate | provider usato: ${outcome.provider}`,
+    )
+
+    console.log('bande:')
+    for (let i = 0; i < bands.length; i += 1) {
+      const banda = bands[i]
+      const chiamate = registro.slice(inizioBanda[i] ?? 0, inizioBanda[i + 1] ?? registro.length)
+      const input = sommaToken(chiamate, 'inputTokens')
+      const output = sommaToken(chiamate, 'outputTokens')
+      const totale = sommaToken(chiamate, 'totalTokens')
+      const ms = chiamate.reduce((a, c) => a + c.ms, 0)
+      const codici = chiamate.map((c) => c.status).join(',') || 'nessuna risposta'
+      const esito = fallite.has(banda.spec) ? 'FALLITA' : 'ok'
+
+      if (input !== null) inputPerBanda.push(input)
+      if (totale !== null) totalTokens += totale
+
+      console.log(
+        `  ${String(i).padStart(2)} giorni ${String(banda.spec.dayFrom).padStart(2)}-${String(banda.spec.dayTo).padStart(2)} ` +
+          `col=[${banda.spec.columns.join(',')}] ${banda.width}x${banda.height} ` +
+          `${esito.padEnd(7)} ${chiamate.length} chiamate (${codici}) ` +
+          `token in ${input ?? '?'} / out ${output ?? '?'} / tot ${totale ?? '?'} ` +
+          `in ${(ms / 1000).toFixed(1)}s`,
+      )
+    }
+
+    if (outcome.failures.length > 0) {
+      console.log(`bande non lette (${outcome.failures.length}) — sono buchi dichiarati, non celle assenti:`)
+      for (const failure of outcome.failures) {
+        console.log(
+          `  giorni ${failure.spec.dayFrom}-${failure.spec.dayTo} col=[${failure.spec.columns.join(',')}]: ${failure.error}`,
+        )
+      }
+    } else {
+      console.log('bande non lette: nessuna')
+    }
+
+    console.log(`conflitti di fusione: ${outcome.conflicts}`)
+    if (atteseDaRateLimit > 0) console.log(`attese supplementari per rate limit: ${atteseDaRateLimit}`)
+    const rifiutate = registro.filter((c) => c.status === 429).length
+    if (rifiutate > 0) console.log(`risposte 429 ricevute: ${rifiutate}`)
 
     const report = compareExtraction(expected, outcome.extraction)
-    const percentage = report.total === 0 ? 0 : (report.correct / report.total) * 100
+    const primaMeta = Math.ceil(daysInMonth / 2)
+    const reportPrima = compareExtraction(meta(expected, 1, primaMeta), outcome.extraction)
+    const reportSeconda = compareExtraction(meta(expected, primaMeta + 1, daysInMonth), outcome.extraction)
 
     totalCells += report.total
     totalCorrect += report.correct
 
-    console.log(`tentativi: ${outcome.attempts} | tempo: ${seconds}s | provider usato: ${outcome.provider} (${outcome.model})`)
-    console.log(`intestazione: ${outcome.extraction.ward} ${outcome.extraction.month}/${outcome.extraction.year} (atteso: ${expected.ward} ${expected.month}/${expected.year})`)
-    console.log(`accuratezza: ${report.correct}/${report.total} celle (${percentage.toFixed(1)}%), mancanti ${report.missing}, in eccesso ${report.spurious}`)
+    console.log(
+      `celle prodotte dal modello (dopo la fusione): ${outcome.extraction.cells.length}, su ${report.total} attese`,
+    )
+    console.log(`colonne lette: ${outcome.extraction.columns.join(', ')}`)
+    console.log(
+      `accuratezza: ${report.correct}/${report.total} celle (${percentuale(report.correct, report.total)}), ` +
+        `mancanti ${report.missing}, sbagliate ${report.wrong.length}, in eccesso ${report.spurious}`,
+    )
     if (expected.verified === false) {
       console.log('    ^ ATTENZIONE: percentuale calcolata contro un riferimento NON verificato')
     }
 
-    console.log('per colonna:')
+    console.log(`per colonna (totale | giorni 1-${primaMeta} | giorni ${primaMeta + 1}-${daysInMonth}):`)
     for (const [column, stats] of Object.entries(report.byColumn).sort(([a], [b]) => a.localeCompare(b))) {
-      const pct = stats.total === 0 ? 0 : (stats.correct / stats.total) * 100
-      console.log(`  ${column.padEnd(12)} ${stats.correct}/${stats.total} (${pct.toFixed(0)}%)`)
+      const prima = reportPrima.byColumn[column] ?? { total: 0, correct: 0 }
+      const seconda = reportSeconda.byColumn[column] ?? { total: 0, correct: 0 }
+      const cella = (s: { total: number; correct: number }) =>
+        `${String(s.correct).padStart(2)}/${String(s.total).padEnd(2)} (${percentuale(s.correct, s.total).padStart(6)})`
+      console.log(`  ${column.padEnd(12)} ${cella(stats)} | ${cella(prima)} | ${cella(seconda)}`)
     }
+    console.log(
+      `  ${'TOTALE'.padEnd(12)} ${report.correct}/${report.total} | ` +
+        `${reportPrima.correct}/${reportPrima.total} (${percentuale(reportPrima.correct, reportPrima.total)}) | ` +
+        `${reportSeconda.correct}/${reportSeconda.total} (${percentuale(reportSeconda.correct, reportSeconda.total)})`,
+    )
 
     if (report.handCorrectedAccuracy) {
       const { truePositives, falsePositives, falseNegatives, precision, recall } = report.handCorrectedAccuracy
@@ -96,20 +406,25 @@ async function main(): Promise<void> {
 
     console.log('per fascia di confidenza:')
     for (const [fascia, stats] of Object.entries(report.byConfidenceBucket)) {
-      const pct = stats.total === 0 ? 0 : (stats.correct / stats.total) * 100
-      console.log(`  ${fascia.padEnd(8)} ${stats.correct}/${stats.total} (${pct.toFixed(0)}%)`)
+      console.log(`  ${fascia.padEnd(8)} ${stats.correct}/${stats.total} (${percentuale(stats.correct, stats.total)})`)
     }
 
     if (report.wrong.length > 0) {
       console.log(`celle sbagliate (${report.wrong.length}):`)
-      for (const mistake of report.wrong.slice(0, 40)) {
-        console.log(`  giorno ${String(mistake.day).padStart(2)} ${mistake.column.padEnd(12)} atteso "${mistake.expected}" letto "${mistake.actual}"`)
+      for (const mistake of report.wrong) {
+        console.log(
+          `  giorno ${String(mistake.day).padStart(2)} ${mistake.column.padEnd(12)} atteso "${mistake.expected}" letto "${mistake.actual}"`,
+        )
       }
-      if (report.wrong.length > 40) console.log(`  ... e altre ${report.wrong.length - 40}`)
     }
 
     if (expected._daVerificare) {
       console.log(`punto meno certo della trascrizione: ${expected._daVerificare}`)
+    }
+
+    if (outcome.extraction.cells.length === 0) {
+      console.error('nessuna cella prodotta: l estrazione di questa foto è un guasto, non un dato')
+      failedPhotos.push(photoFileName)
     }
   }
 
@@ -120,15 +435,33 @@ async function main(): Promise<void> {
   if (measuredCount === 0) {
     console.log(`\n=== TOTALE: nessuna foto misurata su ${expectedFiles.length} (tutte le estrazioni sono fallite) ===`)
   } else {
-    const overallPercentage = (totalCorrect / totalCells) * 100
     const coverage =
       failedPhotos.length === 0
         ? `su ${measuredCount} foto`
         : `su ${measuredCount} foto misurate di ${expectedFiles.length} (fallite: ${failedPhotos.join(', ')})`
-    console.log(`\n=== TOTALE: ${totalCorrect}/${totalCells} celle (${overallPercentage.toFixed(1)}%) ${coverage} ===`)
+    console.log(
+      `\n=== TOTALE: ${totalCorrect}/${totalCells} celle (${percentuale(totalCorrect, totalCells)}) ${coverage} ===`,
+    )
     if (riferimentoNonVerificato) {
       console.log('*** ATTENZIONE: la percentuale sopra include almeno una fixture NON verificata da una persona che conosce il reparto ***')
     }
+  }
+
+  console.log(
+    `bande: ${totalBands} in tutto, ${totalFailedBands} non lette | ` +
+      `tempo totale ${((Date.now() - inizioMisura) / 1000 / 60).toFixed(1)} minuti | ` +
+      `token consumati ${totalTokens}`,
+  )
+  console.log(`token di input per banda: ${estremi(inputPerBanda)}`)
+  const inputMediano = mediana(inputPerBanda)
+  if (inputMediano !== null) {
+    // Groq conta nel budget al minuto anche i token di output **prenotati**: è la
+    // somma qui sotto, non i token consumati, che va confrontata con
+    // DEFAULT_TOKENS_PER_BAND.
+    console.log(
+      `peso di una banda nel budget al minuto: ${inputMediano} di input + ${TOKEN_DI_OUTPUT_PRENOTATI} prenotati ` +
+        `= ${inputMediano + TOKEN_DI_OUTPUT_PRENOTATI}, contro DEFAULT_TOKENS_PER_BAND = ${DEFAULT_TOKENS_PER_BAND}`,
+    )
   }
 
   if (failedPhotos.length > 0) {
