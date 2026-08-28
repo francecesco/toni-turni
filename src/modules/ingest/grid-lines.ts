@@ -724,13 +724,29 @@ export function detectVerticalEdges(
   const positionOf = (chain: Point[]): number => median(chain.map((p) => p.y))
   const sorted = [...crossing].sort((a, b) => positionOf(a) - positionOf(b))
 
-  const boundaries = sorted.map((chain, i) =>
-    fitEdge(chain, rowStep, i === 0 ? 'il lato sinistro' : i === sorted.length - 1 ? 'il lato destro' : 'un confine di colonna'),
-  )
+  // I due lati sono fatali: un lato inventato sposta tutto il riquadro, e un
+  // riquadro sbagliato produce turni sbagliati, che è peggio di un estrazione
+  // mancata. Un confine **interno** no: è un candidato, come dice il tipo, e uno
+  // che non si aggancia è un informazione in meno — far cadere il rilevamento
+  // intero per un artefatto in mezzo alla tabella significa perdere la foto per
+  // una colonna. Il margine misurato è 1,68x (residuo peggiore 6,65 px su 11,2
+  // di tolleranza) e una delle due foto ha una catena con esattamente tre punti:
+  // troppo poco per lasciarlo fatale.
+  const left = fitEdge(sorted[0], rowStep, 'il lato sinistro')
+  const right = fitEdge(sorted[sorted.length - 1], rowStep, 'il lato destro')
+
+  const interni: Line[] = []
+  for (const chain of sorted.slice(1, -1)) {
+    try {
+      interni.push(fitEdge(chain, rowStep, 'un confine di colonna'))
+    } catch (error) {
+      if (!(error instanceof GridNotFoundError)) throw error
+    }
+  }
 
   return {
-    left: boundaries[0],
-    right: boundaries[boundaries.length - 1],
-    boundaries,
+    left,
+    right,
+    boundaries: [left, ...interni, right],
   }
 }

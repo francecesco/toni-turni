@@ -80,6 +80,13 @@ function fra(valore: number, minimo: number, massimo: number): number {
  * tabella non viene rilevata due volte e i ritagli non subiscono due
  * compressioni JPEG in fila.
  *
+ * I confini escono **come rilevati**, non ripuliti: la ripulitura la fa una
+ * volta sola chi la consuma (`deskewRoster` per il suo contratto pubblico,
+ * `planBands` per il taglio). Ripulire qui e poi di nuovo a valle significava
+ * passare la seconda volta su un elenco già ripulito, dove la distanza mediana
+ * fra confini consecutivi è più grande — cioè con una soglia diversa da quella
+ * su cui è tarata.
+ *
  * L'altezza dell'uscita segue le **proporzioni del riquadro trovato**, non un
  * valore fisso: le due foto vedono lo stesso modulo con proporzioni diverse
  * (0,93 contro 0,70) perché quella di agosto taglia il foglio a destra, e
@@ -120,7 +127,7 @@ async function warpRoster(
 
   return {
     rect: { data: raddrizzato, width, height, channels: info.channels },
-    columns: pruneColumnBoundaries(tabella.columns),
+    columns: tabella.columns,
   }
 }
 
@@ -148,7 +155,12 @@ export async function deskewRoster(
     .jpeg({ quality: options.quality ?? DEFAULT_QUALITY, mozjpeg: true })
     .toBuffer()
 
-  return { data, width: rect.width, height: rect.height, columns }
+  return {
+    data,
+    width: rect.width,
+    height: rect.height,
+    columns: pruneColumnBoundaries(columns),
+  }
 }
 
 /** Un pezzo di immagine già materializzato, con le sue dimensioni in pixel. */

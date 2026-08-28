@@ -43,15 +43,25 @@ export interface RosterLayout {
  *   un decimo di riga, e la sovrapposizione copre il resto.
  * - `headerStrip`: la riga dei nomi finisce a 0,0637 (agosto) e 0,0665
  *   (settembre); 0,075 la prende intera in entrambe con un margine di sicurezza.
- * - `monthOverlap`: 0,012 è poco meno di mezza riga (una riga vale 0,030 su
- *   agosto e 0,031 su settembre), quindi nessun giorno cade nella cucitura senza
- *   che una banda intera si allunghi.
+ * - `monthOverlap`: 0,022 è **0,73 righe** su agosto e 0,70 su settembre (una
+ *   riga vale 0,03018 e 0,03145). Serve tanto perché la cucitura è calcolata e
+ *   il filetto vero sta altrove: misurato sui filetti del raddrizzato, la
+ *   cucitura cade a 0,5476 contro 0,5433 su agosto (+0,143 righe) e a 0,5325
+ *   contro 0,5355 su settembre (−0,095 righe). Con 0,012 il margine peggiore fra
+ *   il filetto vero e il bordo della banda che lo possiede era **0,254 righe**:
+ *   un quarto di riga di tolleranza su un modulo cartaceo che può cambiare, e il
+ *   guasto è mezza riga di giorno tagliata via. Con 0,022 i quattro margini
+ *   misurati sono 0,87 e 0,59 righe su agosto, 0,61 e 0,80 su settembre, cioè un
+ *   peggiore di **0,59 righe**: più di mezza riga, quindi nemmeno un errore da
+ *   mezza riga nella previsione della cucitura taglia la riga del giorno di
+ *   cucitura. Il prezzo è un terzo di riga in più di riga vicina dentro ogni
+ *   banda, che il modello scarta perché il giorno lo legge dalla striscia.
  * - `boundaryMinRatio`: vedi `pruneColumnBoundaries`.
  */
 export const DEFAULT_ROSTER_LAYOUT: RosterLayout = {
   headerHeight: 0.065,
   headerStrip: 0.075,
-  monthOverlap: 0.012,
+  monthOverlap: 0.022,
   boundaryMinRatio: 0.65,
 }
 

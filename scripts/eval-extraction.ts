@@ -233,6 +233,10 @@ async function main(): Promise<void> {
   // diverso da zero perché uno script che finisce "verde" con zero celle misurate
   // nasconderebbe il problema.
   const failedPhotos: string[] = []
+  // Foto su cui la metrica handCorrected non è misurabile: la fixture non
+  // dichiara la chiave, quindi il dato che si legge vale su un campione più
+  // piccolo di quello che la riga finale sembra coprire.
+  const handCorrectedNonMisurabile: string[] = []
   // Se anche una sola fixture misurata non è verificata, il TOTALE finale non può
   // sembrare un dato definitivo.
   let riferimentoNonVerificato = false
@@ -412,6 +416,22 @@ async function main(): Promise<void> {
         `correzioni a mano riconosciute: precisione ${pct(precision)}, recall ${pct(recall)} ` +
           `(veri positivi ${truePositives}, falsi positivi ${falsePositives}, falsi negativi ${falseNegatives})`,
       )
+    } else {
+      // Un limite dichiarato invece di un limite invisibile: senza la chiave
+      // `handCorrected` nella fixture, `compareExtraction` salta il blocco e
+      // metà delle celle prodotte non viene mai controllata per falsi positivi.
+      // La Fase 3 si progetta su questo segnale, quindi la percentuale che si
+      // legge sull altra foto è un limite superiore ottimista, non una media.
+      console.log(
+        'correzioni a mano riconosciute: NON MISURABILE su questa foto — la fixture non dichiara',
+      )
+      console.log(
+        '    "handCorrected", quindi non si sa quante celle marcate dal modello siano falsi positivi.',
+      )
+      console.log(
+        '    Da fare: qualcuno che conosce il reparto elenca le correzioni a penna di questa foto.',
+      )
+      handCorrectedNonMisurabile.push(photoFileName)
     }
 
     console.log('per fascia di confidenza:')
@@ -462,6 +482,12 @@ async function main(): Promise<void> {
       `tempo totale ${((Date.now() - inizioMisura) / 1000 / 60).toFixed(1)} minuti | ` +
       `token consumati ${totalTokens}`,
   )
+  if (handCorrectedNonMisurabile.length > 0) {
+    console.log(
+      `*** handCorrected misurato su ${expectedFiles.length - handCorrectedNonMisurabile.length} foto su ${expectedFiles.length}: ` +
+        `non dichiarato in ${handCorrectedNonMisurabile.join(', ')} ***`,
+    )
+  }
   console.log(`token di input per banda: ${estremi(inputPerBanda)}`)
   const inputMediano = mediana(inputPerBanda)
   if (inputMediano !== null) {

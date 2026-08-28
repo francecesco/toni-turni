@@ -32,13 +32,19 @@ function schemaFingerprint(): string {
  * La costruzione è atomica: si migra in un file temporaneo e si rinomina, così due
  * worker che partono insieme non si leggono un modello a metà (il perdente della
  * corsa produce un modello equivalente, quindi non serve un lock).
+ *
+ * Lo staging sta **dentro `TEMPLATE_DIR`**, non in `os.tmpdir()`: `renameSync` fra
+ * due filesystem diversi non è atomico e su Linux non è nemmeno permesso
+ * (`EXDEV`), e su una macchina con `/tmp` su tmpfs — Docker, CI — cadrebbe tutta
+ * la suite che tocca il database. Nella stessa directory il rename è una
+ * operazione sola sullo stesso filesystem, che è ciò che lo rende atomico.
  */
 function templatePath(): string {
   const path = join(TEMPLATE_DIR, `${schemaFingerprint()}.db`)
   if (existsSync(path)) return path
 
   mkdirSync(TEMPLATE_DIR, { recursive: true })
-  const building = mkdtempSync(join(tmpdir(), 'turni-template-'))
+  const building = mkdtempSync(join(TEMPLATE_DIR, 'building-'))
   const staged = join(building, 'test.db')
 
   try {

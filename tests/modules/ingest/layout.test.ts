@@ -218,13 +218,25 @@ describe('planBands', () => {
     }
   })
 
-  it('sovrappone le due metà del mese, così nessun giorno cade nella cucitura', () => {
-    const bande = planBands(AGOSTO, { daysInMonth: 31 })
+  /**
+   * Il nome promette che nessun giorno cade nella cucitura, quindi la
+   * sovrapposizione va misurata in **righe di giorno**: un `>` la soddisfarebbe
+   * con 1e-9. La cucitura è calcolata e il filetto vero sta altrove — misurato,
+   * fino a 0,166 righe di scarto — quindi ogni metà deve oltrepassarla di più di
+   * mezza riga. Con `monthOverlap` = 0,022 la sovrapposizione totale è 1,46
+   * righe su agosto; il legame col filetto misurato lo verifica `crop.test.ts`.
+   */
+  it('sovrappone le due metà del mese di più di una riga di giorno', () => {
+    const giorni = 31
+    const bande = planBands(AGOSTO, { daysInMonth: giorni })
     const prima = bande.find((b) => b.dayFrom === 1)!
     const seconda = bande.find((b) => b.dayFrom > 1 && b.columns[0] === prima.columns[0])!
 
     expect(prima.dayTo + 1).toBe(seconda.dayFrom)
-    expect(prima.crop.top + prima.crop.height).toBeGreaterThan(seconda.crop.top)
+
+    const riga = (1 - DEFAULT_ROSTER_LAYOUT.headerHeight) / giorni
+    const sovrapposizione = prima.crop.top + prima.crop.height - seconda.crop.top
+    expect(sovrapposizione / riga).toBeGreaterThan(1)
   })
 
   it('rispetta columnsPerBand', () => {

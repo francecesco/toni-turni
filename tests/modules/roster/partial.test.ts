@@ -152,3 +152,56 @@ describe('saveExtraction con bande non lette', () => {
     expect(JSON.parse(salvato.missingBands ?? '[]')).toHaveLength(1)
   })
 })
+
+/**
+ * I conflitti di fusione — celle scartate perché citano un giorno che la banda
+ * non mostrava, o due letture discordi della stessa cella — uscivano dal
+ * sistema senza lasciare traccia: `mergeBandExtractions` li contava e nessuno
+ * salvava quel numero. Una banda geometricamente disallineata produceva quindi
+ * celle scartate, un contatore che nessuno leggeva e `status: 'extracted'`.
+ */
+describe('saveExtraction e i conflitti di fusione', () => {
+  it('salva il numero di conflitti, così non escono dal sistema in silenzio', async () => {
+    const r = await roster()
+
+    await repo.saveExtraction(r.id, estrazione(), {
+      provider: 'groq',
+      rawOutput: '{}',
+      conflicts: 3,
+    })
+
+    const salvato = await prisma.roster.findUniqueOrThrow({ where: { id: r.id } })
+    expect(salvato.conflicts).toBe(3)
+  })
+
+  it('senza conflitti dichiarati il contatore resta a zero', async () => {
+    const r = await roster()
+
+    await repo.saveExtraction(r.id, estrazione(), { provider: 'groq', rawOutput: '{}' })
+
+    const salvato = await prisma.roster.findUniqueOrThrow({ where: { id: r.id } })
+    expect(salvato.conflicts).toBe(0)
+  })
+
+  /**
+   * Regola invariante 3 di CLAUDE.md: l output del modello non è mai fidato e
+   * passa dalla validazione Zod **prima** di toccare il database. La fusione
+   * garantisce per costruzione due delle tre invarianti di `extractionSchema`,
+   * ma "per costruzione" è una proprietà del codice di oggi, non un controllo.
+   */
+  it("rifiuta un estrazione che non passa lo schema, invece di scriverla", async () => {
+    const r = await roster()
+    const rotta = {
+      ...estrazione(),
+      cells: [{ day: 1, column: 'NON DICHIARATA', code: 'M', confidence: 0.9, handCorrected: false }],
+    }
+
+    await expect(
+      repo.saveExtraction(r.id, rotta, { provider: 'groq', rawOutput: '{}' }),
+    ).rejects.toThrow()
+
+    const salvato = await prisma.roster.findUniqueOrThrow({ where: { id: r.id } })
+    expect(salvato.status).toBe('uploaded')
+    expect(await prisma.rosterCell.count({ where: { rosterId: r.id } })).toBe(0)
+  })
+})

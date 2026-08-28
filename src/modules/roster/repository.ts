@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db'
 import { listShiftCodes, matchCode } from '@/modules/codes'
-import type { BandFailure, Extraction } from '@/modules/extract'
+import { storedExtractionSchema, type BandFailure, type Extraction } from '@/modules/extract'
 
 export async function nextVersion(year: number, month: number, ward: string): Promise<number> {
   const ultima = await prisma.roster.findFirst({
@@ -30,22 +30,36 @@ export async function createRoster(input: {
  * sempre, il codice risolto è null quando la legenda non lo conosce — sarà l utente
  * a deciderlo, e non è un errore di estrazione.
  *
- * `meta.missingBands` sono le bande che il modello non ha letto (estrazione a
- * ritagli): finiscono nel database come JSON e portano lo stato a `partial`.
- * Sono la ragione per cui questo stato esiste: tre celle non lette per un
- * problema tecnico non devono somigliare a tre celle vuote sul foglio, perché
- * una cella che manca in silenzio è un turno che scompare. Un salvataggio senza
- * buchi le **ripulisce**, altrimenti resterebbe la dichiarazione di un buco che
- * non c è più.
+ * `meta.missingBands` sono le bande che il modello non ha letto, o ha letto solo
+ * in parte (estrazione a ritagli): finiscono nel database come JSON e portano lo
+ * stato a `partial`. Sono la ragione per cui questo stato esiste: tre celle non
+ * lette per un problema tecnico non devono somigliare a tre celle vuote sul
+ * foglio, perché una cella che manca in silenzio è un turno che scompare. Un
+ * salvataggio senza buchi le **ripulisce**, altrimenti resterebbe la
+ * dichiarazione di un buco che non c è più.
+ *
+ * `meta.conflicts` sono le celle che la fusione ha scartato o risolto: un
+ * segnale che prima si fermava in memoria.
+ *
+ * L estrazione passa da `storedExtractionSchema` **prima** di toccare il database
+ * (regola invariante 3): la fusione garantisce per costruzione due delle tre
+ * invarianti, ma "per costruzione" è una proprietà del codice di oggi e non un
+ * controllo, e questa è l ultima porta prima dei dati dell utente.
  */
 export async function saveExtraction(
   rosterId: string,
   extraction: Extraction,
-  meta: { provider: string; rawOutput: string; missingBands?: BandFailure[] },
+  meta: {
+    provider: string
+    rawOutput: string
+    missingBands?: BandFailure[]
+    conflicts?: number
+  },
 ): Promise<{ cells: number; unresolved: number }> {
+  const validata = storedExtractionSchema.parse(extraction)
   const legenda = await listShiftCodes()
 
-  const celle = extraction.cells
+  const celle = validata.cells
     .filter((cell) => cell.code.trim() !== '')
     .map((cell) => {
       const risolto = matchCode(cell.code, legenda)
@@ -76,6 +90,7 @@ export async function saveExtraction(
         provider: meta.provider,
         rawOutput: meta.rawOutput,
         missingBands: parziale ? JSON.stringify(buchi) : null,
+        conflicts: meta.conflicts ?? 0,
       },
     }),
   ])

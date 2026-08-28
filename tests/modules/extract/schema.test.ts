@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseExtraction } from '@/modules/extract/schema'
+import { normalizeColumn, parseExtraction } from '@/modules/extract/schema'
 
 const valida = {
   year: 2026,
@@ -118,5 +118,37 @@ describe('parseExtraction', () => {
     const result = parseExtraction(JSON.stringify({ ...valida, year: 2026, month: 2, cells }))
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toMatch(/non esiste/i)
+  })
+})
+
+/**
+ * L identità di una colonna è **una sola** nozione in tutto il progetto: la
+ * usano la validazione dello schema, la fusione delle bande e la misura di
+ * accuratezza. Collassa spazi *e* punteggiatura perché il modello mette o non
+ * mette il punto di abbreviazione e lo spazio a seconda di come sono scritti sul
+ * foglio, e due grafie della stessa persona che diventano due colonne sono metà
+ * mese che si stacca dalla persona giusta.
+ */
+describe('normalizeColumn', () => {
+  it('vede la stessa colonna sotto due grafie che differiscono per spazi o maiuscole', () => {
+    expect(normalizeColumn('ANNA  LIA')).toBe(normalizeColumn('anna lia'))
+    expect(normalizeColumn(' RENATA ')).toBe(normalizeColumn('Renata'))
+  })
+
+  it('vede la stessa colonna col punto di abbreviazione e senza', () => {
+    expect(normalizeColumn('SARA DP.')).toBe(normalizeColumn('SARA DP'))
+    expect(normalizeColumn('AIUTO MATT.')).toBe(normalizeColumn('AIUTOMATT'))
+  })
+
+  it('vede lo stesso reparto scritto con o senza spazio dopo il grado', () => {
+    expect(normalizeColumn('3°PIANO')).toBe(normalizeColumn('3° PIANO'))
+    expect(normalizeColumn('3°PIANO')).toBe(normalizeColumn('3 PIANO'))
+    expect(normalizeColumn('3°PIANO')).toBe(normalizeColumn('3° Piano'))
+  })
+
+  it('tiene distinte due colonne che differiscono per una lettera', () => {
+    // il caso che il collasso della punteggiatura NON deve accorpare
+    expect(normalizeColumn('SARA D.')).not.toBe(normalizeColumn('SARA DP'))
+    expect(normalizeColumn('ANNA')).not.toBe(normalizeColumn('ANNA LIA'))
   })
 })

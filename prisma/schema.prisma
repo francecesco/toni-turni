@@ -61,15 +61,21 @@ model Roster {
   version   Int      @default(1)
   imagePath String
   // uploaded | extracting | extracted | partial | failed
-  // `partial`: alcune bande non sono state lette, e quali lo dice `missingBands`.
+  // `partial`: alcune bande non sono state lette o sono state lette solo in
+  // parte, e quali lo dice `missingBands`.
   status    String   @default("uploaded")
   // nome del provider che ha prodotto l estrazione, per capire i confronti a posteriori
   provider  String?
   // testo grezzo del modello: serve a capire un estrazione andata male
   rawOutput String?
-  // JSON delle bande NON lette (BandFailure[]), null quando l estrazione è completa:
-  // un buco dichiarato, perche una cella mancante in silenzio e un turno che scompare
+  // JSON delle bande NON lette o lette a meta (BandFailure[]), null quando
+  // l estrazione e completa: un buco dichiarato, perche una cella mancante in
+  // silenzio e un turno che scompare
   missingBands String?
+  // celle scartate in fusione perche citavano un giorno che la banda non
+  // mostrava, o due letture discordi della stessa cella. Non e un errore di per
+  // se, ma un contatore che nessuno legge e un segnale che si perde
+  conflicts Int      @default(0)
   createdAt DateTime @default(now())
   cells     RosterCell[]
 

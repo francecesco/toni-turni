@@ -121,6 +121,15 @@ describe('mergeBandExtractions', () => {
     expect(extraction.ward).toBe('4°PIANO')
   })
 
+  /**
+   * I tre test che seguono usano due bande con gli **intervalli di giorni
+   * sovrapposti**, una forma che `planBands` oggi non produce: le due metà del
+   * mese si sovrappongono in pixel ma dichiarano giorni disgiunti, quindi in
+   * produzione la stessa cella non arriva da due bande. È una difesa non
+   * esercitata, non una difesa che scatta: resta perché è la regola che serve
+   * appena due bande si sovrapporranno davvero, e perché senza di essa la
+   * seconda lettura sovrascriverebbe la prima in silenzio.
+   */
   it('nella sovrapposizione fra le due metà del mese vince la confidenza più alta', () => {
     const { extraction, conflicts } = mergeBandExtractions(
       [
@@ -420,5 +429,71 @@ describe('countBandCells', () => {
     })
 
     expect(conto).toEqual({ read: 4, expected: 4 })
+  })
+})
+
+/**
+ * Le due facce dell unica nozione di identità di colonna, misurate dalla review
+ * finale come difetti attivi.
+ */
+describe('mergeBandExtractions, identità di colonna', () => {
+  it('scarta il nome del reparto anche se il chiamante lo scrive con lo spazio', () => {
+    const { extraction } = mergeBandExtractions(
+      [
+        {
+          spec: spec([1, 2], 1, 16),
+          extraction: band(
+            ['RENATA', '3°PIANO'],
+            [cell(1, 'RENATA', 'M'), cell(1, '3°PIANO', ''), cell(2, '3°PIANO', '')],
+          ),
+        },
+      ],
+      // l utente digita il reparto in un campo di testo: "3° PIANO", non "3°PIANO"
+      { year: 2026, month: 8, ward: '3° PIANO' },
+    )
+
+    expect(extraction.columns).toEqual(['RENATA'])
+    expect(extraction.cells).toHaveLength(1)
+  })
+
+  it('non spacca la stessa infermiera in due colonne per un punto di abbreviazione', () => {
+    const { extraction, conflicts } = mergeBandExtractions(
+      [
+        {
+          spec: spec([1], 1, 15),
+          extraction: band(['SARA DP.'], [cell(1, 'SARA DP.', 'M')]),
+        },
+        {
+          spec: spec([1], 16, 30),
+          extraction: band(['SARA DP'], [cell(16, 'SARA DP', 'P')]),
+        },
+      ],
+      { year: 2026, month: 9, ward: '3°PIANO' },
+    )
+
+    expect(extraction.columns).toEqual(['SARA DP.'])
+    expect(extraction.cells.map((c) => `${c.day}:${c.column}=${c.code}`)).toEqual([
+      '1:SARA DP.=M',
+      '16:SARA DP.=P',
+    ])
+    expect(conflicts).toBe(0)
+  })
+
+  it('tiene distinte due infermiere che differiscono per una lettera', () => {
+    const { extraction } = mergeBandExtractions(
+      [
+        {
+          spec: spec([1, 2], 1, 15),
+          extraction: band(
+            ['SARA D.', 'SARA DP'],
+            [cell(1, 'SARA D.', 'M'), cell(1, 'SARA DP', 'P')],
+          ),
+        },
+      ],
+      { year: 2026, month: 9, ward: '3°PIANO' },
+    )
+
+    expect(extraction.columns).toEqual(['SARA D.', 'SARA DP'])
+    expect(extraction.cells).toHaveLength(2)
   })
 })

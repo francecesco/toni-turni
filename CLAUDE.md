@@ -11,6 +11,11 @@ Istruzioni per Claude Code su questo repository.
 > (Fase 3), il sync con Google Calendar (Fase 4) e la rifinitura UI (Fase 6): ognuna avrà il suo
 > piano in `docs/superpowers/plans/`.
 >
+> **Oggi nessuna route usa questa catena:** nessun file sotto `src/app/` importa `modules/ingest`,
+> `modules/extract` o `modules/roster`, e il percorso foto→bande→estrazione→database è raggiungibile
+> solo da `npm run eval`. La **Fase 2B** è esattamente quel collegamento: upload della foto e
+> visualizzazione della tabella estratta.
+>
 > **La misura reale dell'estrazione a bande dà 486/488 celle corrette (99,6%)**: agosto 246/248,
 > settembre 240/240. Zero celle mancanti (erano 199), zero bande fallite su 24, zero conflitti di
 > fusione. La strategia precedente — l'intera tabella in una sola chiamata — dava 46/248 (18,5%).
@@ -88,7 +93,10 @@ Moduli previsti dalle fasi successive e **non ancora presenti**: `review` (grigl
 umana), `calendar` (sync idempotente con Google Calendar).
 
 **Confini dei moduli:** ogni modulo espone la sua interfaccia pubblica in `index.ts`. Non importare
-file interni di un altro modulo. Se serve, allarga l'`index.ts` — non aggirarlo.
+file interni di un altro modulo. Se serve, allarga l'`index.ts` — non aggirarlo. L'eccezione, la
+stessa dei test di logica pura: `scripts/` importa i sottomoduli (`../src/modules/ingest/crop`) perché
+gira sotto `tsx` fuori dal runtime di Next, dove le facciate tirano dentro il client Prisma e
+`next/headers`.
 
 ## Regole invarianti
 

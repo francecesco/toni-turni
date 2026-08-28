@@ -11,6 +11,7 @@ import {
 } from '@/modules/ingest'
 import { detectRules } from '@/modules/ingest/grid-lines'
 import { median } from '@/modules/ingest/grid-numeric'
+import { DEFAULT_ROSTER_LAYOUT } from '@/modules/ingest/layout'
 
 const AGOSTO = join(process.cwd(), 'fixtures', 'roster-2026-08-3piano.jpeg')
 const SETTEMBRE = join(process.cwd(), 'fixtures', 'roster-2026-09-3piano.jpeg')
@@ -568,6 +569,137 @@ describe('cropRosterBands, il legame giorno-cella', () => {
           SFASAMENTO_MASSIMO,
         )
       }
+    }
+  })
+})
+
+/**
+ * La cucitura di metà mese contro il filetto **misurato**.
+ *
+ * `headerHeight` era l'unica grandezza geometrica del layout interpolata invece
+ * che rilevata, e i numeri che la giustificavano vivevano in un commento: il
+ * mutante che la porta da 0,065 a 0,03 lasciava il 30% della riga del giorno di
+ * cucitura fuori dalla banda che la possiede, con la suite intera verde.
+ *
+ * Qui i filetti delle righe dei giorni si rilevano sul raddrizzato e si
+ * identificano **senza** usare la costante: la corsa più lunga di filetti a
+ * distanza regolare è il reticolo dei giorni, il suo primo filetto è la fine
+ * dell'intestazione e il suo elemento `metà` è il filetto di cucitura. Misurato:
+ * la corsa ha 31 filetti su agosto (31 giorni) e 30 su settembre (30 giorni), e
+ * comincia a 0,0637 e 0,0656 contro un `headerHeight` di 0,065.
+ */
+describe('cropRosterBands, la cucitura di metà mese', () => {
+  /** Scarto ammesso fra una frazione calcolata e il filetto vero, in righe. */
+  const SCARTO_MASSIMO_RIGHE = 0.3
+  /**
+   * Di quanto ogni metà deve oltrepassare il filetto di cucitura, in righe.
+   * Sotto zero la banda che possiede il giorno di cucitura ne taglia la riga.
+   * Misurato con `monthOverlap` = 0,022: 0,87 e 0,59 righe su agosto, 0,61 e
+   * 0,80 su settembre, cioè un margine peggiore di 0,59.
+   */
+  const MARGINE_MINIMO_RIGHE = 0.4
+
+  /** Il reticolo delle righe dei giorni, rilevato e non dedotto dalle costanti. */
+  async function reticoloDeiGiorni(raddrizzata: DeskewedRoster) {
+    const { data, info } = await sharp(raddrizzata.data)
+      .greyscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    const grigi = new Float64Array(info.width * info.height)
+    for (let i = 0; i < grigi.length; i += 1) grigi[i] = data[i]
+
+    const sequenza = detectRules(grigi, info.width, 'row', {
+      x0: Math.round(0.25 * info.width),
+      x1: Math.round(0.75 * info.width),
+      y0: 0,
+      y1: info.height,
+    })
+    expect(sequenza).not.toBeNull()
+    if (sequenza === null) throw new Error('nessuna sequenza di filetti')
+
+    const filetti = sequenza.lines.map((riga) => riga / info.height)
+    const distanze = filetti.slice(1).map((valore, i) => valore - filetti[i])
+    const passo = median(distanze)
+
+    // la corsa più lunga di distanze regolari: le righe dei giorni sono tutte
+    // uguali, la riga del titolo e quella dei nomi no
+    let daMigliore = 0
+    let lunghezzaMigliore = 1
+    let da = 0
+    let lunghezza = 1
+    for (let i = 0; i < distanze.length; i += 1) {
+      if (Math.abs(distanze[i] - passo) <= 0.12 * passo) {
+        lunghezza += 1
+        continue
+      }
+      if (lunghezza > lunghezzaMigliore) {
+        lunghezzaMigliore = lunghezza
+        daMigliore = da
+      }
+      da = i + 1
+      lunghezza = 1
+    }
+    if (lunghezza > lunghezzaMigliore) {
+      lunghezzaMigliore = lunghezza
+      daMigliore = da
+    }
+
+    return { passo, corsa: filetti.slice(daMigliore, daMigliore + lunghezzaMigliore) }
+  }
+
+  it("ancora headerHeight alla fine dell'intestazione misurata sulle due foto", async () => {
+    for (const path of [AGOSTO, SETTEMBRE]) {
+      const raddrizzata = await raddrizzataDi(path)
+      const { passo, corsa } = await reticoloDeiGiorni(raddrizzata)
+
+      expect(
+        Math.abs(corsa[0] - DEFAULT_ROSTER_LAYOUT.headerHeight) / passo,
+        `headerHeight ${path}`,
+      ).toBeLessThan(SCARTO_MASSIMO_RIGHE)
+    }
+  })
+
+  it('calcola la cucitura sul filetto vero e la riga del giorno di cucitura resta intera', async () => {
+    for (const [path, giorni] of [
+      [AGOSTO, 31],
+      [SETTEMBRE, 30],
+    ] as const) {
+      const raddrizzata = await raddrizzataDi(path)
+      const { passo, corsa } = await reticoloDeiGiorni(raddrizzata)
+
+      // la corsa deve avere un filetto per ogni giorno del mese, meno l'ultimo
+      // che sul modulo cartaceo non è sempre stampato
+      expect(corsa.length, `filetti del reticolo ${path}`).toBeGreaterThanOrEqual(giorni - 1)
+
+      const meta = Math.ceil(giorni / 2)
+      const filettoDiCucitura = corsa[meta]
+
+      const bande = await bandeDi(path, giorni)
+      const prima = bande.find((b) => b.spec.dayFrom === 1)
+      const seconda = bande.find((b) => b.spec.dayTo === giorni)
+      if (!prima || !seconda) throw new Error('bande di metà mese non trovate')
+
+      expect(prima.spec.dayTo, `giorno di cucitura ${path}`).toBe(meta)
+
+      const fondoPrima = prima.spec.crop.top + prima.spec.crop.height
+      const cimaSeconda = seconda.spec.crop.top
+      // le due metà si sovrappongono simmetricamente attorno alla cucitura
+      // calcolata, quindi il punto medio dei loro bordi È quella cucitura
+      const cucituraCalcolata = (fondoPrima + cimaSeconda) / 2
+
+      expect(
+        Math.abs(cucituraCalcolata - filettoDiCucitura) / passo,
+        `cucitura ${path}`,
+      ).toBeLessThan(SCARTO_MASSIMO_RIGHE)
+
+      // la banda che possiede il giorno di cucitura ne contiene la riga intera…
+      expect((fondoPrima - filettoDiCucitura) / passo, `prima metà ${path}`).toBeGreaterThan(
+        MARGINE_MINIMO_RIGHE,
+      )
+      // …e la banda successiva comincia sopra il filetto, non sotto
+      expect((filettoDiCucitura - cimaSeconda) / passo, `seconda metà ${path}`).toBeGreaterThan(
+        MARGINE_MINIMO_RIGHE,
+      )
     }
   })
 })

@@ -462,6 +462,66 @@ describe('detectVerticalEdges', () => {
     ).toThrow(/filetti verticali attraversano/i)
   })
 
+  /**
+   * Un confine **interno** che non si aggancia è un candidato in meno, non un
+   * fallimento: `detectVerticalEdges` chiamava `fitEdge` su ogni catena, e
+   * `fitEdge` lancia quando le strisce concordi scendono sotto tre — quindi un
+   * artefatto in mezzo alla tabella portava giù il rilevamento intero. Il
+   * margine reale è 1,68x (residuo peggiore misurato 6,65 px su una tolleranza
+   * di 11,2), e una foto ha una catena con esattamente tre punti.
+   *
+   * Qui il confine a 270 compare in tre fasce e in una è spostato di 13 px:
+   * abbastanza poco per restare la stessa catena (la tolleranza di aggancio è
+   * mezzo passo, 15 px) e abbastanza per non essere interpolabile (la tolleranza
+   * di `fitEdge` è 0,35 passi, 10,5 px).
+   */
+  it('scarta un confine interno che non si aggancia, invece di far cadere la tabella', () => {
+    const scarto = [0, 13, 0]
+    const fasce = [0, 1, 2, 3, 4].map((k) => ({
+      da: k * 100,
+      a: (k + 1) * 100,
+      x: k < 3 ? [60, 200, 270 + scarto[k], 340, 480] : [60, 200, 340, 480],
+    }))
+    const grey = grigiaConFilettiVerticali(width, height, fasce)
+
+    const edges = detectVerticalEdges(
+      grey,
+      width,
+      { start: 0, end: width },
+      { start: 0, end: height },
+      passo,
+      raggio,
+    )
+
+    // i quattro confini buoni restano, il rumoroso sparisce
+    expect(edges.boundaries).toHaveLength(4)
+    expect(edges.boundaries.map((b) => Math.round(lineAt(b, 250)))).toEqual([60, 200, 340, 480])
+    expect(Math.round(lineAt(edges.left, 250))).toBe(60)
+    expect(Math.round(lineAt(edges.right, 250))).toBe(480)
+  })
+
+  /** I due lati restano fatali: un lato inventato produce turni sbagliati. */
+  it('fallisce ancora se è il lato sinistro a non agganciarsi', () => {
+    const scarto = [0, 13, 0]
+    const fasce = [0, 1, 2, 3, 4].map((k) => ({
+      da: k * 100,
+      a: (k + 1) * 100,
+      x: k < 3 ? [60 + scarto[k], 200, 340, 480] : [200, 340, 480],
+    }))
+    const grey = grigiaConFilettiVerticali(width, height, fasce)
+
+    expect(() =>
+      detectVerticalEdges(
+        grey,
+        width,
+        { start: 0, end: width },
+        { start: 0, end: height },
+        passo,
+        raggio,
+      ),
+    ).toThrow(/lato sinistro/i)
+  })
+
   it('fallisce se in una fascia non ci sono abbastanza confini di colonna', () => {
     const grey = grigiaConFilettiVerticali(width, height, [{ da: 0, a: height, x: [60, 200] }])
 

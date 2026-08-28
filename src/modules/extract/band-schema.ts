@@ -29,16 +29,12 @@ export type BandExtraction = z.infer<typeof bandExtractionSchema>
 const COLONNE_DI_SERVIZIO = ['AIUTO MATT.', 'AIUTO POM.', 'TOT M', 'TOT P']
 
 /**
- * Identità di una colonna ai soli fini dello scarto: `normalizeColumn` (l unico
- * punto di verità sull identità di colonna, riusato tale e quale) più la
- * caduta del punto di abbreviazione, che il modello mette o non mette a seconda
- * di come è scritto sul foglio.
+ * Le chiavi delle colonne di servizio, secondo l unica nozione di identità di
+ * colonna del progetto (`normalizeColumn`, che collassa spazi e punteggiatura):
+ * qui non c è nessuna derivazione in più, perché una seconda nozione può
+ * divergere dalla prima senza che nessuno se ne accorga.
  */
-function chiaveDiServizio(name: string): string {
-  return normalizeColumn(name).replace(/\./g, '')
-}
-
-const SERVIZIO = new Set(COLONNE_DI_SERVIZIO.map(chiaveDiServizio))
+const SERVIZIO = new Set(COLONNE_DI_SERVIZIO.map(normalizeColumn))
 
 /**
  * Vero per le colonne che non sono l assegnazione di turno di una persona.
@@ -55,10 +51,10 @@ const SERVIZIO = new Set(COLONNE_DI_SERVIZIO.map(chiaveDiServizio))
  * cosa sembri un nome di persona.
  */
 function isColonnaDiServizio(name: string, ward: string): boolean {
-  const chiave = chiaveDiServizio(name)
+  const chiave = normalizeColumn(name)
   if (chiave.startsWith('AIUTO') || SERVIZIO.has(chiave)) return true
 
-  const reparto = chiaveDiServizio(ward)
+  const reparto = normalizeColumn(ward)
   return reparto.length > 0 && chiave === reparto
 }
 
@@ -126,9 +122,20 @@ export function countBandCells(
   }
 }
 
-/** Due codici sono lo stesso se differiscono solo per spazi o maiuscole. */
+/**
+ * Due codici sono lo stesso se differiscono solo per spazi o maiuscole.
+ *
+ * È l identità di un **codice turno**, non di una colonna, e per questo non
+ * riusa `normalizeColumn`: quella elimina la punteggiatura, e in un codice la
+ * punteggiatura conta (`M 1°P` non è `M1P`). La nozione autorevole per i codici
+ * è `compactCode` in `modules/codes`, che non si importa qui per non far
+ * dipendere l estrazione dalla legenda; questo confronto resta quindi
+ * volutamente **conservativo** — segnala un conflitto in più, mai uno in meno,
+ * e un conflitto è una bandiera, non uno scarto.
+ */
 function stessoCodice(a: string, b: string): boolean {
-  return normalizeColumn(a) === normalizeColumn(b)
+  const compatta = (value: string) => value.trim().toUpperCase().replace(/\s+/g, ' ')
+  return compatta(a) === compatta(b)
 }
 
 /**
@@ -146,14 +153,24 @@ function stessoCodice(a: string, b: string): boolean {
  *
  * 1. Le colonne che non sono di una persona — quelle di servizio (`AIUTO
  *    MATT.`, `TOT M`…) e il nome del reparto, che è l intestazione del foglio —
- *    si scartano **per nome** normalizzato. Una colonna scartata non è un
- *    conflitto: era attesa.
+ *    si scartano **per nome** normalizzato, con l unica nozione di identità di
+ *    colonna del progetto: spazi e punteggiatura non contano, quindi il reparto
+ *    si riconosce anche se il chiamante lo scrive `3° PIANO`. Una colonna
+ *    scartata non è un conflitto: era attesa.
  * 2. Una cella con giorno fuori dall intervallo dichiarato della banda si
  *    scarta **ed è un conflitto**: il modello ha letto una riga che non gli era
  *    stata data, quindi non si sa quale riga abbia letto davvero.
- * 3. Le due metà del mese si sovrappongono di una riga, quindi la stessa cella
- *    può arrivare da due bande: vince la confidenza più alta, a parità la
- *    prima. Se i due codici sono diversi è un conflitto, anche se risolto.
+ * 3. Se la stessa cella arriva da due bande vince la confidenza più alta, a
+ *    parità la prima; se i due codici sono diversi è un conflitto, anche se
+ *    risolto. **Oggi in produzione questo ramo non scatta**: le due metà del
+ *    mese si sovrappongono in pixel (`monthOverlap`) ma gli intervalli di giorni
+ *    che dichiarano sono disgiunti (1-16 e 17-31), quindi nessuna cella arriva
+ *    due volte. Resta perché è la regola che serve appena due bande si
+ *    sovrapporranno davvero — far dichiarare a ciascuna metà un giorno in comune
+ *    richiede prima che i pixel ne mostrino la riga **intera**, e con la
+ *    sovrapposizione attuale (0,7 righe) non la mostrano: la banda chiederebbe
+ *    una riga che non si vede, il modello la ometterebbe e il controllo sul
+ *    conteggio delle celle dichiarerebbe un buco che non c è.
  * 4. `year`, `month` e `ward` vengono dal chiamante.
  *
  * `columns` è l unione ordinata dei nomi letti (prima apparizione), e ogni

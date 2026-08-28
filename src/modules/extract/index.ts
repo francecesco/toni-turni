@@ -1,5 +1,5 @@
 export type { Extraction, ExtractedCell } from './schema'
-export { extractionSchema, parseExtraction } from './schema'
+export { extractionSchema, storedExtractionSchema, parseExtraction } from './schema'
 export { buildExtractionPrompt, buildRepairPrompt } from './prompt'
 export type { BandExtraction } from './band-schema'
 export {
