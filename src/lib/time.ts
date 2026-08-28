@@ -1,5 +1,26 @@
 export const ROME_TZ = 'Europe/Rome' as const
 
+export const MONTH_NAMES_IT = [
+  'gennaio',
+  'febbraio',
+  'marzo',
+  'aprile',
+  'maggio',
+  'giugno',
+  'luglio',
+  'agosto',
+  'settembre',
+  'ottobre',
+  'novembre',
+  'dicembre',
+] as const
+
+/** "agosto 2026" per le intestazioni; il mese è 1-based come sulla carta. */
+export function monthLabel(year: number, month: number): string {
+  const nome = MONTH_NAMES_IT[month - 1] ?? `mese ${month}`
+  return `${nome} ${year}`
+}
+
 /** Somma giorni a una data ISO (YYYY-MM-DD) restando in aritmetica UTC: nessun fuso di mezzo. */
 export function addDays(isoDate: string, days: number): string {
   const [year, month, day] = isoDate.split('-').map(Number)

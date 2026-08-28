@@ -10,6 +10,8 @@ export {
   deleteRosterImage,
   pruneOldImages,
   readRosterImage,
+  retentionDays,
+  rosterImageExists,
   rosterImagePath,
   saveRosterImage,
   uploadDir,

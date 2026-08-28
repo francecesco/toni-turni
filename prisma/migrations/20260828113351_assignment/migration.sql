@@ -4,6 +4,7 @@ CREATE TABLE "Assignment" (
     "userId" TEXT NOT NULL,
     "rosterId" TEXT NOT NULL,
     "day" INTEGER NOT NULL,
+    "columnLabel" TEXT,
     "code" TEXT NOT NULL,
     "confirmedAt" DATETIME,
     "eventId" TEXT,

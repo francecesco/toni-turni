@@ -1,5 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, hoursBetween, ROME_TZ, wallClockToUtc, zoneOffsetMinutes } from '@/lib/time'
+import {
+  addDays,
+  hoursBetween,
+  monthLabel,
+  ROME_TZ,
+  wallClockToUtc,
+  zoneOffsetMinutes,
+} from '@/lib/time'
+
+describe('monthLabel', () => {
+  it('scrive il mese in italiano, 1-based come sulla carta', () => {
+    expect(monthLabel(2026, 8)).toBe('agosto 2026')
+    expect(monthLabel(2026, 1)).toBe('gennaio 2026')
+    expect(monthLabel(2026, 12)).toBe('dicembre 2026')
+  })
+
+  it('non inventa un nome per un mese impossibile', () => {
+    expect(monthLabel(2026, 13)).toBe('mese 13 2026')
+  })
+})
 
 describe('addDays', () => {
   it('avanza di un giorno dentro il mese', () => {

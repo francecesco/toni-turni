@@ -31,3 +31,27 @@ export async function requireReferente(): Promise<CurrentUser> {
   if (user.role !== 'REFERENTE') redirect('/')
   return user
 }
+
+export type ApiAuth = { ok: true; user: CurrentUser } | { ok: false; response: Response }
+
+/**
+ * Autorizzazione per le API route. Una route non fa `redirect`: risponde con un
+ * codice, così un fetch capisce cosa è successo. La regola invariante 6 vuole il
+ * controllo qui e non solo nell interfaccia.
+ */
+export async function authorizeApi(options: { referente?: boolean } = {}): Promise<ApiAuth> {
+  const user = await getCurrentUser()
+  if (!user) {
+    return {
+      ok: false,
+      response: new Response('Autenticazione richiesta', { status: 401 }),
+    }
+  }
+  if (options.referente && user.role !== 'REFERENTE') {
+    return {
+      ok: false,
+      response: new Response('Questa operazione è riservata alla referente', { status: 403 }),
+    }
+  }
+  return { ok: true, user }
+}

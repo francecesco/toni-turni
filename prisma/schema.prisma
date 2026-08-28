@@ -21,7 +21,26 @@ model User {
   role          Role           @default(NURSE)
   createdAt     DateTime       @default(now())
   googleAccount GoogleAccount?
+  aliases       ColumnAlias[]
   assignments   Assignment[]
+}
+
+/// Il nome di colonna letto dalla foto ("CRISTINA", "SARA DP.") associato a un utente.
+/// L associazione si fa una volta e vale per i mesi successivi. `userId` null con
+/// `ignored` true sono le colonne che non sono turni di nessuno (AIUTO MATT., TOT M).
+model ColumnAlias {
+  id        String   @id @default(cuid())
+  /// Chiave d identità della colonna secondo `normalizeColumn` (@/modules/extract):
+  /// solo lettere e cifre, maiuscole. È l unica nozione di identità di colonna del
+  /// progetto, la stessa che usa la fusione delle bande, e serve perché `SARA DP.`
+  /// e `SARA DP` sono la stessa infermiera. Non è un testo da mostrare: le etichette
+  /// che l interfaccia mostra vengono dalle celle.
+  label     String   @unique
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ignored   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model GoogleAccount {
@@ -61,9 +80,13 @@ model Roster {
   ward      String
   version   Int      @default(1)
   imagePath String
-  // uploaded | extracting | extracted | partial | failed
-  // `partial`: alcune bande non sono state lette o sono state lette solo in
-  // parte, e quali lo dice `missingBands`.
+  // uploaded | extracting | interrupted | extracted | partial | failed
+  //   uploaded     la foto è sul volume, nulla è ancora stato mandato all AI
+  //   extracting   il job sta girando: heartbeatAt dice quando ha respirato l ultima volta
+  //   interrupted  il processo è morto a metà (heartbeat vecchio): si riprende dalle bande mancanti
+  //   extracted    tutte le bande lette
+  //   partial      alcune bande non lette o lette a metà: sono dichiarate, non nascoste
+  //   failed       non è stato possibile leggere nulla
   status    String   @default("uploaded")
   // nome del provider che ha prodotto l estrazione, per capire i confronti a posteriori
   provider  String?
@@ -71,43 +94,51 @@ model Roster {
   rawOutput String?
   // JSON delle bande NON lette o lette a meta (BandFailure[]), null quando
   // l estrazione e completa: un buco dichiarato, perche una cella mancante in
-  // silenzio e un turno che scompare
+  // silenzio e un turno che scompare. Lo scrive `saveExtraction`, cioe il percorso
+  // in un colpo solo (npm run eval); il percorso applicativo dichiara gli stessi
+  // buchi banda per banda su `RosterBand`.
   missingBands String?
   // celle scartate in fusione perche citavano un giorno che la banda non
   // mostrava, o due letture discordi della stessa cella. Non e un errore di per
   // se, ma un contatore che nessuno legge e un segnale che si perde
   conflicts Int      @default(0)
   createdAt DateTime @default(now())
-  cells     RosterCell[]
+
+  // Quando la referente ha autorizzato l invio della foto al provider AI.
+  // Null significa: nessuna autorizzazione, nessuna chiamata (regola invariante 9).
+  requestedAt DateTime?
+  // Aggiornato a ogni banda: se è vecchio e lo stato è extracting, il processo è morto.
+  heartbeatAt DateTime?
+  error       String?
+
+  cells       RosterCell[]
+  bands       RosterBand[]
   assignments Assignment[]
 
   @@unique([year, month, ward, version])
 }
 
-/// Il turno di una singola utente in un singolo giorno, dopo il passaggio umano.
-/// `confirmedAt` è il consenso esplicito senza il quale non si scrive su Google:
-/// finché è null l assegnazione resta una bozza. La creazione e la conferma sono
-/// competenza della Fase 3 (`review`); il sync qui legge e aggiorna solo l esito.
-model Assignment {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  rosterId    String
-  roster      Roster    @relation(fields: [rosterId], references: [id], onDelete: Cascade)
-  /// Giorno del mese come sta sulla carta: la data locale si compone con anno e mese della tabella.
-  day         Int
-  code        String
-  confirmedAt DateTime?
-  /// Id dell evento Google creato dall app, per aggiornarlo o cancellarlo.
-  eventId     String?
-  /// draft | confirmed | synced | failed
-  syncState   String    @default("draft")
-  /// Messaggio dell ultimo guasto di sync, da mostrare all utente.
-  syncError   String?
-  syncedAt    DateTime?
-  updatedAt   DateTime  @updatedAt
+/// Stato per banda: è ciò che rende ripartibile un estrazione da 10-20 minuti.
+/// Un riavvio a metà ritrova qui quali bande sono già lette e riprende dalle altre.
+model RosterBand {
+  id        String   @id @default(cuid())
+  rosterId  String
+  roster    Roster   @relation(fields: [rosterId], references: [id], onDelete: Cascade)
+  index     Int
+  // pending | done | partial | failed
+  //   partial  la banda ha risposto, ma con meno celle di quelle chieste: le celle
+  //            lette restano, il buco è dichiarato (vedi countBandCells)
+  status    String   @default("pending")
+  attempts  Int      @default(0)
+  error     String?
+  rawOutput String?
+  /// Giorni coperti dalla banda: un buco si dichiara per colonna e giorni, mai per
+  /// indice di banda, e senza questi due numeri l indice non si sa tradurre.
+  dayFrom   Int?
+  dayTo     Int?
+  updatedAt DateTime @updatedAt
 
-  @@unique([userId, rosterId, day])
+  @@unique([rosterId, index])
 }
 
 model RosterCell {
@@ -123,6 +154,43 @@ model RosterCell {
   confidence    Float
   // il modello ha visto una correzione a penna o col correttore
   handCorrected Boolean @default(false)
+  // due bande sovrapposte hanno letto la stessa cella in modo diverso: da rileggere
+  conflicted    Boolean @default(false)
+  // testo letto dall altra banda, quando c è conflitto
+  conflictWith  String?
+  // quale banda ha prodotto questa cella
+  bandIndex     Int?
 
   @@unique([rosterId, day, columnLabel])
+}
+
+/// Il turno confermato da una persona: è lo stato da cui parte il sync sul calendario.
+/// `confirmedAt` è il consenso esplicito senza il quale non si scrive su Google:
+/// finché è null l assegnazione resta una bozza. La creazione e la conferma sono
+/// competenza della Fase 3 (`review`); il sync (Fase 4) legge e aggiorna solo l esito.
+model Assignment {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rosterId    String
+  roster      Roster    @relation(fields: [rosterId], references: [id], onDelete: Cascade)
+  /// Giorno del mese come sta sulla carta: la data locale si compone con anno e mese della tabella.
+  day         Int
+  /// Colonna della foto da cui viene la conferma, per ricostruire la provenienza.
+  /// Facoltativa: è una traccia, non un dato su cui il sync decide qualcosa, e
+  /// pretenderla non renderebbe più vero niente.
+  columnLabel String?
+  /// Codice risolto in ShiftCode: un codice ignoto non può essere confermato.
+  code        String
+  confirmedAt DateTime?
+  /// Id dell evento Google creato dall app, per aggiornarlo o cancellarlo.
+  eventId     String?
+  /// draft | confirmed | synced | failed
+  syncState   String    @default("draft")
+  /// Messaggio dell ultimo guasto di sync, da mostrare all utente.
+  syncError   String?
+  syncedAt    DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, rosterId, day])
 }

@@ -10,6 +10,15 @@ export function uploadDir(): string {
   return optionalEnv('UPLOAD_DIR', './data/uploads')
 }
 
+/**
+ * Giorni di conservazione delle foto. Sono dati personali di terzi (nomi delle
+ * colleghe e loro presenze): restano sul volume locale e non oltre questo termine.
+ */
+export function retentionDays(): number {
+  const parsed = Number(optionalEnv('IMAGE_RETENTION_DAYS', ''))
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 90
+}
+
 function assertSafeId(rosterId: string): void {
   if (!SAFE_ID.test(rosterId)) {
     throw new Error(`Identificativo della tabella non valido: ${rosterId}`)
@@ -34,6 +43,16 @@ export async function readRosterImage(rosterId: string): Promise<Buffer> {
     return await readFile(path)
   } catch (cause) {
     throw new Error(`Immagine della tabella non trovata: ${rosterId}`, { cause })
+  }
+}
+
+/** La foto c è ancora, o la retention l ha già cancellata? */
+export async function rosterImageExists(rosterId: string): Promise<boolean> {
+  try {
+    await stat(rosterImagePath(rosterId))
+    return true
+  } catch {
+    return false
   }
 }
 

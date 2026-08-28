@@ -2,22 +2,20 @@
 
 Istruzioni per Claude Code su questo repository.
 
-> **Stato: Fasi 2A-bis (estrazione a bande) e 4 (sync Google Calendar) completate.** Oltre alle
-> fondamenta della Fase 1 (Next.js, Prisma/SQLite, legenda dei codici turno, cifratura dei token,
-> login Google, pagine di impostazioni, Docker), sono implementati l'ingestione delle foto con
-> rilevamento della griglia, raddrizzamento e taglio in bande verticali (`ingest`), l'estrazione AI
-> banda per banda con provider Groq/Anthropic, schema di validazione e fusione (`extract`), la
-> persistenza della tabella estratta (`roster`) e il sync idempotente con Google Calendar
-> (`calendar`).
+> **Stato: fasi 1, 2A, 2A-bis, 2B, 3 e 4 completate.** Sopra le fondamenta della Fase 1 (Next.js,
+> Prisma/SQLite, legenda dei codici turno, cifratura dei token, login Google, pagine di
+> impostazioni, Docker) ci sono: l'ingestione delle foto con **rilevamento della griglia,
+> raddrizzamento e taglio a bande** (`ingest`), l'estrazione AI banda per banda con provider
+> Groq/Anthropic, validazione Zod e fusione (`extract`), la persistenza **incrementale** con stato
+> per banda e il job fuori dalla richiesta HTTP (`roster`), il caricamento della foto con anteprima
+> dei tagli e la vista dell'estrazione (Fase 2B), la **griglia di conferma umana** con `ColumnAlias`
+> e `Assignment` (`review`, Fase 3) e il **sync idempotente con Google Calendar** (`calendar`,
+> Fase 4).
 >
-> **Non** sono ancora implementate la Fase 2B (upload e visualizzazione) e la **griglia di conferma
-> (Fase 3)**, che è l'anello mancante perché il flusso funzioni da capo a fondo: è lei a creare le
-> `Assignment` con `confirmedAt` da cui il sync parte. Resta anche la rifinitura UI (Fase 6).
->
-> **Oggi nessuna route usa questa catena:** nessun file sotto `src/app/` importa `modules/ingest`,
-> `modules/extract` o `modules/roster`, e il percorso foto→bande→estrazione→database è raggiungibile
-> solo da `npm run eval`. La **Fase 2B** è esattamente quel collegamento: upload della foto e
-> visualizzazione della tabella estratta.
+> **Non** sono implementati il diff fra versioni della stessa tabella (Fase 5) né la rifinitura UI
+> (Fase 6). Il sync della Fase 4 ha la sua orchestrazione e i suoi test, ma **nessun bottone
+> nell'interfaccia lo lancia**: oggi il flusso arriva fino alla conferma, e da lì al calendario si
+> passa solo da codice. È il primo pezzo da collegare.
 >
 > **La misura reale dell'estrazione a bande dà 487/488 celle corrette (99,8%)**: agosto 247/248,
 > settembre 240/240. Zero celle mancanti (erano 199), zero celle in eccesso, zero bande fallite su
@@ -31,13 +29,9 @@ Istruzioni per Claude Code su questo repository.
 > allarme**: erano le bande delle colonne di servizio, che il modello legge tutte e che la fusione
 > scarta per nome, mostrate come due colonne intitolate allo stesso modo sul foglio (`AIUTO MATT.`
 > due volte di fila). Le celle attese di una banda si contano ora sulle colonne che **sopravvivono
-> allo scarto**, non su quelle geometriche, e le lette solo sugli incroci di quelle colonne: nessun
-> buco su nessuna delle due foto, accuratezza invariata, settembre torna allo stato `extracted`.
-> Il verso opposto **non** è cambiato: una banda di sole colonne di persona che ne salta una intera
-> dichiara il buco. Il rapporto è in
-> `.superpowers/sdd/2026-08-26-fase-2a-bis-ritagli/falsi-buchi-report.md`. Resta il lavoro per la
-> Fase 3: `missingBands` porta gli indici geometrici, quindi un buco dichiarato non dice ancora
-> **quale colonna** manca, e l'infermiera vedrebbe un allarme che non sa spiegare.
+> allo scarto**, non su quelle geometriche. Il verso opposto **non** è cambiato: una banda di sole
+> colonne di persona che ne salta una intera dichiara il buco. Il rapporto è in
+> `.superpowers/sdd/2026-08-26-fase-2a-bis-ritagli/falsi-buchi-report.md`.
 >
 > L'unica cella sbagliata è nella zona di agosto riscritta a penna sopra il correttore (`giorno 8
 > CRISTINA`, attesa `M`, letta `H`). Fra due esecuzioni della misura il modello ha cambiato lettura
@@ -45,11 +39,16 @@ Istruzioni per Claude Code su questo repository.
 > cella di differenza fra due misure non è un miglioramento, è la variabilità del modello sulle celle
 > corrette a mano**.
 >
-> Due verifiche in sospeso: il flusso OAuth non è mai stato eseguito con credenziali Google reali —
-> in tutti i test `exchangeGoogleCode` è mockata, la checklist è in
-> [docs/verifica-manuale-oauth.md](docs/verifica-manuale-oauth.md) — e le trascrizioni di
-> riferimento in `fixtures/` portano ancora `"verified": false`: le percentuali qui sopra valgono
-> quanto la trascrizione, che nessuno che conosce il reparto ha ancora guardato.
+> Tre verifiche in sospeso, tutte da fare sulla macchina vera:
+>
+> 1. il flusso OAuth non è mai stato eseguito con credenziali Google reali — in tutti i test
+>    `exchangeGoogleCode` è mockata; la checklist è in
+>    [docs/verifica-manuale-oauth.md](docs/verifica-manuale-oauth.md);
+> 2. il percorso foto → anteprima → estrazione non è mai stato percorso **dall'interfaccia** su una
+>    foto vera: l'anteprima dei tagli esiste proprio per rendere visibile un rilevamento sbagliato
+>    prima di spendere venti minuti di chiamate;
+> 3. le trascrizioni di riferimento in `fixtures/` portano ancora `"verified": false`: le percentuali
+>    qui sopra valgono quanto la trascrizione, che nessuno che conosce il reparto ha ancora guardato.
 
 ## Cos'è
 
@@ -93,18 +92,25 @@ src/
 ├── app/
 │   ├── api/auth/google/{start,callback}/  # flusso OAuth
 │   ├── api/auth/logout/, api/health/
+│   ├── api/rosters/                       # POST upload (referente)
+│   ├── api/rosters/[id]/{extract,progress,image,preview}/
+│   ├── rosters/                           # elenco, upload
+│   ├── rosters/[id]/                      # vista estrazione + avanzamento
+│   ├── rosters/[id]/columns/              # ColumnAlias: colonna → persona
+│   ├── rosters/[id]/review/               # griglia di conferma
 │   ├── login/, settings/{codes,users}/    # pagine + server action
 │   └── page.tsx, layout.tsx
 ├── modules/
 │   ├── codes/     # types, normalize, slot, defaults, form, repository, index
-│   ├── auth/      # policy, token, session, google, guards, index
+│   ├── auth/      # policy, token, session, google, guards (authorizeApi), googleAccount, index
 │   ├── ingest/    # normalizzazione foto (auto-rotate EXIF, resize), storage, index
-│   │              # + grid* (rilevamento della griglia), layout, crop (taglio in bande)
+│   │              # + grid* (rilevamento della griglia), layout, crop (taglio a bande), preview
 │   ├── extract/   # VisionProvider (groq, anthropic), schema Zod, prompt, extract, index
 │   │              # + band-schema (con la fusione), band-prompt, extract-bands
-│   ├── roster/    # tabella e versioni, salvataggio celle, index
+│   ├── roster/    # tabella, versioni, stato per banda, job e worker, form, index
+│   ├── review/    # access, aliases, grid, holes, confirm, index
 │   └── calendar/  # shiftKey, event, diff, window (puri) · api, dedicated, repository, lock, sync
-├── components/ui/ # generati da shadcn, non ancora usati: serviranno alla rifinitura UI
+├── components/ui/ # generati da shadcn
 └── lib/           # env, db, time, crypto, homography (raddrizzamento prospettico)
 prisma/            # schema, migrations, seed
 tests/             # unit e integrazione, specchio di src/
@@ -113,8 +119,8 @@ fixtures/          # le due foto reali e le trascrizioni di riferimento, per npm
 docker/            # entrypoint: migrate deploy + seed all'avvio
 ```
 
-Modulo previsto dalle fasi successive e **non ancora presente**: `review` (griglia di conferma
-umana, che crea le `Assignment` e le marca `confirmedAt`).
+Tutti i moduli previsti dal design esistono. Quello che manca non è un modulo: è il bottone che
+lancia il sync (Fase 4 dall'interfaccia) e il diff fra versioni (Fase 5).
 
 **Confini dei moduli:** ogni modulo espone la sua interfaccia pubblica in `index.ts`. Non importare
 file interni di un altro modulo. Se serve, allarga l'`index.ts` — non aggirarlo. L'eccezione, la
@@ -190,14 +196,50 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
   (vedi `src/modules/extract/providers/groq.ts`).
 - **L'estrazione della tabella intera in una sola chiamata non funziona su questo modello.** La
   misura reale su una foto di agosto ha dato 18,5% di celle corrette (46/248). L'estrazione a
-  **bande verticali** (striscia dei giorni + due colonne, mezzo mese), stesso modello, è stata
-  misurata e dà **99,6%** (486/488). Non tornare indietro alla tabella intera, e non allargare le
+  **bande verticali** (blocco dei giorni + due colonne, mezzo mese), stesso modello, è stata
+  misurata e dà **99,8%** (487/488). Non tornare indietro alla tabella intera, e non allargare le
   bande senza misurare.
+- **La geometria dei ritagli non si chiede a nessuno e non si configura.** La rileva
+  `cropRosterBands` sulla foto (`detectTableQuad` → omografia → `pruneColumnBoundaries` →
+  `planBands`). Frazioni fisse non trasferiscono da una foto all'altra: fra agosto e settembre
+  l'area delle infermiere passa da 0,693 a 0,552 del riquadro. L'anteprima
+  (`/api/rosters/[id]/preview`) disegna i confini rilevati sul riquadro raddrizzato: è il controllo
+  umano prima di spendere venti minuti di chiamate.
 - **Le bande sono lente, e non è colpa del codice.** 24 bande per due foto sono ~18 minuti, di cui
   15,7 di sola attesa: il modello lavora ~4 s per banda. Il resto è il tetto di 8000 token al
   minuto del piano gratuito, che conta anche i token **prenotati** (vedi la trappola sopra). Un
   pacer serializza le chiamate; la taratura di `DEFAULT_TOKENS_PER_BAND` è sul dato misurato, vedi
-  il commento in `src/modules/extract/extract-bands.ts`.
+  il commento in `src/modules/extract/extract-bands.ts`. Non esiste un'env per accorciare l'attesa.
+- **L'estrazione dura 10-20 minuti e non sta in una richiesta HTTP.** L'upload risponde subito;
+  `runExtractionJob` gira dopo, in-process, e persiste **una banda alla volta** su `RosterBand`.
+  Un riavvio del processo lascia una `Roster` in `extracting` con un battito vecchio:
+  `reclaimStaleExtractions` la porta a `interrupted` e il worker riprende dalle bande mancanti.
+  Il worker viene svegliato dall'elenco delle tabelle e dalla route dell'avanzamento — non c'è
+  nessun job pianificato da tenere in vita.
+- **La confidenza per cella è inutilizzabile per decidere cosa rileggere.** Nella misura reale
+  nessuna cella su 519 stava sotto 0,8 ed **entrambe** le celle sbagliate erano dichiarate con
+  confidenza alta; il rilevamento delle correzioni a penna invece ha richiamo 100% (10 su 10) e
+  precisione 91%. La griglia di conferma evidenzia `handCorrected`, i conflitti fra bande e i codici
+  sconosciuti — **non** la confidenza bassa. La confidenza si propaga comunque fino alla UI (regola
+  invariante 5) e si mostra come dato accessorio, ma non guida l'attenzione.
+- **Un'identità di colonna sola: `normalizeColumn`.** Tiene solo lettere e cifre, quindi `SARA DP.`
+  e `SARA DP` sono la stessa infermiera. Ce ne sono state cinque in questo progetto e una aveva
+  falsificato la misura: se ti serve confrontare due nomi di colonna, usa quella e non derivarne
+  un'altra. Lo stesso vale per `isColonnaDiServizio`, che è l'unico elenco delle colonne che non
+  sono turni di nessuno.
+- **Un buco si dichiara per colonna e giorni, mai per indice di banda.** Su settembre quattro bande
+  risultavano lette a metà, ed erano le colonne di servizio (`AIUTO MATT.`, `TOT M`): dire
+  "15 celle su 30 non lette" fa spaventare un'infermiera che ha tutti i suoi turni, e le insegna a
+  ignorare l'avviso. Le bande coprono **mezzo mese**, quindi `RosterBand` porta `dayFrom`/`dayTo` e
+  `columnCoverage`/`describeUnreadBands` traducono un buco in nomi di colonna e giorni; dove i nomi
+  non si conoscono lo dicono invece di inventarli.
+- **Solo la persona associata a una colonna può confermarla, referente compresa.** La referente
+  *vede* tutte le colonne (le serve), ma confermare la colonna di un'altra metterebbe eventi sul
+  calendario di quella persona senza il suo consenso.
+- **Prisma genera in `node_modules`, che è condiviso fra i worktree.** Se vedi
+  `Unknown argument '<campo>'` su un campo che nello schema esiste, non è un tuo difetto: lancia
+  `npx prisma generate`. Dopo ogni `migrate dev` rilancia `npx prisma generate` **e la suite
+  intera**.
 - **Node 22 è obbligatorio, e la shell può partire su una versione più vecchia.** Verifica con
   `node -v` e, se serve, `nvm use 22` prima di installare o eseguire i test.
 - **`npm run lint` esegue `tsc --noEmit`, che richiede i tipi generati in `.next/types`.** Su un
