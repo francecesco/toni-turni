@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { prisma } from '@/lib/db'
 import { monthLabel } from '@/lib/time'
 import { requireReferente } from '@/modules/auth'
-import { isNonNurseLabel, listColumnAliases, rosterColumnLabels } from '@/modules/review'
+import { isColonnaDiServizio, normalizeColumn } from '@/modules/extract'
+import { listColumnAliases, rosterColumnLabels } from '@/modules/review'
 import { saveColumnAlias } from './actions'
 
 export const dynamic = 'force-dynamic'
@@ -32,7 +33,10 @@ export default async function RosterColumnsPage({
     listColumnAliases(),
     prisma.user.findMany({ orderBy: { displayName: 'asc' } }),
   ])
-  const perLabel = new Map(aliases.map((a) => [a.label, a]))
+  // Gli alias sono chiavati sull identità della colonna (`normalizeColumn`), non
+  // sul testo letto: è così che l associazione fatta su `SARA DP.` vale anche per
+  // `SARA DP`.
+  const perLabel = new Map(aliases.map((a) => [normalizeColumn(a.label), a]))
 
   return (
     <main className="mx-auto max-w-2xl space-y-6 p-4 pb-24">
@@ -66,9 +70,9 @@ export default async function RosterColumnsPage({
       ) : (
         <ul className="space-y-3">
           {etichette.map((label) => {
-            const alias = perLabel.get(label)
+            const alias = perLabel.get(normalizeColumn(label))
             const attuale = alias?.ignored ? 'ignora' : (alias?.userId ?? '')
-            const suggerita = alias === undefined && isNonNurseLabel(label)
+            const suggerita = alias === undefined && isColonnaDiServizio(label)
 
             return (
               <li key={label}>

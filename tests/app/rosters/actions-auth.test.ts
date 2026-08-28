@@ -236,8 +236,10 @@ describe('saveColumnAlias — solo la referente associa le colonne', () => {
 
     await columnsActions.saveColumnAlias(moduloAlias('SARA DP.', sara.id))
 
+    // La chiave dell alias è l identità della colonna (`normalizeColumn`): solo
+    // lettere e cifre, così `SARA DP.` e `SARA DP` sono la stessa infermiera.
     expect(await aliases.aliasFor('SARA DP.')).toEqual({
-      label: 'SARA DP.',
+      label: 'SARADP',
       userId: sara.id,
       ignored: false,
     })
@@ -249,7 +251,7 @@ describe('saveColumnAlias — solo la referente associa le colonne', () => {
     await columnsActions.saveColumnAlias(moduloAlias('TOT M', 'ignora'))
 
     expect(await aliases.aliasFor('TOT M')).toEqual({
-      label: 'TOT M',
+      label: 'TOTM',
       userId: null,
       ignored: true,
     })

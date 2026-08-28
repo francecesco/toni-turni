@@ -1,4 +1,5 @@
-import { isNonNurseLabel, normalizeLabel, type AliasLike } from './access'
+import { isColonnaDiServizio, normalizeColumn } from '@/modules/extract'
+import type { AliasLike } from './access'
 
 /**
  * Come si dichiara un buco.
@@ -32,10 +33,10 @@ interface CellLike {
 }
 
 function isServiceColumn(label: string, aliases: AliasLike[]): boolean {
-  const alias = aliases.find((a) => normalizeLabel(a.label) === normalizeLabel(label))
+  const alias = aliases.find((a) => normalizeColumn(a.label) === normalizeColumn(label))
   if (alias?.ignored) return true
   if (alias?.userId) return false
-  return isNonNurseLabel(label)
+  return isColonnaDiServizio(label)
 }
 
 export function columnCoverage(input: {

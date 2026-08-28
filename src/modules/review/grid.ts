@@ -1,5 +1,5 @@
 import type { ShiftCodeDef, ShiftKind } from '@/modules/codes/types'
-import { normalizeLabel } from './access'
+import { normalizeColumn } from '@/modules/extract'
 
 /**
  * La griglia di conferma di **una** colonna: una riga per ogni giorno del mese,
@@ -89,11 +89,11 @@ export function buildColumnGrid(input: {
   assignments: ReviewAssignment[]
 }): GridRow[] {
   const giorniNelMese = new Date(input.year, input.month, 0).getDate()
-  const chiaveColonna = normalizeLabel(input.columnLabel)
+  const chiaveColonna = normalizeColumn(input.columnLabel)
 
   const perGiorno = new Map<number, ReviewCell>()
   for (const cell of input.cells) {
-    if (normalizeLabel(cell.columnLabel) === chiaveColonna) perGiorno.set(cell.day, cell)
+    if (normalizeColumn(cell.columnLabel) === chiaveColonna) perGiorno.set(cell.day, cell)
   }
 
   const legenda = new Map(input.codes.map((def) => [def.code, def]))

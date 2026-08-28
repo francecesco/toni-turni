@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
+import { normalizeColumn } from '@/modules/extract'
 import { withWriteLock } from '@/modules/roster'
-import { canSeeColumn, normalizeLabel, type Viewer } from './access'
+import { canSeeColumn, type Viewer } from './access'
 import { aliasFor } from './aliases'
 import type { ReviewAssignment } from './grid'
 
@@ -60,9 +61,9 @@ async function requireOwnColumn(viewer: Viewer, columnLabel: string): Promise<st
 }
 
 async function cellsOfColumn(rosterId: string, columnLabel: string) {
-  const chiave = normalizeLabel(columnLabel)
+  const chiave = normalizeColumn(columnLabel)
   const celle = await prisma.rosterCell.findMany({ where: { rosterId } })
-  return celle.filter((c) => normalizeLabel(c.columnLabel) === chiave)
+  return celle.filter((c) => normalizeColumn(c.columnLabel) === chiave)
 }
 
 export async function confirmDays(
@@ -168,6 +169,12 @@ export async function columnAssignments(
  * Le tabelle che questo utente ha da confermare. Un infermiera le vede solo dopo
  * l estrazione: mentre il job gira la sua colonna sarebbe incompleta e confermarla
  * significherebbe confermare dei buchi.
+ *
+ * Il confronto fra la chiave dell alias e l etichetta letta dalla foto **non** si
+ * può fare in SQL: l etichetta sulla cella è il testo come sta sul foglio
+ * (`SARA DP.`) e la chiave è la sua forma normalizzata (`SARADP`). Si filtra in
+ * memoria su poche righe, invece di confrontare in SQL due cose che non sono la
+ * stessa e non trovare mai niente.
  */
 export async function reviewableRosters(viewer: Viewer): Promise<
   Array<{
@@ -200,14 +207,22 @@ export async function reviewableRosters(viewer: Viewer): Promise<
     select: { label: true },
   })
   if (aliasSuoi.length === 0) return []
-  const etichette = aliasSuoi.map((a) => a.label)
+  const chiavi = new Set(aliasSuoi.map((a) => normalizeColumn(a.label)))
 
-  return prisma.roster.findMany({
-    where: {
-      status: { in: ['extracted', 'partial'] },
-      cells: { some: { columnLabel: { in: etichette } } },
-    },
+  const candidate = await prisma.roster.findMany({
+    where: { status: { in: ['extracted', 'partial'] } },
     orderBy: [...orderBy],
-    select,
+    select: {
+      ...select,
+      cells: { distinct: ['columnLabel'], select: { columnLabel: true } },
+    },
   })
+
+  return candidate
+    .filter((roster) => roster.cells.some((c) => chiavi.has(normalizeColumn(c.columnLabel))))
+    .map((roster) => {
+      const { cells, ...senzaCelle } = roster
+      void cells
+      return senzaCelle
+    })
 }

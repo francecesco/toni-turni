@@ -1,11 +1,16 @@
 import { prisma } from '@/lib/db'
+import { normalizeColumn } from '@/modules/extract'
 import { withWriteLock } from '@/modules/roster'
-import { normalizeLabel, type AliasLike } from './access'
+import type { AliasLike } from './access'
 
 /**
  * `ColumnAlias`: il nome di colonna letto dalla foto ("CRISTINA", "SARA DP.")
  * associato a un utente. L associazione si fa una volta e vale per i mesi
  * successivi. Un nome non associato **non blocca niente**: resta da assegnare.
+ *
+ * La chiave della riga è `normalizeColumn(label)`, l unica nozione di identità di
+ * colonna del progetto: così l associazione fatta su `SARA DP.` di agosto vale
+ * anche per `SARA DP` di settembre, che è la stessa persona.
  */
 
 export type ColumnAliasRow = AliasLike
@@ -20,7 +25,7 @@ export async function listColumnAliases(): Promise<ColumnAliasRow[]> {
 }
 
 export async function aliasFor(label: string): Promise<ColumnAliasRow | null> {
-  const row = await prisma.columnAlias.findUnique({ where: { label: normalizeLabel(label) } })
+  const row = await prisma.columnAlias.findUnique({ where: { label: normalizeColumn(label) } })
   return row === null ? null : toRow(row)
 }
 
@@ -36,7 +41,7 @@ export async function rosterColumnLabels(rosterId: string): Promise<string[]> {
 }
 
 export async function assignColumnToUser(label: string, userId: string): Promise<void> {
-  const normalizzata = normalizeLabel(label)
+  const normalizzata = normalizeColumn(label)
   await withWriteLock(async () => {
     await prisma.columnAlias.upsert({
       where: { label: normalizzata },
@@ -48,7 +53,7 @@ export async function assignColumnToUser(label: string, userId: string): Promise
 
 /** Una colonna che non è il turno di nessuno: aiuti, totali, intestazioni spurie. */
 export async function ignoreColumnLabel(label: string): Promise<void> {
-  const normalizzata = normalizeLabel(label)
+  const normalizzata = normalizeColumn(label)
   await withWriteLock(async () => {
     await prisma.columnAlias.upsert({
       where: { label: normalizzata },
@@ -59,7 +64,7 @@ export async function ignoreColumnLabel(label: string): Promise<void> {
 }
 
 export async function clearColumnLabel(label: string): Promise<void> {
-  const normalizzata = normalizeLabel(label)
+  const normalizzata = normalizeColumn(label)
   await withWriteLock(async () => {
     await prisma.columnAlias.deleteMany({ where: { label: normalizzata } })
   })

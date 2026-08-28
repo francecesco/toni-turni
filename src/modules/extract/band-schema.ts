@@ -47,8 +47,13 @@ const SERVIZIO = new Set(COLONNE_DI_SERVIZIO.map(normalizeColumn))
  * Sono colonne **stampate sul foglio**: occupano una colonna della geometria, e
  * per questo il conteggio delle celle attese di una banda può sottrarle (vedi
  * `countBandCells`).
+ *
+ * Esportata perché la usa anche la Fase 3 (`modules/review`): la griglia di
+ * conferma deve riconoscere una colonna di servizio che fosse sopravvissuta alla
+ * fusione, e una seconda nozione di "colonna di servizio" divergerebbe dalla
+ * prima senza che nessuno se ne accorga.
  */
-function isColonnaDiServizio(name: string): boolean {
+export function isColonnaDiServizio(name: string): boolean {
   const chiave = normalizeColumn(name)
   return chiave.startsWith('AIUTO') || SERVIZIO.has(chiave)
 }

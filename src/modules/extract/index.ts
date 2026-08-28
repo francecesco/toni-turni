@@ -10,6 +10,7 @@ export type { BandExtraction } from './band-schema'
 export {
   bandExtractionSchema,
   countBandCells,
+  isColonnaDiServizio,
   mergeBandExtractions,
   parseBandExtraction,
 } from './band-schema'

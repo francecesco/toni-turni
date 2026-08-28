@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { prisma } from '@/lib/db'
 import { monthLabel } from '@/lib/time'
 import { requireReferente } from '@/modules/auth'
+import { normalizeColumn } from '@/modules/extract'
 import { rosterImageExists } from '@/modules/ingest'
 import { rosterProgress } from '@/modules/roster'
 import { columnCoverage, describeUnreadBands, listColumnAliases } from '@/modules/review'
@@ -275,7 +276,9 @@ export default async function RosterPage({
             </p>
             <ul className="divide-y text-sm">
               {copertura.map((colonna) => {
-                const alias = aliases.find((a) => a.label === colonna.columnLabel)
+                const alias = aliases.find(
+                  (a) => normalizeColumn(a.label) === normalizeColumn(colonna.columnLabel),
+                )
                 return (
                   <li key={colonna.columnLabel} className="flex flex-wrap gap-2 py-3">
                     <span className="min-w-32 font-medium">{colonna.columnLabel}</span>

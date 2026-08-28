@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { listShiftCodes, matchCode } from '@/modules/codes'
 import {
+  normalizeColumn,
   storedExtractionSchema,
   type BandFailure,
   type ExtractedCell,
@@ -233,6 +234,13 @@ export async function pendingBands(rosterId: string): Promise<number[]> {
  * grezzo resta sempre, il codice risolto è null quando la legenda non lo conosce —
  * sarà l utente a deciderlo, e non è un errore di estrazione.
  *
+ * L etichetta di colonna si **canonizza** su quella già in tabella quando le due
+ * hanno la stessa identità secondo `normalizeColumn`: la fusione delle bande
+ * canonizza dentro la propria chiamata, ma qui le bande arrivano una alla volta, e
+ * senza questo passaggio `SARA DP.` letto in una banda e `SARA DP` nell altra
+ * diventerebbero due colonne da mezzo mese ciascuna — la stessa infermiera spaccata
+ * in due, senza nemmeno un conflitto a dirlo.
+ *
  * Le bande possono sovrapporsi, quindi la stessa cella può arrivare due volte. Se le
  * due letture coincidono, non succede nulla; se differiscono vince la **prima** e
  * la seconda resta scritta accanto come conflitto. La scelta è deterministica e non
@@ -256,7 +264,16 @@ export async function saveBandCells(
     // confronta. Rileggere la stessa banda invece sostituisce le proprie celle.
     const esistenti = await prisma.rosterCell.findMany({ where: { rosterId } })
 
-    const perChiave = new Map(esistenti.map((c) => [`${c.day}:${c.columnLabel}`, c]))
+    // Il canone delle etichette: chiave normalizzata -> etichetta già scritta.
+    const canone = new Map<string, string>()
+    for (const cella of esistenti) {
+      const chiave = normalizeColumn(cella.columnLabel)
+      if (!canone.has(chiave)) canone.set(chiave, cella.columnLabel)
+    }
+
+    const perChiave = new Map(
+      esistenti.map((c) => [`${c.day}:${normalizeColumn(c.columnLabel)}`, c]),
+    )
 
     const conflicts: BandConflict[] = []
     const daCreare: Array<{
@@ -275,8 +292,12 @@ export async function saveBandCells(
       const rawCode = cell.code.trim()
       if (rawCode === '') continue
 
-      const columnLabel = cell.column.trim()
-      const esistente = perChiave.get(`${cell.day}:${columnLabel}`)
+      const letta = cell.column.trim()
+      const chiaveColonna = normalizeColumn(letta)
+      const columnLabel = canone.get(chiaveColonna) ?? letta
+      canone.set(chiaveColonna, columnLabel)
+
+      const esistente = perChiave.get(`${cell.day}:${chiaveColonna}`)
 
       if (esistente && esistente.bandIndex !== bandIndex) {
         if (esistente.rawCode !== rawCode) {
