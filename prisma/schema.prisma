@@ -161,6 +161,23 @@ model RosterCell {
   // quale banda ha prodotto questa cella
   bandIndex     Int?
 
+  /// Correzione fatta **da una persona** sulla griglia di conferma: il modello ha
+  /// letto `M` dove il foglio dice `P`, e l unica autorita su quella cella e chi ha
+  /// il foglio davanti. E un dato diverso da `handCorrected`, che dice che **il
+  /// foglio** porta una correzione a penna ed e letto dalla foto: i due non si
+  /// sovrappongono e non vanno confusi.
+  ///
+  /// `correctedAt` valorizzato e l unica cosa che distingue una cella corretta a mano
+  /// da una letta dall AI. `rawCode` e `code` restano la lettura del modello, cosi la
+  /// provenienza non si perde e si puo mostrare "il lettore aveva letto H".
+  /// `correctedCode` null **con** `correctedAt` valorizzato significa «il foglio qui e
+  /// vuoto»: e diverso da un giorno mai letto, che non ha nemmeno la riga.
+  correctedCode String?
+  correctedAt   DateTime?
+  /// Id di chi ha corretto. Non e una FK: e una traccia di provenienza, e la cella non
+  /// deve sparire se un giorno l utente viene cancellato.
+  correctedBy   String?
+
   @@unique([rosterId, day, columnLabel])
 }
 

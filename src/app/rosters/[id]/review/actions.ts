@@ -6,8 +6,10 @@ import { requireUser } from '@/modules/auth'
 import { describeOutcome, syncRoster } from '@/modules/calendar'
 import {
   ReviewForbiddenError,
+  ReviewRejectedError,
   confirmColumn,
   confirmDays,
+  correctCell,
   requireOwnColumn,
   unconfirmDays,
 } from '@/modules/review'
@@ -144,4 +146,57 @@ export async function syncColumnAction(form: FormData): Promise<void> {
     sync: describeOutcome(esito),
     reauth: esito.needsReauth === true,
   })
+}
+
+/**
+ * La correzione a mano di una cella: il modello ha letto `M` dove il foglio dice `P`.
+ *
+ * Si sceglie fra i codici della legenda — il campo è un `<select>`, e `correctCell`
+ * rifiuta comunque tutto il resto, perché una server action è raggiungibile con un POST
+ * diretto. `code` vuoto significa «il foglio qui è vuoto», che è una risposta legittima
+ * e diversa da «non lo so».
+ *
+ * Permessi: l infermiera la propria colonna, la referente qualsiasi colonna. La
+ * barriera è dentro `correctCell` (`requireColumnAccess`), non qui: qui si traducono
+ * solo i rifiuti in messaggi.
+ */
+export async function correctCellAction(form: FormData): Promise<void> {
+  const user = await requireUser()
+  const rosterId = text(form, 'rosterId')
+  const columnLabel = text(form, 'columnLabel')
+  const day = Number(text(form, 'day'))
+  const code = text(form, 'code')
+
+  if (rosterId === '' || columnLabel === '' || !Number.isInteger(day)) {
+    tornaCon(rosterId, columnLabel, { error: 'Richiesta incompleta' })
+  }
+
+  let esito: Awaited<ReturnType<typeof correctCell>>
+  try {
+    esito = await correctCell(user, {
+      rosterId,
+      columnLabel,
+      day,
+      code: code === '' ? null : code,
+    })
+  } catch (errore) {
+    if (errore instanceof ReviewForbiddenError || errore instanceof ReviewRejectedError) {
+      tornaCon(rosterId, columnLabel, { error: errore.message })
+    }
+    throw errore
+  }
+
+  revalidatePath(`/rosters/${rosterId}/review`)
+
+  const cosa =
+    esito.code === null
+      ? `Giorno ${day}: cella svuotata`
+      : `Giorno ${day}: ora dice ${esito.code}`
+  const coda = esito.assignmentRemoved
+    ? ' — la conferma è stata rimossa: al prossimo sync l evento sparisce dal calendario'
+    : esito.unconfirmed
+      ? ' — la conferma di quel giorno è stata annullata: va riconfermato'
+      : ''
+
+  tornaCon(rosterId, columnLabel, { ok: `${cosa}${coda}` })
 }

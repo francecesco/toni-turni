@@ -213,6 +213,83 @@ describe('unconfirmDayAction', () => {
   })
 })
 
+describe('correctCellAction — chi corregge una cella, e chi no', () => {
+  function moduloCorrezione(day: number, code: string, columnLabel = 'CRISTINA'): FormData {
+    const form = new FormData()
+    form.set('rosterId', rosterId)
+    form.set('columnLabel', columnLabel)
+    form.set('day', String(day))
+    form.set('code', code)
+    return form
+  }
+
+  it('senza sessione manda al login e non corregge nulla', async () => {
+    await expect(reviewActions.correctCellAction(moduloCorrezione(1, 'P'))).rejects.toThrow(
+      'REDIRECT:/login',
+    )
+    const cella = await prisma.rosterCell.findFirstOrThrow({ where: { rosterId, day: 1 } })
+    expect(cella.correctedAt).toBeNull()
+  })
+
+  it("un'infermiera corregge la propria colonna", async () => {
+    await session.openSessionCookie(cristina.id)
+
+    await expect(reviewActions.correctCellAction(moduloCorrezione(1, 'P'))).rejects.toThrow(
+      /REDIRECT:.*ok=/,
+    )
+
+    const cella = await prisma.rosterCell.findFirstOrThrow({ where: { rosterId, day: 1 } })
+    expect(cella.correctedCode).toBe('P')
+    expect(cella.correctedBy).toBe(cristina.id)
+  })
+
+  it("un'infermiera che corregge la colonna di un'altra viene respinta lato server", async () => {
+    await session.openSessionCookie(sara.id)
+
+    await expect(
+      reviewActions.correctCellAction(moduloCorrezione(1, 'P', 'CRISTINA')),
+    ).rejects.toThrow(/REDIRECT:.*error=/)
+
+    const cella = await prisma.rosterCell.findFirstOrThrow({ where: { rosterId, day: 1 } })
+    expect(cella.correctedAt).toBeNull()
+  })
+
+  it('la referente corregge la colonna di un altra: sul foglio l autorità è lei', async () => {
+    await session.openSessionCookie(anna.id)
+
+    await expect(
+      reviewActions.correctCellAction(moduloCorrezione(1, 'P', 'CRISTINA')),
+    ).rejects.toThrow(/REDIRECT:.*ok=/)
+
+    const cella = await prisma.rosterCell.findFirstOrThrow({ where: { rosterId, day: 1 } })
+    expect(cella.correctedCode).toBe('P')
+    expect(cella.correctedBy).toBe(anna.id)
+  })
+
+  it('un codice fuori dalla legenda viene rifiutato con un messaggio', async () => {
+    await session.openSessionCookie(cristina.id)
+
+    await expect(
+      reviewActions.correctCellAction(moduloCorrezione(1, 'INVENTATO')),
+    ).rejects.toThrow(/REDIRECT:.*error=/)
+
+    const cella = await prisma.rosterCell.findFirstOrThrow({ where: { rosterId, day: 1 } })
+    expect(cella.correctedAt).toBeNull()
+  })
+
+  it('la scelta "vuota" svuota la cella', async () => {
+    await session.openSessionCookie(cristina.id)
+
+    await expect(reviewActions.correctCellAction(moduloCorrezione(1, ''))).rejects.toThrow(
+      /REDIRECT:.*ok=/,
+    )
+
+    const cella = await prisma.rosterCell.findFirstOrThrow({ where: { rosterId, day: 1 } })
+    expect(cella.correctedAt).not.toBeNull()
+    expect(cella.correctedCode).toBeNull()
+  })
+})
+
 describe('saveColumnAlias — solo la referente associa le colonne', () => {
   function moduloAlias(label: string, userId: string): FormData {
     const form = new FormData()

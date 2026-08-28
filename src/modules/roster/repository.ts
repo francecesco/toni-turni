@@ -299,6 +299,11 @@ export async function saveBandCells(
 
       const esistente = perChiave.get(`${cell.day}:${chiaveColonna}`)
 
+      // Una cella corretta a mano non è più del modello: rileggere la banda non la
+      // sovrascrive, e la rilettura non diventa nemmeno un conflitto — il conflitto è
+      // fra due letture del modello, e qui una persona ha già deciso.
+      if (esistente && esistente.correctedAt !== null) continue
+
       if (esistente && esistente.bandIndex !== bandIndex) {
         if (esistente.rawCode !== rawCode) {
           conflicts.push({
@@ -329,8 +334,10 @@ export async function saveBandCells(
 
     await prisma.$transaction([
       // Le celle di questa banda vengono rifatte da zero: una rilettura dopo un
-      // fallimento non deve duplicare nulla né lasciare celle vecchie.
-      prisma.rosterCell.deleteMany({ where: { rosterId, bandIndex } }),
+      // fallimento non deve duplicare nulla né lasciare celle vecchie. Le correzioni a
+      // mano no: quelle sopravvivono a qualunque rilettura, ed è il motivo per cui
+      // esistono.
+      prisma.rosterCell.deleteMany({ where: { rosterId, bandIndex, correctedAt: null } }),
       prisma.rosterCell.createMany({ data: daCreare }),
       ...daMarcareConflitto.map((c) =>
         prisma.rosterCell.update({
@@ -486,7 +493,7 @@ export async function rosterProgress(rosterId: string): Promise<RosterProgress> 
   })
   const celle = await prisma.rosterCell.findMany({
     where: { rosterId },
-    select: { code: true, handCorrected: true, conflicted: true },
+    select: { code: true, correctedAt: true, correctedCode: true, handCorrected: true, conflicted: true },
   })
 
   return {
@@ -497,7 +504,9 @@ export async function rosterProgress(rosterId: string): Promise<RosterProgress> 
     bandsFailed: bande.filter((b) => b.status === 'failed' || b.status === 'partial').length,
     missingBands: bande.filter((b) => b.status !== 'done').map((b) => b.index),
     cells: celle.length,
-    unknownCodes: celle.filter((c) => c.code === null).length,
+    // Una cella corretta a mano ha un codice della legenda (o è dichiarata vuota): non
+    // è un codice sconosciuto da risolvere.
+    unknownCodes: celle.filter((c) => c.code === null && c.correctedAt === null).length,
     handCorrected: celle.filter((c) => c.handCorrected).length,
     conflicted: celle.filter((c) => c.conflicted).length,
     heartbeatAt: roster.heartbeatAt,

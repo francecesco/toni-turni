@@ -219,6 +219,86 @@ describe('buildColumnGrid — lo stato della conferma', () => {
   })
 })
 
+describe('buildColumnGrid — la correzione a mano, distinta dalla lettura dell AI', () => {
+  it('il codice corretto a mano vince su quello letto, e la lettura resta visibile', () => {
+    const righe = griglia([
+      cella(8, { rawCode: 'H', code: null, correctedCode: 'M', correctedAt: new Date() }),
+    ])
+
+    expect(righe[7].code).toBe('M')
+    expect(righe[7].codeLabel).toBe('Mattino')
+    expect(righe[7].time).toBe('07:00–14:00')
+    expect(righe[7].manuallyCorrected).toBe(true)
+    expect(righe[7].correctedCode).toBe('M')
+    // La provenienza non si perde: chi guarda deve sapere cosa è stato corretto.
+    expect(righe[7].rawCode).toBe('H')
+    expect(righe[7].confirmable).toBe(true)
+  })
+
+  it('una cella corretta a mano non è più "da rileggere": una persona l ha già letta', () => {
+    const righe = griglia([
+      cella(8, {
+        rawCode: 'H',
+        code: null,
+        handCorrected: true,
+        conflicted: true,
+        conflictWith: 'P',
+        correctedCode: 'M',
+        correctedAt: new Date(),
+      }),
+    ])
+
+    expect(righe[7].attention).toBe(false)
+    expect(righe[7].attentionReasons).toEqual([])
+    expect(righe[7].unknownCode).toBe(false)
+    // `handCorrected` resta: è un dato letto dalla foto, non un giudizio.
+    expect(righe[7].handCorrected).toBe(true)
+  })
+
+  it('una cella svuotata a mano non è un turno, e non è nemmeno un buco', () => {
+    const righe = griglia([cella(8, { correctedCode: null, correctedAt: new Date() })])
+
+    expect(righe[7].empty).toBe(true)
+    expect(righe[7].code).toBeNull()
+    expect(righe[7].confirmable).toBe(false)
+    expect(righe[7].manuallyCorrected).toBe(true)
+    // Dichiarata vuota da una persona: l allarme "giorno non letto" suonerebbe a vuoto.
+    expect(righe[7].declaredEmpty).toBe(true)
+    expect(gridSummary(righe).emptyDays).not.toContain(8)
+  })
+
+  it('un giorno che il modello non ha letto, corretto a mano, diventa un turno', () => {
+    const righe = griglia([
+      cella(15, { rawCode: '', code: null, confidence: 0, correctedCode: 'RP', correctedAt: new Date() }),
+    ])
+
+    expect(righe[14].empty).toBe(false)
+    expect(righe[14].code).toBe('RP')
+    expect(righe[14].confirmable).toBe(true)
+    // Nessuna lettura del modello da mostrare: non gliene si attribuisce una.
+    expect(righe[14].rawCode).toBeNull()
+    expect(gridSummary(righe).emptyDays).not.toContain(15)
+  })
+
+  it('una cella corretta a mano e poi confermata con un altro codice va riconfermata', () => {
+    const righe = griglia(
+      [cella(9, { rawCode: 'M', code: 'M', correctedCode: 'P', correctedAt: new Date() })],
+      [{ day: 9, code: 'M', confirmedAt: new Date(), syncState: 'synced' }],
+    )
+
+    expect(righe[8].changedSinceConfirm).toBe(true)
+    expect(righe[8].attentionReasons.some((m) => m.includes('era M'))).toBe(true)
+  })
+
+  it('senza correzione i campi della correzione restano spenti', () => {
+    const righe = griglia([cella(1)])
+
+    expect(righe[0].manuallyCorrected).toBe(false)
+    expect(righe[0].correctedCode).toBeNull()
+    expect(righe[0].declaredEmpty).toBe(false)
+  })
+})
+
 describe('gridSummary — il riassunto in testa alla griglia', () => {
   it('conta turni, conferme, celle da rileggere e codici sconosciuti', () => {
     const righe = griglia(

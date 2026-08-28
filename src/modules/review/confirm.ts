@@ -34,12 +34,23 @@ export interface ConfirmResult {
   refused: Array<{ day: number; reason: string }>
 }
 
-/** Permesso di **vedere** la colonna. */
-export async function requireColumnAccess(viewer: Viewer, columnLabel: string): Promise<void> {
+/**
+ * Permesso di **vedere** la colonna — e di correggerne le celle, che è lo stesso
+ * predicato: l infermiera la propria colonna, la referente tutte. Sul turno l autorità
+ * è l infermiera, sul foglio è la referente, e nessuna delle due scrive per questo sul
+ * calendario di qualcuno: quello lo fa solo la conferma, che ha la sua barriera.
+ *
+ * `azione` cambia solo la frase mostrata; la regola no.
+ */
+export async function requireColumnAccess(
+  viewer: Viewer,
+  columnLabel: string,
+  azione = 'vederla',
+): Promise<void> {
   const alias = await aliasFor(columnLabel)
   if (!canSeeColumn(viewer, alias)) {
     throw new ReviewForbiddenError(
-      `La colonna "${columnLabel}" non è tua: solo chi vi è associato può vederla`,
+      `La colonna "${columnLabel}" non è tua: solo chi vi è associato può ${azione}`,
     )
   }
 }
@@ -95,7 +106,17 @@ export async function confirmDays(
       refused.push({ day, reason: 'Nessun turno letto per questo giorno' })
       continue
     }
-    if (cella.code === null) {
+
+    // Una correzione a mano vince sulla lettura del modello: su quella cella
+    // l autorità è la persona che ha il foglio davanti (vedi `correct.ts`).
+    const corretta = cella.correctedAt !== null
+    const code = corretta ? cella.correctedCode : cella.code
+
+    if (corretta && code === null) {
+      refused.push({ day, reason: 'La cella è stata svuotata a mano: non c è un turno da confermare' })
+      continue
+    }
+    if (code === null) {
       // Regola invariante 4: un codice sconosciuto non si indovina.
       refused.push({
         day,
@@ -103,7 +124,7 @@ export async function confirmDays(
       })
       continue
     }
-    daConfermare.push({ day, code: cella.code, columnLabel: cella.columnLabel })
+    daConfermare.push({ day, code, columnLabel: cella.columnLabel })
   }
 
   if (daConfermare.length > 0) {

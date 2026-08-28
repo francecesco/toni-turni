@@ -24,3 +24,5 @@ export {
   reviewableRosters,
   unconfirmDays,
 } from './confirm'
+export type { CellCorrection, CorrectionResult } from './correct'
+export { ReviewRejectedError, correctCell } from './correct'

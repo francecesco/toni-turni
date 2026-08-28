@@ -22,9 +22,18 @@ export interface ReviewCell {
   rawCode: string
   code: string | null
   confidence: number
+  /** Il **foglio** porta una correzione a penna: è un dato letto dalla foto. */
   handCorrected: boolean
   conflicted: boolean
   conflictWith: string | null
+  /**
+   * Correzione fatta da **una persona** sulla griglia (`correct.ts`). Non c entra niente
+   * con `handCorrected`: quello descrive la carta, questo descrive chi ha corretto la
+   * lettura. `correctedAt` valorizzato con `correctedCode` null significa «il foglio qui
+   * è vuoto».
+   */
+  correctedCode?: string | null
+  correctedAt?: Date | null
 }
 
 export interface ReviewAssignment {
@@ -38,7 +47,14 @@ export interface GridRow {
   day: number
   isoDate: string
   weekday: string
+  /** Non c è un turno da confermare: nessuna cella, o una cella svuotata a mano. */
   empty: boolean
+  /** Vuota **per dichiarazione di una persona**, non per un buco della lettura. */
+  declaredEmpty: boolean
+  /** Il codice viene da una correzione a mano, non dal lettore automatico. */
+  manuallyCorrected: boolean
+  correctedCode: string | null
+  /** Il testo letto dal modello, `null` quando il modello non ha letto niente. */
   rawCode: string | null
   code: string | null
   codeLabel: string | null
@@ -102,20 +118,31 @@ export function buildColumnGrid(input: {
   const righe: GridRow[] = []
   for (let day = 1; day <= giorniNelMese; day += 1) {
     const cell = perGiorno.get(day) ?? null
-    const def = cell?.code ? (legenda.get(cell.code) ?? null) : null
+    // Una correzione a mano vince sulla lettura del modello: su quella cella l autorità
+    // è la persona che ha il foglio davanti.
+    const corretta = cell !== null && (cell.correctedAt ?? null) !== null
+    const codiceEffettivo = corretta ? (cell?.correctedCode ?? null) : (cell?.code ?? null)
+    const def = codiceEffettivo ? (legenda.get(codiceEffettivo) ?? null) : null
     const assegnazione = conferme.get(day) ?? null
     const confermata = assegnazione?.confirmedAt != null
 
-    const unknownCode = cell !== null && cell.code === null
+    const declaredEmpty = corretta && codiceEffettivo === null
+    const empty = cell === null || declaredEmpty
+    const unknownCode = cell !== null && !corretta && cell.code === null
     const changedSinceConfirm =
-      confermata && assegnazione !== null && cell !== null && assegnazione.code !== cell.code
+      confermata && assegnazione !== null && !empty && assegnazione.code !== codiceEffettivo
 
     const attentionReasons: string[] = []
-    if (cell?.handCorrected) attentionReasons.push('correzione a penna')
-    if (cell?.conflicted) {
-      attentionReasons.push(`letture discordanti: ${cell.rawCode} o ${cell.conflictWith ?? '?'}`)
+    // Su una cella corretta a mano i motivi che vengono dalla lettura del modello sono
+    // già stati risolti: una persona l ha guardata. Segnalarli ancora manderebbe
+    // l attenzione dove l errore non c è più.
+    if (!corretta) {
+      if (cell?.handCorrected) attentionReasons.push('correzione a penna')
+      if (cell?.conflicted) {
+        attentionReasons.push(`letture discordanti: ${cell.rawCode} o ${cell.conflictWith ?? '?'}`)
+      }
+      if (unknownCode) attentionReasons.push(`codice sconosciuto: ${cell?.rawCode}`)
     }
-    if (unknownCode) attentionReasons.push(`codice sconosciuto: ${cell?.rawCode}`)
     if (def?.needsReview) attentionReasons.push(`orario del codice ${def.code} ancora da confermare`)
     if (changedSinceConfirm) {
       attentionReasons.push(`cambiato dopo la conferma: era ${assegnazione?.code}`)
@@ -125,9 +152,12 @@ export function buildColumnGrid(input: {
       day,
       isoDate: isoDate(input.year, input.month, day),
       weekday: weekday(input.year, input.month, day),
-      empty: cell === null,
-      rawCode: cell?.rawCode ?? null,
-      code: cell?.code ?? null,
+      empty,
+      declaredEmpty,
+      manuallyCorrected: corretta,
+      correctedCode: corretta ? (cell?.correctedCode ?? null) : null,
+      rawCode: cell === null || cell.rawCode === '' ? null : cell.rawCode,
+      code: codiceEffettivo,
       codeLabel: def?.label ?? null,
       kind: def?.kind ?? null,
       time: def ? describeTime(def) : null,
@@ -144,7 +174,7 @@ export function buildColumnGrid(input: {
       confirmedCode: confermata ? (assegnazione?.code ?? null) : null,
       changedSinceConfirm,
       synced: assegnazione?.syncState === 'synced',
-      confirmable: cell !== null && cell.code !== null,
+      confirmable: codiceEffettivo !== null,
       attention: attentionReasons.length > 0,
       attentionReasons,
     })
@@ -176,6 +206,8 @@ export function gridSummary(rows: GridRow[]): GridSummary {
     attention: rows.filter((r) => r.attention).length,
     unknownCodes: rows.filter((r) => r.unknownCode).length,
     confirmable: rows.filter((r) => r.confirmable).length,
-    emptyDays: rows.filter((r) => r.empty).map((r) => r.day),
+    // Solo i buchi **veri**: una cella dichiarata vuota da una persona non è un giorno
+    // non letto, e farla suonare come tale insegnerebbe a ignorare l allarme.
+    emptyDays: rows.filter((r) => r.empty && !r.declaredEmpty).map((r) => r.day),
   }
 }

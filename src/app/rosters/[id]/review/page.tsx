@@ -9,6 +9,7 @@ import { listShiftCodes } from '@/modules/codes'
 import {
   aliasFor,
   buildColumnGrid,
+  canSeeColumn,
   columnAssignments,
   describeUnreadBands,
   gridSummary,
@@ -19,6 +20,7 @@ import {
 import {
   confirmColumnAction,
   confirmDayAction,
+  correctCellAction,
   syncColumnAction,
   unconfirmDayAction,
 } from './actions'
@@ -97,6 +99,10 @@ export default async function ReviewPage({
 
   const alias = await aliasFor(scelta)
   const puoConfermare = alias?.userId === user.id
+  // Correggere è un permesso diverso dal confermare: l infermiera è l autorità sul
+  // proprio turno, la referente sul foglio. È lo stesso predicato di `canSeeColumn`, e
+  // il controllo vero sta lato server, dentro `correctCell`.
+  const puoCorreggere = canSeeColumn(user, alias)
   const [assegnazioni, celle] = await Promise.all([
     columnAssignments(id, scelta),
     prisma.rosterCell.findMany({ where: { rosterId: id }, orderBy: { day: 'asc' } }),
@@ -275,15 +281,20 @@ export default async function ReviewPage({
 
                 <div className="min-w-0 flex-1">
                   {riga.empty ? (
-                    <p className="text-sm text-muted-foreground">nessun turno letto</p>
+                    <p className="text-sm text-muted-foreground">
+                      {riga.declaredEmpty ? 'vuota — svuotata a mano' : 'nessun turno letto'}
+                    </p>
                   ) : (
                     <>
                       <p className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-base font-medium">{riga.rawCode}</span>
+                        <span className="font-mono text-base font-medium">
+                          {riga.manuallyCorrected ? riga.correctedCode : riga.rawCode}
+                        </span>
                         {riga.codeLabel && (
                           <span className="text-sm text-muted-foreground">{riga.codeLabel}</span>
                         )}
                         {riga.unknownCode && <Badge variant="destructive">sconosciuto</Badge>}
+                        {riga.manuallyCorrected && <Badge variant="outline">corretta a mano</Badge>}
                       </p>
                       {riga.time && (
                         <p className="text-sm text-muted-foreground">
@@ -291,10 +302,19 @@ export default async function ReviewPage({
                           {riga.location ? ` · ${riga.location}` : ''}
                         </p>
                       )}
+                      {/* Chi guarda deve sapere cosa è stato corretto, e da cosa: senza
+                          questo, una correzione sbagliata sarebbe invisibile. */}
+                      {riga.manuallyCorrected && (
+                        <p className="text-xs text-muted-foreground">
+                          {riga.rawCode === null
+                            ? 'scritta a mano: il lettore automatico non aveva letto niente qui'
+                            : `corretta a mano: il lettore automatico aveva letto ${riga.rawCode}`}
+                        </p>
+                      )}
                       {/* La confidenza arriva fino qui (regola invariante 5) ma non
                           guida l attenzione: sulla misura reale non distingue le celle
                           sbagliate. Si mostra solo quando è davvero bassa. */}
-                      {riga.confidence !== null && riga.confidence < 0.9 && (
+                      {!riga.manuallyCorrected && riga.confidence !== null && riga.confidence < 0.9 && (
                         <p className="text-xs text-muted-foreground">
                           il lettore automatico si dichiara sicuro al{' '}
                           {Math.round(riga.confidence * 100)}%
@@ -337,6 +357,46 @@ export default async function ReviewPage({
 
               {riga.confirmed && riga.synced && (
                 <p className="mt-2 text-xs text-muted-foreground">già sul tuo calendario</p>
+              )}
+
+              {/* La correzione si apre solo quando serve: una tendina per ogni giorno
+                  renderebbe illeggibile un mese intero sul telefono. Si sceglie fra i
+                  codici della legenda, perché un codice inventato non ha orario e non
+                  potrebbe diventare un evento. */}
+              {puoCorreggere && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs text-muted-foreground underline">
+                    {riga.empty ? 'Scrivi il turno di questo giorno' : 'Correggi questo giorno'}
+                  </summary>
+                  <form action={correctCellAction} className="mt-2 flex items-center gap-2">
+                    <input type="hidden" name="rosterId" value={id} />
+                    <input type="hidden" name="columnLabel" value={scelta} />
+                    <input type="hidden" name="day" value={riga.day} />
+                    <select
+                      name="code"
+                      defaultValue={riga.code ?? ''}
+                      aria-label={`Codice del giorno ${riga.day}`}
+                      className="h-12 min-w-0 flex-1 rounded-lg border bg-background px-2 text-base"
+                    >
+                      <option value="">— la casella è vuota —</option>
+                      {codes.map((def) => (
+                        <option key={def.code} value={def.code}>
+                          {def.code} · {def.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="submit"
+                      className="h-12 shrink-0 rounded-lg border px-4 text-sm font-medium"
+                    >
+                      Salva
+                    </button>
+                  </form>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Una correzione annulla la conferma di quel giorno: va riconfermato prima di
+                    finire sul calendario.
+                  </p>
+                </details>
               )}
             </li>
           )

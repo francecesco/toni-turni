@@ -16,7 +16,10 @@ Istruzioni per Claude Code su questo repository.
 > (Fase 6). Il flusso però si chiude: dalla griglia di conferma il bottone «Manda sul mio calendario»
 > lancia `syncRoster` (`syncColumnAction`), e ognuna sincronizza **solo la propria colonna** —
 > referente compresa, perché sincronizzare la colonna di un'altra scriverebbe sul calendario di
-> quella persona senza il suo consenso.
+> quella persona senza il suo consenso. Una cella si può anche **correggere a mano**
+> (`correctCellAction` → `correctCell`), scegliendo fra i codici della legenda: l'infermiera sulla
+> propria colonna, la referente su qualsiasi colonna. Correggere annulla la conferma di quel giorno:
+> si corregge, si conferma, si sincronizza.
 >
 > **La misura reale dell'estrazione a bande dà 487/488 celle corrette (99,8%)**: agosto 247/248,
 > settembre 240/240. Zero celle mancanti (erano 199), zero celle in eccesso, zero bande fallite su
@@ -98,7 +101,7 @@ src/
 │   ├── rosters/                           # elenco, upload
 │   ├── rosters/[id]/                      # vista estrazione + avanzamento
 │   ├── rosters/[id]/columns/              # ColumnAlias: colonna → persona
-│   ├── rosters/[id]/review/               # griglia di conferma
+│   ├── rosters/[id]/review/               # griglia di conferma, correzione, sync
 │   ├── login/, settings/{codes,users}/    # pagine + server action
 │   └── page.tsx, layout.tsx
 ├── modules/
@@ -109,7 +112,7 @@ src/
 │   ├── extract/   # VisionProvider (groq, anthropic), schema Zod, prompt, extract, index
 │   │              # + band-schema (con la fusione), band-prompt, extract-bands
 │   ├── roster/    # tabella, versioni, stato per banda, job e worker, form, index
-│   ├── review/    # access, aliases, grid, holes, confirm, index
+│   ├── review/    # access, aliases, grid, holes, confirm, correct, index
 │   └── calendar/  # shiftKey, event, diff, window (puri) · api, dedicated, repository, lock, sync
 ├── components/ui/ # generati da shadcn
 └── lib/           # env, db, time, crypto, homography (raddrizzamento prospettico)
@@ -167,6 +170,14 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
 - **Le correzioni a penna sono il caso critico.** Celle coperte con correttore e riscritte a mano
   esistono nelle foto reali (vedi Agosto 2026): il modello le sbaglia spesso — **entrambe** le celle
   sbagliate della misura sono lì. Vanno marcate `handCorrected` ed evidenziate in fase di conferma.
+- **`handCorrected` e `correctedAt` sono due cose diverse, e confonderle è facile.**
+  `RosterCell.handCorrected` dice che **il foglio** porta una correzione a penna: è un dato letto
+  dalla foto dal modello. `RosterCell.correctedAt`/`correctedCode`/`correctedBy` dicono che **una
+  persona** ha corretto la lettura sulla griglia di conferma. `rawCode` e `code` restano sempre la
+  lettura del modello, così la provenienza non si perde; il codice che conta è
+  `correctedAt !== null ? correctedCode : code`, e `correctedCode` null **con** `correctedAt`
+  valorizzato significa «il foglio qui è vuoto». `saveBandCells` non tocca una cella corretta a
+  mano: una rilettura non deve cancellare il giudizio di chi ha il foglio davanti.
 - **`handCorrected` funziona, ed è il segnale buono.** Misurato su agosto: precisione 91%, richiamo
   **100%** (10 veri positivi, 1 falso positivo, 0 falsi negativi). Tutte e dieci le correzioni a
   penna trovate, nessuna mancata. **La griglia di conferma della Fase 3 si progetta su questo.**
