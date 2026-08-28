@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db'
 import { listShiftCodes, matchCode } from '@/modules/codes'
-import type { Extraction } from '@/modules/extract'
+import type { BandFailure, Extraction } from '@/modules/extract'
 
 export async function nextVersion(year: number, month: number, ward: string): Promise<number> {
   const ultima = await prisma.roster.findFirst({
@@ -29,11 +29,19 @@ export async function createRoster(input: {
  * Salva le celle risolvendo ogni codice letto con la legenda: il testo grezzo resta
  * sempre, il codice risolto è null quando la legenda non lo conosce — sarà l utente
  * a deciderlo, e non è un errore di estrazione.
+ *
+ * `meta.missingBands` sono le bande che il modello non ha letto (estrazione a
+ * ritagli): finiscono nel database come JSON e portano lo stato a `partial`.
+ * Sono la ragione per cui questo stato esiste: tre celle non lette per un
+ * problema tecnico non devono somigliare a tre celle vuote sul foglio, perché
+ * una cella che manca in silenzio è un turno che scompare. Un salvataggio senza
+ * buchi le **ripulisce**, altrimenti resterebbe la dichiarazione di un buco che
+ * non c è più.
  */
 export async function saveExtraction(
   rosterId: string,
   extraction: Extraction,
-  meta: { provider: string; rawOutput: string },
+  meta: { provider: string; rawOutput: string; missingBands?: BandFailure[] },
 ): Promise<{ cells: number; unresolved: number }> {
   const legenda = await listShiftCodes()
 
@@ -52,6 +60,9 @@ export async function saveExtraction(
       }
     })
 
+  const buchi = meta.missingBands ?? []
+  const parziale = buchi.length > 0
+
   await prisma.$transaction([
     prisma.rosterCell.deleteMany({ where: { rosterId } }),
     // createMany in un unica istruzione invece di una create per cella: stesso esito
@@ -60,7 +71,12 @@ export async function saveExtraction(
     prisma.rosterCell.createMany({ data: celle }),
     prisma.roster.update({
       where: { id: rosterId },
-      data: { status: 'extracted', provider: meta.provider, rawOutput: meta.rawOutput },
+      data: {
+        status: parziale ? 'partial' : 'extracted',
+        provider: meta.provider,
+        rawOutput: meta.rawOutput,
+        missingBands: parziale ? JSON.stringify(buchi) : null,
+      },
     }),
   ])
 
