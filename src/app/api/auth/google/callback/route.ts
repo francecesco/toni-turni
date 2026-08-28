@@ -10,6 +10,7 @@ import {
   normalizeEmail,
   OAUTH_STATE_COOKIE,
   openSessionCookie,
+  refreshTokenContext,
 } from '@/modules/auth'
 
 function loginError(reason: string) {
@@ -95,7 +96,7 @@ export async function GET(request: Request) {
   // Google restituisce il refresh token solo al primo consenso: se manca,
   // conserviamo quello già salvato invece di sovrascriverlo con null.
   if (profile.refreshToken) {
-    const encryptedRefreshToken = encryptSecret(profile.refreshToken, `google_refresh:${user.id}`)
+    const encryptedRefreshToken = encryptSecret(profile.refreshToken, refreshTokenContext(user.id))
     await prisma.googleAccount.upsert({
       where: { userId: user.id },
       create: { userId: user.id, refreshToken: encryptedRefreshToken, status: 'ok' },

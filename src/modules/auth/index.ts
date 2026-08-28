@@ -11,3 +11,14 @@ export { closeSessionCookie, openSessionCookie, readSessionCookie } from './sess
 export { EmailNotVerifiedError, GOOGLE_SCOPES, buildGoogleAuthUrl, exchangeGoogleCode } from './google'
 export type { CurrentUser } from './guards'
 export { getCurrentUser, requireReferente, requireUser } from './guards'
+export type { GoogleAccountState } from './googleAccount'
+export {
+  GoogleAccountMissingError,
+  GoogleReauthRequiredError,
+  googleClientForUser,
+  markNeedsReauth,
+  markReauthResolved,
+  readGoogleAccountState,
+  refreshTokenContext,
+  setCalendarId,
+} from './googleAccount'

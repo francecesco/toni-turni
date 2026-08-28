@@ -6,6 +6,11 @@ export const GOOGLE_SCOPES = [
   'email',
   'profile',
   'https://www.googleapis.com/auth/calendar.events',
+  // Permette di creare calendari secondari e di gestire gli eventi solo su quelli
+  // creati dall app. Serve per il calendario dedicato: con `calendar.events` da
+  // solo, la creazione di un calendario risponde 403. Non dà accesso agli altri
+  // calendari dell utente.
+  'https://www.googleapis.com/auth/calendar.app.created',
 ]
 
 export function googleClient(): OAuth2Client {
