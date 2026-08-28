@@ -41,14 +41,25 @@ function chiaveDiServizio(name: string): string {
 const SERVIZIO = new Set(COLONNE_DI_SERVIZIO.map(chiaveDiServizio))
 
 /**
- * Vero per le colonne di aiuto e di totale. Il prefisso `AIUTO` copre anche le
- * forme non abbreviate (`AIUTO MATTINO`): nessuna colonna di persona si
- * intitola così, mentre una colonna di aiuto letta per intero, se sopravvivesse,
- * finirebbe in calendario come se fosse un turno.
+ * Vero per le colonne che non sono l assegnazione di turno di una persona.
+ *
+ * Le colonne di aiuto e di totale: il prefisso `AIUTO` copre anche le forme non
+ * abbreviate (`AIUTO MATTINO`): nessuna colonna di persona si intitola così,
+ * mentre una colonna di aiuto letta per intero, se sopravvivesse, finirebbe in
+ * calendario come se fosse un turno.
+ *
+ * E il **reparto**: `3°PIANO` è l intestazione del foglio, in cima alla striscia
+ * dei giorni, e la misura di agosto l ha visto comparire fra i nomi di colonna
+ * di qualche banda, producendo 31 celle per una collega che non esiste. Il nome
+ * da scartare arriva dal chiamante (`header.ward`), non da un indovinello su
+ * cosa sembri un nome di persona.
  */
-function isColonnaDiServizio(name: string): boolean {
+function isColonnaDiServizio(name: string, ward: string): boolean {
   const chiave = chiaveDiServizio(name)
-  return chiave.startsWith('AIUTO') || SERVIZIO.has(chiave)
+  if (chiave.startsWith('AIUTO') || SERVIZIO.has(chiave)) return true
+
+  const reparto = chiaveDiServizio(ward)
+  return reparto.length > 0 && chiave === reparto
 }
 
 function formatIssues(error: z.ZodError): string {
@@ -101,8 +112,10 @@ function stessoCodice(a: string, b: string): boolean {
  *
  * Le regole, nell ordine in cui contano:
  *
- * 1. Le colonne di servizio (`AIUTO MATT.`, `TOT M`…) si scartano **per nome**
- *    normalizzato. Una colonna scartata non è un conflitto: era attesa.
+ * 1. Le colonne che non sono di una persona — quelle di servizio (`AIUTO
+ *    MATT.`, `TOT M`…) e il nome del reparto, che è l intestazione del foglio —
+ *    si scartano **per nome** normalizzato. Una colonna scartata non è un
+ *    conflitto: era attesa.
  * 2. Una cella con giorno fuori dall intervallo dichiarato della banda si
  *    scarta **ed è un conflitto**: il modello ha letto una riga che non gli era
  *    stata data, quindi non si sa quale riga abbia letto davvero.
@@ -128,7 +141,7 @@ export function mergeBandExtractions(
   let conflicts = 0
 
   function canonico(name: string): string | null {
-    if (isColonnaDiServizio(name)) return null
+    if (isColonnaDiServizio(name, header.ward)) return null
     const chiave = normalizeColumn(name)
     const esistente = nomi.get(chiave)
     if (esistente !== undefined) return esistente

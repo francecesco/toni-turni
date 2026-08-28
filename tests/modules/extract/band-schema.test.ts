@@ -271,6 +271,45 @@ describe('mergeBandExtractions', () => {
     expect(extraction.cells).toEqual([])
   })
 
+  it('scarta la colonna che porta il nome del reparto, che non e una persona', () => {
+    // Caso vero, misurato su agosto: su qualche banda il modello elenca
+    // `3°PIANO` — l intestazione del foglio, in cima alla striscia dei giorni —
+    // fra i nomi di colonna. Senza questo scarto la griglia di conferma
+    // mostrerebbe 31 celle per una collega che non esiste.
+    const { extraction, conflicts } = mergeBandExtractions(
+      [
+        {
+          spec: spec([1, 2], 1, 16),
+          extraction: band(
+            ['3°PIANO', 'RENATA'],
+            [cell(1, '3°PIANO', '1'), cell(1, 'RENATA', 'M')],
+          ),
+        },
+      ],
+      HEADER,
+    )
+
+    // una colonna scartata non e un conflitto: era attesa
+    expect(conflicts).toBe(0)
+    expect(extraction.columns).toEqual(['RENATA'])
+    expect(extraction.cells.map((c) => `${c.day}:${c.column}:${c.code}`)).toEqual(['1:RENATA:M'])
+  })
+
+  it('scarta il nome del reparto anche con maiuscole e spazi diversi', () => {
+    const { extraction } = mergeBandExtractions(
+      [
+        {
+          spec: spec([1], 1, 16),
+          extraction: band([' 3°  piano'], [cell(1, '3° Piano', '1')]),
+        },
+      ],
+      { ...HEADER, ward: '3° PIANO' },
+    )
+
+    expect(extraction.columns).toEqual([])
+    expect(extraction.cells).toEqual([])
+  })
+
   it('tiene una cella che cita una colonna non dichiarata, invece di perdere la banda', () => {
     const { extraction } = mergeBandExtractions(
       [{ spec: spec([1], 1, 16), extraction: band(['RENATA'], [cell(1, 'MERY', 'M')]) }],
