@@ -121,6 +121,12 @@ export async function saveExtraction(
   return { cells: celle.length, unresolved: celle.filter((c) => c.code === null).length }
 }
 
+export async function setRosterImagePath(rosterId: string, imagePath: string): Promise<void> {
+  await withWriteLock(async () => {
+    await prisma.roster.update({ where: { id: rosterId }, data: { imagePath } })
+  })
+}
+
 /**
  * Registra l autorizzazione della referente all invio della foto al provider AI e
  * crea le bande pendenti. È **idempotente**: richiamata su una ripresa lascia in

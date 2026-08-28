@@ -18,8 +18,11 @@ export {
   rosterProgress,
   saveBandCells,
   saveExtraction,
+  setRosterImagePath,
   withWriteLock,
 } from './repository'
+export type { UploadParseResult, UploadValues } from './form'
+export { parseUploadForm } from './form'
 export type { JobDeps, JobOutcome } from './job'
 export { bandPauseMs, daysInMonth, runExtractionJob } from './job'
 export { ensureExtractionWorker, processResumableRosters, staleAfterMs } from './worker'
