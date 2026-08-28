@@ -1,0 +1,194 @@
+import { describe, expect, it } from 'vitest'
+import {
+  DEFAULT_ROSTER_LAYOUT,
+  planBands,
+  pruneColumnBoundaries,
+} from '@/modules/ingest/layout'
+
+/**
+ * I confini di colonna **così come `detectTableQuad` li restituisce** sulle due
+ * foto reali, in coordinate del riquadro raddrizzato. Non sono inventati: sono
+ * la stampa di `detectTableQuad` su `fixtures/`, arrotondata a quattro cifre.
+ * Stanno qui come costanti perché `planBands` è logica pura e non deve aprire
+ * immagini: il legame con le foto lo verifica `crop.test.ts`.
+ *
+ * Fra i confini rilevati ce ne sono di **troppo ravvicinati** per essere due
+ * colonne del modulo cartaceo, e sono di due specie diverse:
+ *
+ * - **artefatti**: su agosto 0,5442 cade in mezzo alla colonna di CRISTINA, sul
+ *   bordo destro delle toppe di correttore delle righe 8-13; su settembre
+ *   0,0902 cade in mezzo alla colonna di RENATA. Questi vanno scartati o la
+ *   banda slitta e un turno finisce alla collega sbagliata.
+ * - **sotto-colonne vere**: 0,0289 (agosto) e 0,0217 (settembre) sono il filetto
+ *   fra il numero del giorno e il giorno della settimana; 0,9684 (settembre) è
+ *   quello fra `TOT M` e `TOT P`. Sono stampati, ma scartarli non costa niente:
+ *   il blocco dei giorni entra intero in ogni banda e le colonne di servizio si
+ *   buttano per nome.
+ */
+const AGOSTO = [
+  0, 0.0289, 0.0718, 0.1643, 0.255, 0.3433, 0.4314, 0.5053, 0.5442, 0.5921, 0.6735, 0.7688,
+  0.8867, 1,
+]
+const SETTEMBRE = [
+  0, 0.0217, 0.0532, 0.0902, 0.1244, 0.1951, 0.2657, 0.3371, 0.3967, 0.4661, 0.5311, 0.6065,
+  0.6894, 0.7692, 0.8578, 0.9351, 0.9684, 1,
+]
+
+/** I confini che restano dopo la ripulitura: le colonne che il taglio deve vedere. */
+const AGOSTO_PULITI = [
+  0, 0.0718, 0.1643, 0.255, 0.3433, 0.4314, 0.5053, 0.5921, 0.6735, 0.7688, 0.8867, 1,
+]
+const SETTEMBRE_PULITI = [
+  0, 0.0532, 0.1244, 0.1951, 0.2657, 0.3371, 0.3967, 0.4661, 0.5311, 0.6065, 0.6894, 0.7692,
+  0.8578, 0.9351, 1,
+]
+
+describe('DEFAULT_ROSTER_LAYOUT', () => {
+  it("lascia spazio all'intestazione senza mangiarsi le righe dei giorni", () => {
+    expect(DEFAULT_ROSTER_LAYOUT.headerHeight).toBeGreaterThan(0)
+    expect(DEFAULT_ROSTER_LAYOUT.headerHeight).toBeLessThan(0.2)
+  })
+
+  it("anteponendo l'intestazione ne prende un filo di più, per non rasare la riga dei nomi", () => {
+    expect(DEFAULT_ROSTER_LAYOUT.headerStrip).toBeGreaterThanOrEqual(
+      DEFAULT_ROSTER_LAYOUT.headerHeight,
+    )
+    expect(DEFAULT_ROSTER_LAYOUT.headerStrip).toBeLessThan(0.2)
+  })
+
+  it('sovrappone le due metà del mese di una frazione piccola ma non nulla', () => {
+    expect(DEFAULT_ROSTER_LAYOUT.monthOverlap).toBeGreaterThan(0)
+    expect(DEFAULT_ROSTER_LAYOUT.monthOverlap).toBeLessThan(0.05)
+  })
+
+  it('scarta i confini sotto una frazione della distanza mediana, fra 0 e 1', () => {
+    expect(DEFAULT_ROSTER_LAYOUT.boundaryMinRatio).toBeGreaterThan(0)
+    expect(DEFAULT_ROSTER_LAYOUT.boundaryMinRatio).toBeLessThan(1)
+  })
+})
+
+describe('pruneColumnBoundaries', () => {
+  it("scarta i confini troppo ravvicinati di agosto e lascia intatti gli altri", () => {
+    expect(pruneColumnBoundaries(AGOSTO)).toEqual(AGOSTO_PULITI)
+  })
+
+  it("scarta i confini troppo ravvicinati di settembre e lascia intatti gli altri", () => {
+    expect(pruneColumnBoundaries(SETTEMBRE)).toEqual(SETTEMBRE_PULITI)
+  })
+
+  it('non sposta nessun confine: quelli che tiene sono quelli rilevati', () => {
+    for (const rilevati of [AGOSTO, SETTEMBRE]) {
+      for (const tenuto of pruneColumnBoundaries(rilevati)) {
+        expect(rilevati).toContain(tenuto)
+      }
+    }
+  })
+
+  it('tiene sempre i due lati del riquadro, che sono confini per costruzione', () => {
+    for (const rilevati of [AGOSTO, SETTEMBRE]) {
+      const puliti = pruneColumnBoundaries(rilevati)
+      expect(puliti[0]).toBe(rilevati[0])
+      expect(puliti.at(-1)).toBe(rilevati.at(-1))
+    }
+  })
+
+  it('preferisce buttare il penultimo confine che perdere il lato destro', () => {
+    // passo 0,1 e un intruso a 0,98: il lato destro resta, l'intruso no
+    const puliti = pruneColumnBoundaries([0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.98, 1])
+    expect(puliti.at(-1)).toBe(1)
+    expect(puliti).not.toContain(0.98)
+  })
+
+  it('lascia in pace un elenco già regolare', () => {
+    const regolare = [0, 0.2, 0.4, 0.6, 0.8, 1]
+    expect(pruneColumnBoundaries(regolare)).toEqual(regolare)
+  })
+
+  it('rifiuta un elenco che non descrive nemmeno una colonna', () => {
+    expect(() => pruneColumnBoundaries([0.4])).toThrow(/confini/i)
+  })
+})
+
+describe('planBands', () => {
+  it('copre tutte le colonne rilevate tranne quella dei giorni, e tutti i giorni', () => {
+    const bande = planBands(AGOSTO, { daysInMonth: 31 })
+
+    // 12 confini puliti = 11 colonne; la 0 è il blocco dei giorni, entra in ogni banda
+    const coperte = [...new Set(bande.flatMap((b) => b.columns))].sort((a, b) => a - b)
+    expect(coperte).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+
+    for (let giorno = 1; giorno <= 31; giorno += 1) {
+      expect(
+        bande.some((b) => giorno >= b.dayFrom && giorno <= b.dayTo),
+        `giorno ${giorno}`,
+      ).toBe(true)
+    }
+  })
+
+  it('taglia il mese in due metà: due bande per ogni coppia di colonne', () => {
+    expect(planBands(AGOSTO, { daysInMonth: 31 })).toHaveLength(10)
+    expect(planBands(SETTEMBRE, { daysInMonth: 30 })).toHaveLength(14)
+  })
+
+  it('include il blocco dei giorni in ogni ritaglio', () => {
+    for (const banda of planBands(SETTEMBRE, { daysInMonth: 30 })) {
+      expect(banda.crop.left).toBe(0)
+    }
+  })
+
+  it("mostra l'intestazione con i nomi in ogni banda", () => {
+    for (const banda of planBands(AGOSTO, { daysInMonth: 31 })) {
+      if (banda.dayFrom === 1) {
+        // la prima metà comincia dal bordo alto: l'intestazione è già dentro
+        expect(banda.crop.top).toBe(0)
+        expect(banda.header).toBeNull()
+      } else {
+        // la seconda no, quindi la striscia dei nomi va anteposta
+        expect(banda.crop.top).toBeGreaterThan(0)
+        expect(banda.header).toEqual({ top: 0, height: DEFAULT_ROSTER_LAYOUT.headerStrip })
+      }
+    }
+  })
+
+  it("il ritaglio arriva fino al confine destro dell'ultima colonna della banda", () => {
+    const puliti = AGOSTO_PULITI
+    for (const banda of planBands(AGOSTO, { daysInMonth: 31 })) {
+      expect(banda.crop.width).toBeCloseTo(puliti[banda.columns.at(-1)! + 1], 6)
+    }
+  })
+
+  it("produce ritagli dentro i limiti dell'immagine", () => {
+    for (const banda of planBands(SETTEMBRE, { daysInMonth: 30 })) {
+      expect(banda.crop.left).toBeGreaterThanOrEqual(0)
+      expect(banda.crop.top).toBeGreaterThanOrEqual(0)
+      expect(banda.crop.width).toBeGreaterThan(0)
+      expect(banda.crop.height).toBeGreaterThan(0)
+      expect(banda.crop.left + banda.crop.width).toBeLessThanOrEqual(1.0001)
+      expect(banda.crop.top + banda.crop.height).toBeLessThanOrEqual(1.0001)
+    }
+  })
+
+  it('sovrappone le due metà del mese, così nessun giorno cade nella cucitura', () => {
+    const bande = planBands(AGOSTO, { daysInMonth: 31 })
+    const prima = bande.find((b) => b.dayFrom === 1)!
+    const seconda = bande.find((b) => b.dayFrom > 1 && b.columns[0] === prima.columns[0])!
+
+    expect(prima.dayTo + 1).toBe(seconda.dayFrom)
+    expect(prima.crop.top + prima.crop.height).toBeGreaterThan(seconda.crop.top)
+  })
+
+  it('rispetta columnsPerBand', () => {
+    const bande = planBands(AGOSTO, { daysInMonth: 30, columnsPerBand: 5 })
+    expect(bande).toHaveLength(4) // 10 colonne di contenuto in gruppi da 5, per due metà
+    for (const banda of bande) expect(banda.columns.length).toBeLessThanOrEqual(5)
+  })
+
+  it('rifiuta un mese impossibile', () => {
+    expect(() => planBands(AGOSTO, { daysInMonth: 0 })).toThrow(/giorni/i)
+    expect(() => planBands(AGOSTO, { daysInMonth: 31.5 })).toThrow(/giorni/i)
+  })
+
+  it('rifiuta una tabella senza colonne di contenuto oltre a quella dei giorni', () => {
+    expect(() => planBands([0, 1], { daysInMonth: 31 })).toThrow(/colonne/i)
+  })
+})
