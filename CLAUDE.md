@@ -16,16 +16,25 @@ Istruzioni per Claude Code su questo repository.
 > solo da `npm run eval`. La **Fase 2B** è esattamente quel collegamento: upload della foto e
 > visualizzazione della tabella estratta.
 >
-> **La misura reale dell'estrazione a bande dà 486/488 celle corrette (99,6%)**: agosto 246/248,
-> settembre 240/240. Zero celle mancanti (erano 199), zero bande fallite su 24, zero conflitti di
-> fusione. La strategia precedente — l'intera tabella in una sola chiamata — dava 46/248 (18,5%).
-> Il rapporto della misura è in
-> `.superpowers/sdd/2026-08-26-fase-2a-bis-ritagli/task-8-report.md`.
+> **La misura reale dell'estrazione a bande dà 487/488 celle corrette (99,8%)**: agosto 247/248,
+> settembre 240/240. Zero celle mancanti (erano 199), zero celle in eccesso, zero bande fallite su
+> 24, zero conflitti di fusione. La strategia precedente — l'intera tabella in una sola chiamata —
+> dava 46/248 (18,5%). Il rapporto della misura è in
+> `.superpowers/sdd/2026-08-26-fase-2a-bis-ritagli/correzioni-finali-report.md`; quello del Task 8,
+> con 486/488, è il transcript della misura fatta **prima** delle correzioni finali e non è più
+> riproducibile dal codice di oggi.
 >
-> Le due celle sbagliate sono **entrambe** nella zona di agosto riscritta a penna sopra il
-> correttore, e **una delle due cade sulla cella che la fixture stessa dichiara meno certa**
-> (`COSTANZA` giorni 10, 12, 13, scritti a mano in corsivo): non è detto che il torto sia del
-> modello.
+> **Quattro bande su 24 (settembre) sono dichiarate «lette a metà»**: sono quelle delle colonne di
+> servizio, e il modello ne restituisce una delle due. Sessanta celle che prima sparivano in
+> silenzio, che non toccano le celle delle infermiere (settembre resta 240/240) e che portano
+> l'estrazione allo stato `partial`. La Fase 3 deve poter dire **quale colonna** manca, non solo
+> quale banda: altrimenti l'infermiera vede un allarme che non sa spiegare.
+>
+> L'unica cella sbagliata è nella zona di agosto riscritta a penna sopra il correttore (`giorno 8
+> CRISTINA`, attesa `M`, letta `H`). Fra due esecuzioni della misura il modello ha cambiato lettura
+> su quella zona — la cella `COSTANZA giorno 10` era sbagliata prima e giusta ora — quindi **una
+> cella di differenza fra due misure non è un miglioramento, è la variabilità del modello sulle celle
+> corrette a mano**.
 >
 > Due verifiche in sospeso: il flusso OAuth non è mai stato eseguito con credenziali Google reali —
 > in tutti i test `exchangeGoogleCode` è mockata, la checklist è in
