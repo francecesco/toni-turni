@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   CalendarApiError,
   createCalendarApi,
+  isReauthNeeded,
   type CalendarTransport,
 } from '@/modules/calendar/api'
 import type { EventPayload } from '@/modules/calendar/types'
@@ -242,6 +243,16 @@ describe('errori', () => {
     const errore = await api.listCalendars().catch((e) => e)
     expect(errore).toBeInstanceOf(CalendarApiError)
     expect(errore.needsReauth).toBe(true)
+  })
+
+  it('isReauthNeeded riconosce l errore anche da un altra copia della classe', async () => {
+    // Sotto il bundler la stessa classe può esistere due volte: il riconoscimento
+    // deve essere strutturale, o il caso "token revocato" sfuggirebbe.
+    expect(isReauthNeeded(new CalendarApiError('x', { needsReauth: true }))).toBe(true)
+    expect(isReauthNeeded({ needsReauth: true })).toBe(true)
+    expect(isReauthNeeded(new CalendarApiError('x', { status: 500 }))).toBe(false)
+    expect(isReauthNeeded(new Error('x'))).toBe(false)
+    expect(isReauthNeeded(null)).toBe(false)
   })
 
   it('riporta il messaggio di Google quando c è', async () => {

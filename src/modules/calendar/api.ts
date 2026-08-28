@@ -58,6 +58,17 @@ export class CalendarApiError extends Error {
   }
 }
 
+/**
+ * Riconosce un errore che chiede di rifare il consenso. Il controllo è strutturale
+ * e non un `instanceof`: sotto il bundler di Next, o con i moduli ricaricati, la
+ * stessa classe può esistere in due copie e `instanceof` risponderebbe di no
+ * proprio nel caso che ci interessa di più.
+ */
+export function isReauthNeeded(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false
+  return (error as { needsReauth?: unknown }).needsReauth === true
+}
+
 /** Errore di rifiuto locale: la richiesta non è nemmeno partita. */
 export class CalendarRefusedError extends Error {
   constructor(message: string) {
