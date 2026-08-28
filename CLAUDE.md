@@ -2,22 +2,31 @@
 
 Istruzioni per Claude Code su questo repository.
 
-> **Stato: Fase 2A (estrazione) completata.** Oltre alle fondamenta della Fase 1 (Next.js,
-> Prisma/SQLite, legenda dei codici turno, cifratura dei token, login Google, pagine di
-> impostazioni, Docker), sono implementati l'ingestione delle foto (`ingest`), l'estrazione AI con
-> provider Groq/Anthropic e schema di validazione (`extract`), e la persistenza della tabella
-> estratta (`roster`). **Non** sono ancora implementati la griglia di conferma e il sync con Google
-> Calendar: sono le fasi 3-6, e ognuna avrà il suo piano in `docs/superpowers/plans/`.
+> **Stato: Fase 2A-bis (estrazione a bande) completata.** Oltre alle fondamenta della Fase 1
+> (Next.js, Prisma/SQLite, legenda dei codici turno, cifratura dei token, login Google, pagine di
+> impostazioni, Docker), sono implementati l'ingestione delle foto con rilevamento della griglia,
+> raddrizzamento e taglio in bande verticali (`ingest`), l'estrazione AI banda per banda con
+> provider Groq/Anthropic, schema di validazione e fusione (`extract`), e la persistenza della
+> tabella estratta (`roster`). **Non** sono ancora implementati la Fase 2B, la griglia di conferma
+> (Fase 3), il sync con Google Calendar (Fase 4) e la rifinitura UI (Fase 6): ognuna avrà il suo
+> piano in `docs/superpowers/plans/`.
 >
-> **La misura reale dell'estrazione (Fase 2A) ha dato 46/248 celle su una foto di agosto (18,5%),
-> con l'intera tabella mandata in una sola chiamata.** Un esperimento successivo ha mostrato che lo
-> stesso modello, sullo stesso prompt, su un **ritaglio** (colonna giorni + due colonne, mezzo mese)
-> legge 30/30 celle. Di conseguenza la Fase 2A-bis, non ancora pianificata in dettaglio, estrarrà a
-> ritagli invece che sulla tabella intera. Vedi "Trappole note" più sotto per il perché.
+> **La misura reale dell'estrazione a bande dà 486/488 celle corrette (99,6%)**: agosto 246/248,
+> settembre 240/240. Zero celle mancanti (erano 199), zero bande fallite su 24, zero conflitti di
+> fusione. La strategia precedente — l'intera tabella in una sola chiamata — dava 46/248 (18,5%).
+> Il rapporto della misura è in
+> `.superpowers/sdd/2026-08-26-fase-2a-bis-ritagli/task-8-report.md`.
 >
-> Resta una verifica in sospeso: il flusso OAuth non è mai stato eseguito con credenziali Google
-> reali — in tutti i test `exchangeGoogleCode` è mockata. La checklist da eseguire è in
-> [docs/verifica-manuale-oauth.md](docs/verifica-manuale-oauth.md).
+> Le due celle sbagliate sono **entrambe** nella zona di agosto riscritta a penna sopra il
+> correttore, e **una delle due cade sulla cella che la fixture stessa dichiara meno certa**
+> (`COSTANZA` giorni 10, 12, 13, scritti a mano in corsivo): non è detto che il torto sia del
+> modello.
+>
+> Due verifiche in sospeso: il flusso OAuth non è mai stato eseguito con credenziali Google reali —
+> in tutti i test `exchangeGoogleCode` è mockata, la checklist è in
+> [docs/verifica-manuale-oauth.md](docs/verifica-manuale-oauth.md) — e le trascrizioni di
+> riferimento in `fixtures/` portano ancora `"verified": false`: le percentuali qui sopra valgono
+> quanto la trascrizione, che nessuno che conosce il reparto ha ancora guardato.
 
 ## Cos'è
 
@@ -62,10 +71,12 @@ src/
 │   ├── codes/     # types, normalize, slot, defaults, form, repository, index
 │   ├── auth/      # policy, token, session, google, guards, index
 │   ├── ingest/    # normalizzazione foto (auto-rotate EXIF, resize), storage, index
+│   │              # + grid* (rilevamento della griglia), layout, crop (taglio in bande)
 │   ├── extract/   # VisionProvider (groq, anthropic), schema Zod, prompt, extract, index
+│   │              # + band-schema (con la fusione), band-prompt, extract-bands
 │   └── roster/    # tabella e versioni, salvataggio celle, index
 ├── components/ui/ # generati da shadcn, non ancora usati: serviranno alla rifinitura UI
-└── lib/           # env, db, time, crypto
+└── lib/           # env, db, time, crypto, homography (raddrizzamento prospettico)
 prisma/            # schema, migrations, seed
 tests/             # unit e integrazione, specchio di src/
 scripts/           # accuracy.ts (logica pura) ed eval-extraction.ts (npm run eval)
@@ -92,8 +103,10 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
    database. Conserva il raw output in `Roster.rawOutput` per debug.
 4. **Un codice turno sconosciuto non blocca l'estrazione.** Va salvato come `unknown` e risolto
    dall'utente. Non inventare un orario per un codice non in `ShiftCode`.
-5. **La confidenza per cella si propaga fino alla UI.** Non scartarla nei livelli intermedi: è ciò che
-   dice all'utente quali celle rileggere.
+5. **La confidenza per cella si propaga fino alla UI.** Non scartarla nei livelli intermedi. Ma
+   **non è il segnale su cui costruire la griglia di conferma**: la misura dice che su questo modello
+   non discrimina niente (vedi "Trappole note"). Quello che dice all'utente quali celle rileggere è
+   `handCorrected`.
 6. **Ogni utente vede solo la propria colonna** (eccetto il ruolo `REFERENTE`). Controlla
    l'autorizzazione nelle API route, non solo nella UI.
 7. **Solo `REFERENTE` carica tabelle e modifica la legenda dei codici.**
@@ -111,10 +124,20 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
 - **Le foto sono ruotate.** Applica sempre l'auto-rotate EXIF in `ingest`, prima di qualsiasi altra
   cosa, o il modello legge la tabella di traverso.
 - **Le correzioni a penna sono il caso critico.** Celle coperte con correttore e riscritte a mano
-  esistono nelle foto reali (vedi Agosto 2026): il modello le sbaglia spesso. Vanno marcate
-  `handCorrected` ed evidenziate in fase di conferma.
+  esistono nelle foto reali (vedi Agosto 2026): il modello le sbaglia spesso — **entrambe** le celle
+  sbagliate della misura sono lì. Vanno marcate `handCorrected` ed evidenziate in fase di conferma.
+- **`handCorrected` funziona, ed è il segnale buono.** Misurato su agosto: precisione 91%, richiamo
+  **100%** (10 veri positivi, 1 falso positivo, 0 falsi negativi). Tutte e dieci le correzioni a
+  penna trovate, nessuna mancata. **La griglia di conferma della Fase 3 si progetta su questo.**
+- **La confidenza per cella, invece, è inutilizzabile come filtro.** Nessuna cella su 519 prodotte
+  sta sotto 0,8, ed **entrambe** le celle sbagliate sono state dichiarate con confidenza alta:
+  evidenziare le celle a confidenza bassa non evidenzierebbe nulla. La regola invariante n. 5 resta
+  giusta come architettura (la confidenza si propaga), ma non è il segnale su cui costruire la
+  conferma.
 - **Colonne non-infermiere.** `AIUTO MATT.`, `AIUTO POM.`, `TOT M`, `TOT P` non sono assegnazioni di
-  turno: vanno ignorate.
+  turno: vanno ignorate. Lo stesso vale per il nome del **reparto** (`3°PIANO`), che è
+  l'intestazione del foglio e che su qualche banda il modello elenca fra i nomi di colonna. Si
+  scartano per nome normalizzato in fase di fusione, mai per indice.
 - **SQLite non gestisce scritture concorrenti.** Serializza le operazioni di sync; è ampiamente
   sufficiente per questo carico.
 - **`npm run eval` chiama il provider reale e consuma token.** Non eseguirlo in CI né in loop.
@@ -124,9 +147,15 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
   richiesta, che non c'entra nulla con l'immagine. `GROQ_MAX_OUTPUT_TOKENS` di default è 4000
   (vedi `src/modules/extract/providers/groq.ts`).
 - **L'estrazione della tabella intera in una sola chiamata non funziona su questo modello.** La
-  misura reale su una foto di agosto ha dato 18,5% di celle corrette (46/248); lo stesso modello e
-  lo stesso prompt, su un ritaglio di due colonne e mezzo mese, legge 30/30. La strategia scelta
-  per la Fase 2A-bis è quindi **a ritagli**, non sulla tabella intera.
+  misura reale su una foto di agosto ha dato 18,5% di celle corrette (46/248). L'estrazione a
+  **bande verticali** (striscia dei giorni + due colonne, mezzo mese), stesso modello, è stata
+  misurata e dà **99,6%** (486/488). Non tornare indietro alla tabella intera, e non allargare le
+  bande senza misurare.
+- **Le bande sono lente, e non è colpa del codice.** 24 bande per due foto sono ~18 minuti, di cui
+  15,7 di sola attesa: il modello lavora ~4 s per banda. Il resto è il tetto di 8000 token al
+  minuto del piano gratuito, che conta anche i token **prenotati** (vedi la trappola sopra). Un
+  pacer serializza le chiamate; la taratura di `DEFAULT_TOKENS_PER_BAND` è sul dato misurato, vedi
+  il commento in `src/modules/extract/extract-bands.ts`.
 - **Node 22 è obbligatorio, e la shell può partire su una versione più vecchia.** Verifica con
   `node -v` e, se serve, `nvm use 22` prima di installare o eseguire i test.
 - **`npm run lint` esegue `tsc --noEmit`, che richiede i tipi generati in `.next/types`.** Su un
