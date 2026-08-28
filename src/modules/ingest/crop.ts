@@ -1,0 +1,256 @@
+import sharp from 'sharp'
+import { warpPerspective, type Point } from '@/lib/homography'
+import { detectTableQuad } from './grid'
+import { planBands, pruneColumnBoundaries, type BandSpec } from './layout'
+
+/**
+ * Larghezza del riquadro raddrizzato. Sui riquadri delle due foto reali (1148 e
+ * 1495 px di larghezza nella foto) è un ingrandimento fra 1,07x e 1,39x: abbastanza
+ * generoso perché il ricampionamento delle bande non parta già in perdita, e non
+ * tanto da far pesare il raddrizzamento.
+ */
+const DEFAULT_DESKEW_WIDTH = 1600
+
+/** Qualità JPEG delle bande e del raddrizzato. */
+const DEFAULT_QUALITY = 88
+
+/**
+ * Altezza a cui si porta ogni banda. La leggibilità non dipende dalla larghezza
+ * ma dai **pixel per riga**, e le righe per banda sono le stesse su entrambe le
+ * foto (mezzo mese più le due righe d'intestazione, cioè 17-18): il riferimento
+ * è il ritaglio letto al 100%, alto 1313 px per 17 righe circa.
+ */
+const TARGET_BAND_HEIGHT = 1300
+
+/**
+ * Tetto ai pixel di una banda. Il ritaglio misurato al 100% era 700x1313 = 0,92
+ * Mpx e costava circa 4020 token: il tetto di Groq è 8000 token al minuto e conta
+ * anche quelli prenotati per l'uscita, quindi le bande non possono crescere.
+ *
+ * Il tetto morde sulle bande di destra: siccome ogni ritaglio parte da `left = 0`,
+ * la banda dell'ultimo gruppo di colonne è larga tutto il riquadro, e per starci
+ * dentro scende a circa 38 pixel per riga invece di 72. Restano leggibili (vedi
+ * il rapporto del Task 3+4), ma è la ragione per cui `columnsPerBand` non va
+ * alzato senza rimisurare.
+ */
+const MAX_BAND_PIXELS = 920_000
+
+/** Il riquadro raddrizzato, con i confini di colonna già ripuliti. */
+export interface DeskewedRoster {
+  /** JPEG del riquadro raddrizzato. */
+  data: Buffer
+  width: number
+  height: number
+  /**
+   * Confini di colonna in frazione della larghezza, ripuliti dai filetti
+   * spuri: 0 e 1 sono i due lati del riquadro.
+   */
+  columns: number[]
+}
+
+/** Una banda pronta da mandare al modello. */
+export interface RosterBand {
+  spec: BandSpec
+  /** JPEG della banda: intestazione con i nomi in cima, poi le righe dei giorni. */
+  image: Buffer
+  width: number
+  height: number
+}
+
+interface RawImage {
+  data: Buffer
+  width: number
+  height: number
+  channels: number
+}
+
+function distanza(a: Point, b: Point): number {
+  return Math.hypot(b.x - a.x, b.y - a.y)
+}
+
+function fra(valore: number, minimo: number, massimo: number): number {
+  return Math.max(minimo, Math.min(massimo, valore))
+}
+
+/**
+ * Raddrizza il riquadro della tabella una volta sola, restituendo i pixel
+ * grezzi: sia `deskewRoster` sia `cropRosterBands` partono da qui, così la
+ * tabella non viene rilevata due volte e i ritagli non subiscono due
+ * compressioni JPEG in fila.
+ *
+ * L'altezza dell'uscita segue le **proporzioni del riquadro trovato**, non un
+ * valore fisso: le due foto vedono lo stesso modulo con proporzioni diverse
+ * (0,93 contro 0,70) perché quella di agosto taglia il foglio a destra, e
+ * imporre una forma schiaccerebbe le righe di una delle due.
+ */
+async function warpRoster(
+  image: Buffer,
+  width: number,
+): Promise<{ rect: RawImage; columns: number[] }> {
+  const tabella = await detectTableQuad(image)
+  const { data, info } = await sharp(image)
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true })
+
+  const angoli = [
+    tabella.topLeft,
+    tabella.topRight,
+    tabella.bottomRight,
+    tabella.bottomLeft,
+  ] as const
+  const larghezzaSorgente =
+    (distanza(tabella.topLeft, tabella.topRight) +
+      distanza(tabella.bottomLeft, tabella.bottomRight)) /
+    2
+  const altezzaSorgente =
+    (distanza(tabella.topLeft, tabella.bottomLeft) +
+      distanza(tabella.topRight, tabella.bottomRight)) /
+    2
+
+  const height = Math.max(1, Math.round((width * altezzaSorgente) / larghezzaSorgente))
+  const raddrizzato = warpPerspective(
+    { data, width: info.width, height: info.height, channels: info.channels },
+    angoli,
+    width,
+    height,
+  )
+
+  return {
+    rect: { data: raddrizzato, width, height, channels: info.channels },
+    columns: pruneColumnBoundaries(tabella.columns),
+  }
+}
+
+/**
+ * Individua la tabella nella foto e la raddrizza in un rettangolo.
+ *
+ * È il primo passo di `cropRosterBands`, esposto a parte perché è la cosa da
+ * guardare quando un ritaglio esce storto: se il raddrizzato è buono, il
+ * problema sta nei confini di colonna; se è storto, sta nel rilevamento.
+ *
+ * Fallisce con `GridNotFoundError` se la foto non contiene una tabella
+ * riconoscibile: un raddrizzamento a caso produce turni sbagliati, che è peggio
+ * di un'estrazione mancata.
+ */
+export async function deskewRoster(
+  image: Buffer,
+  options: { width?: number; quality?: number } = {},
+): Promise<DeskewedRoster> {
+  const width = options.width ?? DEFAULT_DESKEW_WIDTH
+  const { rect, columns } = await warpRoster(image, width)
+
+  const data = await sharp(rect.data, {
+    raw: { width: rect.width, height: rect.height, channels: rect.channels as 1 | 2 | 3 | 4 },
+  })
+    .jpeg({ quality: options.quality ?? DEFAULT_QUALITY, mozjpeg: true })
+    .toBuffer()
+
+  return { data, width: rect.width, height: rect.height, columns }
+}
+
+/** Il pezzo di `rect` descritto dal rettangolo in frazioni, come PNG. */
+async function ritaglia(
+  rect: RawImage,
+  frazioni: { left: number; top: number; width: number; height: number },
+): Promise<Buffer> {
+  const left = fra(Math.round(frazioni.left * rect.width), 0, rect.width - 1)
+  const top = fra(Math.round(frazioni.top * rect.height), 0, rect.height - 1)
+
+  return sharp(rect.data, {
+    raw: { width: rect.width, height: rect.height, channels: rect.channels as 1 | 2 | 3 | 4 },
+  })
+    .extract({
+      left,
+      top,
+      width: fra(Math.round(frazioni.width * rect.width), 1, rect.width - left),
+      height: fra(Math.round(frazioni.height * rect.height), 1, rect.height - top),
+    })
+    .png()
+    .toBuffer()
+}
+
+/**
+ * Taglia la foto nelle bande verticali da mandare al modello una alla volta.
+ *
+ * Mandare la tabella intera in una sola chiamata dà il 18,5% di celle corrette;
+ * lo stesso modello, sullo stesso prompt, su un ritaglio di due colonne per
+ * mezzo mese legge tutte le celle. Il collo di bottiglia sono le celle per
+ * immagine, e queste bande sono il modo di ridurle.
+ *
+ * Ogni banda porta in cima la riga dei nomi — anche quelle della seconda metà
+ * del mese, dove la striscia d'intestazione viene anteposta al ritaglio — perché
+ * è sul nome letto nell'intestazione che le celle vanno chiavate. La striscia e
+ * il ritaglio hanno per costruzione la stessa larghezza e la stessa origine
+ * orizzontale, quindi le colonne combaciano senza registrazione.
+ */
+export async function cropRosterBands(
+  image: Buffer,
+  options: {
+    daysInMonth: number
+    columnsPerBand?: number
+    deskewWidth?: number
+    quality?: number
+  },
+): Promise<RosterBand[]> {
+  const { rect, columns } = await warpRoster(image, options.deskewWidth ?? DEFAULT_DESKEW_WIDTH)
+  const specifiche = planBands(columns, {
+    daysInMonth: options.daysInMonth,
+    columnsPerBand: options.columnsPerBand,
+  })
+
+  const bande: RosterBand[] = []
+
+  for (const spec of specifiche) {
+    const righe = await ritaglia(rect, spec.crop)
+    const meta = await sharp(righe).metadata()
+    let sorgente = righe
+    const width = meta.width
+    let height = meta.height
+
+    if (spec.header) {
+      const testa = await ritaglia(rect, {
+        left: spec.crop.left,
+        top: spec.header.top,
+        width: spec.crop.width,
+        height: spec.header.height,
+      })
+      const metaTesta = await sharp(testa).metadata()
+      height = metaTesta.height + meta.height
+      // La composizione va materializzata prima del ridimensionamento: sharp
+      // ridimensiona la base *prima* di comporre, e le due strisce non ci
+      // starebbero più.
+      sorgente = await sharp({
+        create: { width, height, channels: 3, background: '#ffffff' },
+      })
+        .composite([
+          { input: testa, top: 0, left: 0 },
+          { input: righe, top: metaTesta.height, left: 0 },
+        ])
+        .png()
+        .toBuffer()
+    }
+
+    // Si scala sull'altezza, che è quello che decide i pixel per riga, ma non
+    // oltre il tetto di pixel: le bande di destra sono larghe tutto il riquadro
+    // e senza tetto sfonderebbero il budget di token.
+    const scala = Math.min(
+      TARGET_BAND_HEIGHT / height,
+      Math.sqrt(MAX_BAND_PIXELS / (width * height)),
+    )
+    const larghezzaFinale = Math.max(1, Math.round(width * scala))
+    const altezzaFinale = Math.max(1, Math.round(height * scala))
+
+    bande.push({
+      spec,
+      image: await sharp(sorgente)
+        .resize(larghezzaFinale, altezzaFinale, { fit: 'fill', kernel: 'lanczos3' })
+        .jpeg({ quality: options.quality ?? DEFAULT_QUALITY, mozjpeg: true })
+        .toBuffer(),
+      width: larghezzaFinale,
+      height: altezzaFinale,
+    })
+  }
+
+  return bande
+}

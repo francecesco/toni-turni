@@ -2,6 +2,10 @@ export type { NormalizedImage } from './normalize'
 export { normalizeRosterPhoto } from './normalize'
 export type { DetectedTable, TableQuad } from './grid'
 export { detectTableQuad, GridNotFoundError, validateQuad } from './grid'
+export type { BandSpec, Crop, RosterLayout } from './layout'
+export { DEFAULT_ROSTER_LAYOUT, planBands, pruneColumnBoundaries } from './layout'
+export type { DeskewedRoster, RosterBand } from './crop'
+export { cropRosterBands, deskewRoster } from './crop'
 export {
   deleteRosterImage,
   pruneOldImages,
