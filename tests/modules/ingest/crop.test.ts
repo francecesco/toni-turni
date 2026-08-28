@@ -9,6 +9,8 @@ import {
   type DeskewedRoster,
   type RosterBand,
 } from '@/modules/ingest'
+import { detectRules } from '@/modules/ingest/grid-lines'
+import { median } from '@/modules/ingest/grid-numeric'
 
 const AGOSTO = join(process.cwd(), 'fixtures', 'roster-2026-08-3piano.jpeg')
 const SETTEMBRE = join(process.cwd(), 'fixtures', 'roster-2026-09-3piano.jpeg')
@@ -262,5 +264,310 @@ describe('cropRosterBands', () => {
     await expect(cropRosterBands(await foglioBianco(), { daysInMonth: 31 })).rejects.toThrow(
       GridNotFoundError,
     )
+  })
+})
+
+/**
+ * Il legame fra la riga del giorno e la cella che le sta accanto, verificato sul
+ * **contenuto** e non sulle proporzioni.
+ *
+ * È la proprietà su cui poggia tutta la strategia a bande, e i test sulle
+ * proporzioni non la vedono: una composizione ruotata, invertita o tagliata alla
+ * ordinata sbagliata ha le stesse proporzioni di quella giusta. Tre mutazioni
+ * sopravvivevano alla suite intera — la striscia dei giorni tagliata a `top: 0`
+ * invece che a `spec.crop.top` (che sulla seconda metà del mese vale un
+ * disallineamento di **17 righe**), la striscia composta a destra invece che a
+ * sinistra, l'intestazione impilata in fondo invece che in cima — e ognuna
+ * metterebbe i turni di una persona sui giorni di un'altra riga.
+ *
+ * Il metodo: si confronta ogni pezzo della banda composta con i pixel da cui
+ * **deve** venire, ritagliati dallo stesso riquadro raddrizzato, ridotti a una
+ * impronta piccola e correlati. Non un confronto esatto — la banda passa da un
+ * ricampionamento e da una compressione JPEG in più — ma la separazione misurata
+ * è larghissima: gli accoppiamenti giusti stanno fra 0,976 e 1,000 su 156
+ * confronti, quelli sbagliati non superano 0,309.
+ */
+describe('cropRosterBands, il legame giorno-cella', () => {
+  /** Correlazione minima fra un pezzo della banda e i pixel da cui deve venire. */
+  const SOMIGLIANZA_MINIMA = 0.9
+  /** Correlazione massima ammessa fra un pezzo e i pixel da cui **non** viene. */
+  const SOMIGLIANZA_MASSIMA_SBAGLIATA = 0.6
+  /** Lato dell'impronta con cui si confrontano due pezzi. */
+  const IMPRONTA = { width: 40, height: 200 }
+
+  /** I pixel di un pezzo in scala di grigi, riportati alla dimensione dell'impronta. */
+  async function impronta(
+    image: Buffer,
+    box?: { left: number; top: number; width: number; height: number },
+  ): Promise<Float64Array> {
+    let pipeline = sharp(image)
+    if (box) pipeline = pipeline.extract(box)
+    const { data } = await pipeline
+      .greyscale()
+      .resize(IMPRONTA.width, IMPRONTA.height, { fit: 'fill' })
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+
+    const valori = new Float64Array(IMPRONTA.width * IMPRONTA.height)
+    for (let i = 0; i < valori.length; i += 1) valori[i] = data[i]
+    return valori
+  }
+
+  /** Coefficiente di correlazione fra due impronte: 1 se sono la stessa immagine. */
+  function somiglianza(a: Float64Array, b: Float64Array): number {
+    let mediaA = 0
+    let mediaB = 0
+    for (let i = 0; i < a.length; i += 1) {
+      mediaA += a[i]
+      mediaB += b[i]
+    }
+    mediaA /= a.length
+    mediaB /= b.length
+
+    let prodotto = 0
+    let varA = 0
+    let varB = 0
+    for (let i = 0; i < a.length; i += 1) {
+      const x = a[i] - mediaA
+      const y = b[i] - mediaB
+      prodotto += x * y
+      varA += x * x
+      varB += y * y
+    }
+    return prodotto / Math.sqrt(varA * varB)
+  }
+
+  /** Lo stesso arrotondamento in pixel che usa il ritaglio delle bande. */
+  function riquadro(
+    raddrizzata: DeskewedRoster,
+    frazioni: { left: number; top: number; width: number; height: number },
+  ) {
+    const left = Math.min(raddrizzata.width - 1, Math.round(frazioni.left * raddrizzata.width))
+    const top = Math.min(raddrizzata.height - 1, Math.round(frazioni.top * raddrizzata.height))
+    return {
+      left,
+      top,
+      width: Math.max(1, Math.min(raddrizzata.width - left, Math.round(frazioni.width * raddrizzata.width))),
+      height: Math.max(1, Math.min(raddrizzata.height - top, Math.round(frazioni.height * raddrizzata.height))),
+    }
+  }
+
+  /** Dove stanno, in pixel della banda composta, i quattro pezzi che la formano. */
+  function pezzi(banda: RosterBand) {
+    const { spec } = banda
+    const larghezzaTotale = spec.days.width + spec.crop.width
+    const altezzaTotale = spec.crop.height + (spec.header?.height ?? 0)
+    const larghezzaGiorni = Math.round(banda.width * (spec.days.width / larghezzaTotale))
+    const altezzaTesta = spec.header
+      ? Math.round(banda.height * (spec.header.height / altezzaTotale))
+      : 0
+
+    return {
+      larghezzaGiorni,
+      altezzaTesta,
+      righeSinistra: {
+        left: 0,
+        top: altezzaTesta,
+        width: larghezzaGiorni,
+        height: banda.height - altezzaTesta,
+      },
+      righeDestra: {
+        left: larghezzaGiorni,
+        top: altezzaTesta,
+        width: banda.width - larghezzaGiorni,
+        height: banda.height - altezzaTesta,
+      },
+    }
+  }
+
+  it('taglia la striscia dei giorni alla stessa ordinata del ritaglio, e la mette a sinistra', async () => {
+    for (const [path, giorni] of [
+      [AGOSTO, 31],
+      [SETTEMBRE, 30],
+    ] as const) {
+      const raddrizzata = await raddrizzataDi(path)
+
+      for (const banda of await bandeDi(path, giorni)) {
+        const { spec } = banda
+        const p = pezzi(banda)
+        const dove = `${path} giorni ${spec.dayFrom}-${spec.dayTo} colonne ${spec.columns}`
+
+        const sinistra = await impronta(banda.image, p.righeSinistra)
+        const destra = await impronta(banda.image, p.righeDestra)
+
+        // i pixel da cui i due pezzi DEVONO venire: la stessa ordinata e la
+        // stessa altezza, che è ciò che rende esatta la composizione
+        const strisciaDeiGiorni = await impronta(
+          await sharp(raddrizzata.data)
+            .extract(
+              riquadro(raddrizzata, {
+                left: spec.days.left,
+                top: spec.crop.top,
+                width: spec.days.width,
+                height: spec.crop.height,
+              }),
+            )
+            .png()
+            .toBuffer(),
+        )
+        const colonneDelGruppo = await impronta(
+          await sharp(raddrizzata.data).extract(riquadro(raddrizzata, spec.crop)).png().toBuffer(),
+        )
+
+        expect(somiglianza(sinistra, strisciaDeiGiorni), `sinistra ${dove}`).toBeGreaterThan(
+          SOMIGLIANZA_MINIMA,
+        )
+        expect(somiglianza(destra, colonneDelGruppo), `destra ${dove}`).toBeGreaterThan(
+          SOMIGLIANZA_MINIMA,
+        )
+        // e non sono scambiate: la striscia dei giorni sta a sinistra
+        expect(somiglianza(sinistra, colonneDelGruppo), `scambio ${dove}`).toBeLessThan(
+          SOMIGLIANZA_MASSIMA_SBAGLIATA,
+        )
+        expect(somiglianza(destra, strisciaDeiGiorni), `scambio ${dove}`).toBeLessThan(
+          SOMIGLIANZA_MASSIMA_SBAGLIATA,
+        )
+      }
+    }
+  })
+
+  it("impila la riga d'intestazione in cima alla banda, non in fondo", async () => {
+    for (const [path, giorni] of [
+      [AGOSTO, 31],
+      [SETTEMBRE, 30],
+    ] as const) {
+      const raddrizzata = await raddrizzataDi(path)
+      const conIntestazione = (await bandeDi(path, giorni)).filter((b) => b.spec.header !== null)
+      expect(conIntestazione.length).toBeGreaterThan(0)
+
+      for (const banda of conIntestazione) {
+        const spec = banda.spec
+        const header = spec.header
+        if (header === null) throw new Error('filtrata sopra')
+        const p = pezzi(banda)
+        const dove = `${path} giorni ${spec.dayFrom}-${spec.dayTo} colonne ${spec.columns}`
+
+        const testaSinistra = await impronta(banda.image, {
+          left: 0,
+          top: 0,
+          width: p.larghezzaGiorni,
+          height: p.altezzaTesta,
+        })
+        const testaDestra = await impronta(banda.image, {
+          left: p.larghezzaGiorni,
+          top: 0,
+          width: banda.width - p.larghezzaGiorni,
+          height: p.altezzaTesta,
+        })
+        const fondoSinistra = await impronta(banda.image, {
+          left: 0,
+          top: banda.height - p.altezzaTesta,
+          width: p.larghezzaGiorni,
+          height: p.altezzaTesta,
+        })
+
+        const intestazioneGiorni = await impronta(
+          await sharp(raddrizzata.data)
+            .extract(
+              riquadro(raddrizzata, {
+                left: spec.days.left,
+                top: header.top,
+                width: spec.days.width,
+                height: header.height,
+              }),
+            )
+            .png()
+            .toBuffer(),
+        )
+        const intestazioneColonne = await impronta(
+          await sharp(raddrizzata.data)
+            .extract(
+              riquadro(raddrizzata, {
+                left: spec.crop.left,
+                top: header.top,
+                width: spec.crop.width,
+                height: header.height,
+              }),
+            )
+            .png()
+            .toBuffer(),
+        )
+
+        expect(somiglianza(testaSinistra, intestazioneGiorni), `testa ${dove}`).toBeGreaterThan(
+          SOMIGLIANZA_MINIMA,
+        )
+        expect(somiglianza(testaDestra, intestazioneColonne), `testa ${dove}`).toBeGreaterThan(
+          SOMIGLIANZA_MINIMA,
+        )
+        // e non è in fondo: là ci sono le ultime righe di giorni
+        expect(somiglianza(fondoSinistra, intestazioneGiorni), `fondo ${dove}`).toBeLessThan(
+          SOMIGLIANZA_MASSIMA_SBAGLIATA,
+        )
+      }
+    }
+  })
+
+  /**
+   * La stessa proprietà detta nell'unità che conta, la riga: i filetti
+   * orizzontali che si vedono dentro la striscia dei giorni e quelli che si
+   * vedono dentro le colonne del gruppo devono cadere sulle **stesse** righe
+   * della banda composta.
+   *
+   * Mezza riga di sfasamento è il punto in cui una cella comincia a leggersi
+   * accanto al giorno sbagliato. Misurato sulle 24 bande delle due foto: al
+   * massimo **0,153 righe** (settembre, gruppo 11-12), cioè un terzo di quel
+   * limite; il residuo è la deriva del raddrizzamento, non la composizione.
+   */
+  it('allinea i filetti della striscia dei giorni con quelli delle celle', async () => {
+    /** Frazione di riga di sfasamento ammessa: 0,5 sarebbe un errore da una riga. */
+    const SFASAMENTO_MASSIMO = 0.25
+
+    for (const [path, giorni] of [
+      [AGOSTO, 31],
+      [SETTEMBRE, 30],
+    ] as const) {
+      for (const banda of await bandeDi(path, giorni)) {
+        const dove = `${path} giorni ${banda.spec.dayFrom}-${banda.spec.dayTo}`
+        const p = pezzi(banda)
+
+        const { data, info } = await sharp(banda.image)
+          .greyscale()
+          .raw()
+          .toBuffer({ resolveWithObject: true })
+        const grigi = new Float64Array(info.width * info.height)
+        for (let i = 0; i < grigi.length; i += 1) grigi[i] = data[i]
+
+        const dentro = { y0: 0, y1: info.height }
+        const filettiGiorni = detectRules(grigi, info.width, 'row', {
+          ...dentro,
+          x0: 2,
+          x1: p.larghezzaGiorni - 2,
+        })
+        const filettiCelle = detectRules(grigi, info.width, 'row', {
+          ...dentro,
+          x0: p.larghezzaGiorni + 2,
+          x1: info.width - 2,
+        })
+
+        expect(filettiGiorni, `filetti dei giorni ${dove}`).not.toBeNull()
+        expect(filettiCelle, `filetti delle celle ${dove}`).not.toBeNull()
+        if (filettiGiorni === null || filettiCelle === null) continue
+
+        const passo = (filettiGiorni.step + filettiCelle.step) / 2
+        const scarti: number[] = []
+        for (const riga of filettiGiorni.lines) {
+          let vicino: number | null = null
+          for (const altra of filettiCelle.lines) {
+            if (vicino === null || Math.abs(altra - riga) < Math.abs(vicino - riga)) vicino = altra
+          }
+          if (vicino !== null && Math.abs(vicino - riga) < passo / 2) scarti.push(vicino - riga)
+        }
+
+        expect(scarti.length, `filetti agganciati ${dove}`).toBeGreaterThan(10)
+        expect(Math.abs(median(scarti)) / passo, `sfasamento ${dove}`).toBeLessThan(
+          SFASAMENTO_MASSIMO,
+        )
+      }
+    }
   })
 })
