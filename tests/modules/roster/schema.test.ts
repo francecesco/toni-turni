@@ -90,4 +90,91 @@ describe('RosterCell', () => {
 
     expect(await prisma.rosterCell.count({ where: { rosterId: r.id } })).toBe(0)
   })
+
+  it('segna il conflitto fra due bande sovrapposte che leggono la stessa cella diversamente', async () => {
+    const r = await prisma.roster.create({ data: roster({ year: 2029 }) })
+    const cell = await prisma.rosterCell.create({
+      data: {
+        rosterId: r.id,
+        day: 7,
+        columnLabel: 'CRISTINA',
+        rawCode: 'M',
+        confidence: 0.9,
+        conflicted: true,
+        conflictWith: 'P',
+        bandIndex: 2,
+      },
+    })
+    expect(cell.conflicted).toBe(true)
+    expect(cell.conflictWith).toBe('P')
+    expect(cell.bandIndex).toBe(2)
+  })
+})
+
+describe('RosterBand', () => {
+  it('nasce pendente e diventa il conto di ciò che manca', async () => {
+    const r = await prisma.roster.create({ data: roster({ year: 2030 }) })
+    const banda = await prisma.rosterBand.create({ data: { rosterId: r.id, index: 0 } })
+
+    expect(banda.status).toBe('pending')
+    expect(banda.attempts).toBe(0)
+  })
+
+  it('rifiuta due bande con lo stesso indice nella stessa tabella', async () => {
+    const r = await prisma.roster.create({ data: roster({ year: 2031 }) })
+    await prisma.rosterBand.create({ data: { rosterId: r.id, index: 3 } })
+
+    await expect(prisma.rosterBand.create({ data: { rosterId: r.id, index: 3 } })).rejects.toThrow()
+  })
+})
+
+describe('ColumnAlias', () => {
+  it('associa un nome di colonna a un utente, una volta sola', async () => {
+    const utente = await prisma.user.create({
+      data: { email: 'cri@example.com', displayName: 'Cristina' },
+    })
+    const alias = await prisma.columnAlias.create({
+      data: { label: 'CRISTINA', userId: utente.id },
+    })
+
+    expect(alias.ignored).toBe(false)
+    await expect(
+      prisma.columnAlias.create({ data: { label: 'CRISTINA', userId: utente.id } }),
+    ).rejects.toThrow()
+  })
+
+  it('permette una colonna ignorata senza utente (TOT M, AIUTO POM.)', async () => {
+    const alias = await prisma.columnAlias.create({ data: { label: 'TOT M', ignored: true } })
+
+    expect(alias.userId).toBeNull()
+    expect(alias.ignored).toBe(true)
+  })
+})
+
+describe('Assignment', () => {
+  it('nasce in stato draft e diventa confirmed solo con una conferma esplicita', async () => {
+    const utente = await prisma.user.create({
+      data: { email: 'sara@example.com', displayName: 'Sara' },
+    })
+    const r = await prisma.roster.create({ data: roster({ year: 2032 }) })
+
+    const assegnazione = await prisma.assignment.create({
+      data: { userId: utente.id, rosterId: r.id, day: 4, columnLabel: 'SARA', code: 'M' },
+    })
+
+    expect(assegnazione.syncState).toBe('draft')
+    expect(assegnazione.confirmedAt).toBeNull()
+    expect(assegnazione.eventId).toBeNull()
+  })
+
+  it('rifiuta due assegnazioni per la stessa persona, la stessa tabella e lo stesso giorno', async () => {
+    const utente = await prisma.user.create({
+      data: { email: 'mery@example.com', displayName: 'Mery' },
+    })
+    const r = await prisma.roster.create({ data: roster({ year: 2033 }) })
+    const data = { userId: utente.id, rosterId: r.id, day: 9, columnLabel: 'MERY', code: 'P' }
+
+    await prisma.assignment.create({ data })
+    await expect(prisma.assignment.create({ data })).rejects.toThrow()
+  })
 })

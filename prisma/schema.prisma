@@ -21,6 +21,22 @@ model User {
   role          Role           @default(NURSE)
   createdAt     DateTime       @default(now())
   googleAccount GoogleAccount?
+  aliases       ColumnAlias[]
+  assignments   Assignment[]
+}
+
+/// Il nome di colonna letto dalla foto ("CRISTINA", "SARA DP.") associato a un utente.
+/// L associazione si fa una volta e vale per i mesi successivi. `userId` null con
+/// `ignored` true sono le colonne che non sono turni di nessuno (AIUTO MATT., TOT M).
+model ColumnAlias {
+  id        String   @id @default(cuid())
+  /// Forma normalizzata del nome (maiuscolo, spazi compattati): è la chiave di confronto.
+  label     String   @unique
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ignored   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model GoogleAccount {
@@ -60,16 +76,59 @@ model Roster {
   ward      String
   version   Int      @default(1)
   imagePath String
-  // uploaded | extracting | extracted | failed
+  // uploaded | extracting | interrupted | extracted | partial | failed
+  //   uploaded     la foto è sul volume, nulla è ancora stato mandato all AI
+  //   extracting   il job sta girando: heartbeatAt dice quando ha respirato l ultima volta
+  //   interrupted  il processo è morto a metà (heartbeat vecchio): si riprende dalle bande mancanti
+  //   extracted    tutte le bande lette
+  //   partial      alcune bande non lette: sono dichiarate, non nascoste
+  //   failed       non è stato possibile leggere nulla
   status    String   @default("uploaded")
   // nome del provider che ha prodotto l estrazione, per capire i confronti a posteriori
   provider  String?
   // testo grezzo del modello: serve a capire un estrazione andata male
   rawOutput String?
   createdAt DateTime @default(now())
-  cells     RosterCell[]
+
+  // Geometria delle bande, dichiarata dalla referente al caricamento e verificata
+  // da lei sull anteprima prima di autorizzare l invio al provider AI.
+  columnCount       Int?
+  columnsPerBand    Int?
+  dayColumnFraction Float?
+  areaLeft          Float?
+  areaTop           Float?
+  areaRight         Float?
+  areaBottom        Float?
+
+  // Quando la referente ha autorizzato l invio della foto al provider AI.
+  // Null significa: nessuna autorizzazione, nessuna chiamata (regola invariante 9).
+  requestedAt DateTime?
+  // Aggiornato a ogni banda: se è vecchio e lo stato è extracting, il processo è morto.
+  heartbeatAt DateTime?
+  error       String?
+
+  cells       RosterCell[]
+  bands       RosterBand[]
+  assignments Assignment[]
 
   @@unique([year, month, ward, version])
+}
+
+/// Stato per banda: è ciò che rende ripartibile un estrazione da 10-20 minuti.
+/// Un riavvio a metà ritrova qui quali bande sono già lette e riprende dalle altre.
+model RosterBand {
+  id        String   @id @default(cuid())
+  rosterId  String
+  roster    Roster   @relation(fields: [rosterId], references: [id], onDelete: Cascade)
+  index     Int
+  // pending | done | failed
+  status    String   @default("pending")
+  attempts  Int      @default(0)
+  error     String?
+  rawOutput String?
+  updatedAt DateTime @updatedAt
+
+  @@unique([rosterId, index])
 }
 
 model RosterCell {
@@ -85,6 +144,34 @@ model RosterCell {
   confidence    Float
   // il modello ha visto una correzione a penna o col correttore
   handCorrected Boolean @default(false)
+  // due bande sovrapposte hanno letto la stessa cella in modo diverso: da rileggere
+  conflicted    Boolean @default(false)
+  // testo letto dall altra banda, quando c è conflitto
+  conflictWith  String?
+  // quale banda ha prodotto questa cella
+  bandIndex     Int?
 
   @@unique([rosterId, day, columnLabel])
+}
+
+/// Il turno confermato da una persona: è lo stato da cui parte il sync sul calendario.
+/// Nessuna riga qui senza una conferma esplicita (regola invariante 1).
+model Assignment {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rosterId    String
+  roster      Roster    @relation(fields: [rosterId], references: [id], onDelete: Cascade)
+  day         Int
+  /// Colonna della foto da cui viene la conferma, per ricostruire la provenienza.
+  columnLabel String
+  /// Codice risolto in ShiftCode: un codice ignoto non può essere confermato.
+  code        String
+  confirmedAt DateTime?
+  eventId     String?
+  // draft | confirmed | synced | failed
+  syncState   String    @default("draft")
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, rosterId, day])
 }
