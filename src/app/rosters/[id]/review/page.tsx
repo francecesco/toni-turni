@@ -243,6 +243,15 @@ export default async function ReviewPage({
                           {riga.location ? ` · ${riga.location}` : ''}
                         </p>
                       )}
+                      {/* La confidenza arriva fino qui (regola invariante 5) ma non
+                          guida l attenzione: sulla misura reale non distingue le celle
+                          sbagliate. Si mostra solo quando è davvero bassa. */}
+                      {riga.confidence !== null && riga.confidence < 0.9 && (
+                        <p className="text-xs text-muted-foreground">
+                          il lettore automatico si dichiara sicuro al{' '}
+                          {Math.round(riga.confidence * 100)}%
+                        </p>
+                      )}
                     </>
                   )}
                   {riga.attentionReasons.length > 0 && (
