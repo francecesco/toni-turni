@@ -160,6 +160,12 @@ export interface GridSummary {
   attention: number
   unknownCodes: number
   confirmable: number
+  /**
+   * Giorni della **propria** colonna senza turno letto. È così che si dichiara un
+   * buco a chi lo riguarda: per colonna e per giorni, non come "n celle su m non
+   * lette" su una banda che magari conteneva solo i totali di reparto.
+   */
+  emptyDays: number[]
 }
 
 export function gridSummary(rows: GridRow[]): GridSummary {
@@ -170,5 +176,6 @@ export function gridSummary(rows: GridRow[]): GridSummary {
     attention: rows.filter((r) => r.attention).length,
     unknownCodes: rows.filter((r) => r.unknownCode).length,
     confirmable: rows.filter((r) => r.confirmable).length,
+    emptyDays: rows.filter((r) => r.empty).map((r) => r.day),
   }
 }

@@ -238,6 +238,14 @@ describe('gridSummary — il riassunto in testa alla griglia', () => {
       attention: 3,
       unknownCodes: 1,
       confirmable: 3,
+      emptyDays: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31],
     })
+  })
+
+  it('elenca per giorno i buchi della colonna: è così che un turno mancante si vede', () => {
+    const righe = griglia([cella(1), cella(3)])
+
+    // Il buco si dichiara per giorni della propria colonna, non per indice di banda.
+    expect(gridSummary(righe).emptyDays.slice(0, 3)).toEqual([2, 4, 5])
   })
 })

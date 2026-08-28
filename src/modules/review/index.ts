@@ -11,6 +11,8 @@ export {
 } from './aliases'
 export type { GridRow, GridSummary, ReviewAssignment, ReviewCell } from './grid'
 export { buildColumnGrid, gridSummary } from './grid'
+export type { ColumnCoverage, UnreadBandReport } from './holes'
+export { columnCoverage, describeUnreadBands } from './holes'
 export type { ColumnTarget, ConfirmResult } from './confirm'
 export {
   ReviewForbiddenError,
