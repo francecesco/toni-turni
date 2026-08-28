@@ -37,25 +37,40 @@ const COLONNE_DI_SERVIZIO = ['AIUTO MATT.', 'AIUTO POM.', 'TOT M', 'TOT P']
 const SERVIZIO = new Set(COLONNE_DI_SERVIZIO.map(normalizeColumn))
 
 /**
- * Vero per le colonne che non sono l assegnazione di turno di una persona.
+ * Vero per le colonne di **servizio**: le colonne di aiuto e di totale.
  *
- * Le colonne di aiuto e di totale: il prefisso `AIUTO` copre anche le forme non
- * abbreviate (`AIUTO MATTINO`): nessuna colonna di persona si intitola così,
- * mentre una colonna di aiuto letta per intero, se sopravvivesse, finirebbe in
- * calendario come se fosse un turno.
+ * Il prefisso `AIUTO` copre anche le forme non abbreviate (`AIUTO MATTINO`):
+ * nessuna colonna di persona si intitola così, mentre una colonna di aiuto
+ * letta per intero, se sopravvivesse, finirebbe in calendario come se fosse un
+ * turno.
  *
- * E il **reparto**: `3°PIANO` è l intestazione del foglio, in cima alla striscia
- * dei giorni, e la misura di agosto l ha visto comparire fra i nomi di colonna
- * di qualche banda, producendo 31 celle per una collega che non esiste. Il nome
- * da scartare arriva dal chiamante (`header.ward`), non da un indovinello su
- * cosa sembri un nome di persona.
+ * Sono colonne **stampate sul foglio**: occupano una colonna della geometria, e
+ * per questo il conteggio delle celle attese di una banda può sottrarle (vedi
+ * `countBandCells`).
  */
-function isColonnaDiServizio(name: string, ward: string): boolean {
+function isColonnaDiServizio(name: string): boolean {
   const chiave = normalizeColumn(name)
-  if (chiave.startsWith('AIUTO') || SERVIZIO.has(chiave)) return true
+  return chiave.startsWith('AIUTO') || SERVIZIO.has(chiave)
+}
 
+/**
+ * Vero per il nome del **reparto**: `3°PIANO` è l intestazione del foglio, in
+ * cima alla striscia dei giorni, e la misura di agosto l ha visto comparire fra
+ * i nomi di colonna di qualche banda, producendo 31 celle per una collega che
+ * non esiste. Il nome arriva dal chiamante (`header.ward`), non da un
+ * indovinello su cosa sembri un nome di persona.
+ *
+ * **Non è una colonna del foglio**, ed è la differenza che conta per
+ * `countBandCells`: scartarlo non libera nessuna colonna della geometria.
+ */
+function isNomeDelReparto(name: string, ward: string): boolean {
   const reparto = normalizeColumn(ward)
-  return reparto.length > 0 && chiave === reparto
+  return reparto.length > 0 && normalizeColumn(name) === reparto
+}
+
+/** Vero per le colonne che non sono l assegnazione di turno di una persona. */
+function isColonnaDaScartare(name: string, ward: string): boolean {
+  return isColonnaDiServizio(name) || isNomeDelReparto(name, ward)
 }
 
 function formatIssues(error: z.ZodError): string {
@@ -91,34 +106,83 @@ export function parseBandExtraction(
 }
 
 /**
- * Quante delle celle **chieste** la banda ha davvero prodotto, e quante ne
- * erano attese.
- *
- * Le attese sono giorni per colonne: una banda dichiara il proprio intervallo di
- * giorni e le proprie colonne, quindi il numero di celle che deve produrre è
- * noto prima di guardare la risposta. Le lette si contano sugli **incroci
- * distinti dentro l intervallo**, non sulle righe di JSON: una cella ripetuta e
- * una cella fuori intervallo non riempiono il buco che lasciano le celle
- * mancanti.
+ * Quante delle celle **chieste** la banda ha davvero prodotto, quante ne erano
+ * attese e su quante colonne.
  *
  * Serve a trasformare una risposta valida e **corta** in un buco dichiarato:
  * nella Fase 2A questo stesso modello ometteva 199 celle su 248 con risposte
  * che passavano la validazione, e una banda letta a metà è peggio di una banda
  * non letta perché somiglia a un foglio con le celle vuote.
+ *
+ * Le **lette** si contano sugli incroci distinti dentro l intervallo di giorni,
+ * non sulle righe di JSON — una cella ripetuta e una cella fuori intervallo non
+ * riempiono il buco che lasciano le celle mancanti — e **senza** le colonne che
+ * la fusione scarta: quelle celle non arrivano da nessuna parte, quindi non
+ * possono nemmeno riempire un buco.
+ *
+ * Le **attese** sono giorni per colonne, ma non per le colonne *geometriche*
+ * della banda: per quelle che restano dopo lo scarto. La geometria non decide la
+ * semantica, quindi una banda può mostrare colonne che verranno scartate per
+ * nome, e contarle fra le attese fa gridare al lupo (misurato su settembre:
+ * quattro bande su quattordici dichiaravano un buco che non c era). Il conto
+ * delle colonne attese sta fra tre numeri, in questo ordine:
+ *
+ * 1. le colonne **geometriche** della banda (`spec.columns.length`) sono il
+ *    tetto: se il modello nomina una colonna in più, se l è inventata;
+ * 2. si sottraggono le colonne di **servizio** riconosciute per nome, che sono
+ *    stampate sul foglio e quindi occupano una colonna della geometria. Si
+ *    contano per **occorrenze** nell intestazione, non per nomi distinti,
+ *    perché due colonne possono essere intitolate allo stesso modo — su
+ *    entrambe le foto reali `AIUTO MATT.` compare due volte di fila — e si
+ *    incrocia col numero di nomi di servizio distinti visti anche fra le celle,
+ *    così una banda che li nomina in un solo modo non ne perde il conto. Il
+ *    nome del **reparto** non si sottrae: non è una colonna del foglio;
+ * 3. il risultato non scende mai sotto il numero di colonne **di persona**
+ *    davvero viste. È la difesa da non annacquare: se le attese si contassero
+ *    solo sulle colonne che a valle si scoprono utili, la banda che salta una
+ *    collega intera si dichiarerebbe completa e i suoi turni sparirebbero in
+ *    silenzio.
  */
 export function countBandCells(
   spec: Pick<BandSpec, 'columns' | 'dayFrom' | 'dayTo'>,
   extraction: BandExtraction,
-): { read: number; expected: number } {
+  ward: string,
+): { read: number; expected: number; columns: number } {
+  const geometriche = spec.columns.length
+
+  let servizioInIntestazione = 0
+  for (const name of extraction.columns) {
+    if (isColonnaDiServizio(name)) servizioInIntestazione += 1
+  }
+
+  const servizioDistinte = new Set<string>()
+  const diPersona = new Set<string>()
   const viste = new Set<string>()
+
+  function classifica(name: string): void {
+    if (isColonnaDiServizio(name)) servizioDistinte.add(normalizeColumn(name))
+    else if (!isNomeDelReparto(name, ward)) diPersona.add(normalizeColumn(name))
+  }
+
+  for (const name of extraction.columns) classifica(name)
+
   for (const cell of extraction.cells) {
+    classifica(cell.column)
     if (cell.day < spec.dayFrom || cell.day > spec.dayTo) continue
+    if (isColonnaDaScartare(cell.column, ward)) continue
     viste.add(`${cell.day}:${normalizeColumn(cell.column)}`)
   }
 
+  const scartate = Math.min(
+    geometriche,
+    Math.max(servizioInIntestazione, servizioDistinte.size),
+  )
+  const attese = Math.min(geometriche, Math.max(diPersona.size, geometriche - scartate))
+
   return {
     read: viste.size,
-    expected: (spec.dayTo - spec.dayFrom + 1) * spec.columns.length,
+    expected: (spec.dayTo - spec.dayFrom + 1) * attese,
+    columns: attese,
   }
 }
 
@@ -190,7 +254,7 @@ export function mergeBandExtractions(
   let conflicts = 0
 
   function canonico(name: string): string | null {
-    if (isColonnaDiServizio(name, header.ward)) return null
+    if (isColonnaDaScartare(name, header.ward)) return null
     const chiave = normalizeColumn(name)
     const esistente = nomi.get(chiave)
     if (esistente !== undefined) return esistente

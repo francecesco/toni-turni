@@ -587,6 +587,86 @@ describe('extractRosterByBands, bande lette solo in parte', () => {
     expect(outcome.failures[0].cells).toEqual({ read: 1, expected: 2 })
   })
 
+  /**
+   * Il falso allarme misurato su settembre: le bande con le colonne geometriche
+   * `[9,10]` e `[11,12]` mostrano **due** colonne di servizio intitolate allo
+   * stesso modo sul foglio (`AIUTO MATT.` due volte di fila). Il modello
+   * risponde su tutti e trenta gli incroci, i nomi collassano su quindici e in
+   * fusione non sopravvive niente, perché quelle colonne si scartano per nome.
+   *
+   * Dichiarare un buco qui è gridare al lupo: se il segnale suona quando non
+   * manca niente, l infermiera impara a ignorarlo e la volta che un turno
+   * sparisce davvero nessuno guarda.
+   */
+  it('non dichiara nessun buco per una banda di sole colonne di servizio', async () => {
+    const celle: Array<[number, string, string]> = []
+    for (let giorno = 1; giorno <= 15; giorno += 1) {
+      celle.push([giorno, 'AIUTO MATT.', ''], [giorno, 'AIUTO MATT.', ''])
+    }
+    const p = provider('groq', risposta(celle, ['AIUTO MATT.', 'AIUTO MATT.']))
+    const { pace } = pacerFinto()
+
+    const outcome = await extractRosterByBands({
+      bands: [band(1, [9, 10], 1, 15)],
+      knownCodes: [],
+      header: HEADER,
+      provider: p,
+      pace,
+    })
+
+    expect(outcome.failures).toEqual([])
+    expect(outcome.extraction.cells).toEqual([])
+  })
+
+  /**
+   * Una banda mista, il caso che nascerà con un numero dispari di colonne di
+   * persona: la colonna di servizio esce dalle attese, quella di persona no.
+   */
+  it('non dichiara nessun buco quando la banda ha letto tutte le colonne di persona', async () => {
+    const celle: Array<[number, string, string]> = []
+    for (let giorno = 1; giorno <= 15; giorno += 1) {
+      celle.push([giorno, 'CARMEN', 'M'], [giorno, 'AIUTO POM.', ''])
+    }
+    const p = provider('groq', risposta(celle, ['CARMEN', 'AIUTO POM.']))
+    const { pace } = pacerFinto()
+
+    const outcome = await extractRosterByBands({
+      bands: [band(1, [8, 9], 1, 15)],
+      knownCodes: [],
+      header: HEADER,
+      provider: p,
+      pace,
+    })
+
+    expect(outcome.failures).toEqual([])
+    expect(outcome.extraction.cells).toHaveLength(15)
+  })
+
+  /**
+   * Il difetto opposto, quello grave: una banda di sole colonne di persona che
+   * ne salta una intera **deve** restare un buco dichiarato. È il modo in cui
+   * questo modello sbagliava in Fase 2A, e contare solo le colonne che a valle
+   * si scoprono utili lo renderebbe silenzioso.
+   */
+  it('dichiara il buco della colonna di persona che la banda non ha nominato', async () => {
+    const celle: Array<[number, string, string]> = []
+    for (let giorno = 1; giorno <= 15; giorno += 1) celle.push([giorno, 'CARMEN', 'M'])
+    const p = provider('groq', risposta(celle, ['CARMEN']))
+    const { pace } = pacerFinto()
+
+    const outcome = await extractRosterByBands({
+      bands: [band(1, [7, 8], 1, 15)],
+      knownCodes: [],
+      header: HEADER,
+      provider: p,
+      pace,
+    })
+
+    expect(outcome.failures).toHaveLength(1)
+    expect(outcome.failures[0].cells).toEqual({ read: 15, expected: 30 })
+    expect(outcome.extraction.cells).toHaveLength(15)
+  })
+
   /** Una banda non letta per niente resta un buco senza conteggio di celle. */
   it('distingue la banda non letta da quella letta a metà', async () => {
     const p = provider('groq', new VisionProviderError('quota esaurita'))

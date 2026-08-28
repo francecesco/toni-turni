@@ -24,11 +24,17 @@ Istruzioni per Claude Code su questo repository.
 > con 486/488, è il transcript della misura fatta **prima** delle correzioni finali e non è più
 > riproducibile dal codice di oggi.
 >
-> **Quattro bande su 24 (settembre) sono dichiarate «lette a metà»**: sono quelle delle colonne di
-> servizio, e il modello ne restituisce una delle due. Sessanta celle che prima sparivano in
-> silenzio, che non toccano le celle delle infermiere (settembre resta 240/240) e che portano
-> l'estrazione allo stato `partial`. La Fase 3 deve poter dire **quale colonna** manca, non solo
-> quale banda: altrimenti l'infermiera vede un allarme che non sa spiegare.
+> Nella misura quattro bande su 24 (settembre) risultavano «lette a metà», ed era un **falso
+> allarme**: erano le bande delle colonne di servizio, che il modello legge tutte e che la fusione
+> scarta per nome, mostrate come due colonne intitolate allo stesso modo sul foglio (`AIUTO MATT.`
+> due volte di fila). Le celle attese di una banda si contano ora sulle colonne che **sopravvivono
+> allo scarto**, non su quelle geometriche, e le lette solo sugli incroci di quelle colonne: nessun
+> buco su nessuna delle due foto, accuratezza invariata, settembre torna allo stato `extracted`.
+> Il verso opposto **non** è cambiato: una banda di sole colonne di persona che ne salta una intera
+> dichiara il buco. Il rapporto è in
+> `.superpowers/sdd/2026-08-26-fase-2a-bis-ritagli/falsi-buchi-report.md`. Resta il lavoro per la
+> Fase 3: `missingBands` porta gli indici geometrici, quindi un buco dichiarato non dice ancora
+> **quale colonna** manca, e l'infermiera vedrebbe un allarme che non sa spiegare.
 >
 > L'unica cella sbagliata è nella zona di agosto riscritta a penna sopra il correttore (`giorno 8
 > CRISTINA`, attesa `M`, letta `H`). Fra due esecuzioni della misura il modello ha cambiato lettura

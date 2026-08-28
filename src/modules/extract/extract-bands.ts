@@ -210,7 +210,9 @@ async function tryBand(
  * valida che porta meno celle di quelle chieste è il modo esatto in cui questo
  * modello sbagliava nella Fase 2A (199 celle mancanti su 248), e senza questo
  * controllo somiglierebbe a un foglio con le celle vuote. Le sue celle si
- * tengono; il buco è nelle celle che mancano.
+ * tengono; il buco è nelle celle che mancano. «Chieste» si misura sulle colonne
+ * che restano dopo lo scarto per nome, non sulle colonne geometriche della
+ * banda: le colonne di servizio non sono celle mancanti.
  */
 export async function extractRosterByBands(input: {
   bands: RosterBand[]
@@ -231,6 +233,13 @@ export async function extractRosterByBands(input: {
   /**
    * Prende la lettura di una banda e, se è **corta**, ne dichiara il buco.
    *
+   * Il conto sta sulle colonne che restano dopo lo scarto per nome, non su
+   * quelle geometriche della banda (vedi `countBandCells`): una banda che
+   * mostra soltanto colonne di servizio non ha niente da leggere, e dichiararne
+   * il buco sarebbe gridare al lupo — un allarme inaffidabile è peggio di
+   * nessun allarme. Quello che **non** cambia è il caso opposto: una colonna di
+   * persona che la banda non ha letto resta un buco dichiarato.
+   *
    * Le celle lette si tengono in ogni caso: buttarle non riempirebbe il buco e
    * perderebbe le celle che il modello ha letto bene. Il buco entra in
    * `failures`, cioè nello stesso meccanismo delle bande non lette, e porta
@@ -241,16 +250,25 @@ export async function extractRosterByBands(input: {
     letture.push({ spec, extraction })
     providerUsati.add(providerName)
 
-    const conto = countBandCells(spec, extraction)
+    const conto = countBandCells(spec, extraction, input.header.ward)
     if (conto.read >= conto.expected) return
 
-    const colonne = spec.columns.length === 1 ? '1 colonna' : `${spec.columns.length} colonne`
+    const colonne = conto.columns === 1 ? '1 colonna' : `${conto.columns} colonne`
+    // le colonne che la banda mostra ma che nessuno legge: dirlo evita che il
+    // messaggio sembri in contraddizione con la geometria della banda
+    const escluse = spec.columns.length - conto.columns
+    const nota =
+      escluse === 0
+        ? ''
+        : escluse === 1
+          ? ', 1 di servizio esclusa'
+          : `, ${escluse} di servizio escluse`
     failures.push({
       spec,
       error:
         `Banda letta solo in parte: ${conto.read} celle su ${conto.expected} attese ` +
-        `(giorni ${spec.dayFrom}-${spec.dayTo}, ${colonne})`,
-      cells: conto,
+        `(giorni ${spec.dayFrom}-${spec.dayTo}, ${colonne}${nota})`,
+      cells: { read: conto.read, expected: conto.expected },
     })
   }
 

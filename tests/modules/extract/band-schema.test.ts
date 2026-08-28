@@ -386,49 +386,161 @@ describe('mergeBandExtractions', () => {
  */
 describe('countBandCells', () => {
   it('conta le celle attese come giorni per colonne della banda', () => {
-    expect(countBandCells(spec([1, 2], 1, 15), { columns: [], cells: [] }).expected).toBe(30)
-    expect(countBandCells(spec([1], 17, 31), { columns: [], cells: [] }).expected).toBe(15)
+    expect(countBandCells(spec([1, 2], 1, 15), { columns: [], cells: [] }, HEADER.ward).expected).toBe(30)
+    expect(countBandCells(spec([1], 17, 31), { columns: [], cells: [] }, HEADER.ward).expected).toBe(15)
   })
 
   it('conta una cella ripetuta una volta sola', () => {
-    const conto = countBandCells(spec([1], 1, 2), {
-      columns: ['RENATA'],
-      cells: [cell(1, 'RENATA', 'M'), cell(1, 'RENATA', 'M')],
-    })
+    const conto = countBandCells(
+      spec([1], 1, 2),
+      { columns: ['RENATA'], cells: [cell(1, 'RENATA', 'M'), cell(1, 'RENATA', 'M')] },
+      HEADER.ward,
+    )
 
-    expect(conto).toEqual({ read: 1, expected: 2 })
+    expect(conto).toEqual({ read: 1, expected: 2, columns: 1 })
   })
 
   it('non conta le celle fuori dall intervallo di giorni della banda', () => {
-    const conto = countBandCells(spec([1], 1, 2), {
-      columns: ['RENATA'],
-      cells: [cell(1, 'RENATA', 'M'), cell(20, 'RENATA', 'P')],
-    })
+    const conto = countBandCells(
+      spec([1], 1, 2),
+      { columns: ['RENATA'], cells: [cell(1, 'RENATA', 'M'), cell(20, 'RENATA', 'P')] },
+      HEADER.ward,
+    )
 
-    expect(conto).toEqual({ read: 1, expected: 2 })
+    expect(conto).toEqual({ read: 1, expected: 2, columns: 1 })
   })
 
   it('non conta due volte la stessa colonna scritta in due grafie', () => {
-    const conto = countBandCells(spec([1], 1, 2), {
-      columns: ['RENATA'],
-      cells: [cell(1, 'RENATA', 'M'), cell(1, 'renata', 'M')],
-    })
+    const conto = countBandCells(
+      spec([1], 1, 2),
+      { columns: ['RENATA'], cells: [cell(1, 'RENATA', 'M'), cell(1, 'renata', 'M')] },
+      HEADER.ward,
+    )
 
-    expect(conto).toEqual({ read: 1, expected: 2 })
+    expect(conto).toEqual({ read: 1, expected: 2, columns: 1 })
   })
 
   it('vede completa la banda che ha risposto su ogni incrocio', () => {
-    const conto = countBandCells(spec([1, 2], 1, 2), {
-      columns: ['RENATA', 'ALEX'],
-      cells: [
-        cell(1, 'RENATA', 'M'),
-        cell(1, 'ALEX', ''),
-        cell(2, 'RENATA', ''),
-        cell(2, 'ALEX', 'P'),
-      ],
-    })
+    const conto = countBandCells(
+      spec([1, 2], 1, 2),
+      {
+        columns: ['RENATA', 'ALEX'],
+        cells: [
+          cell(1, 'RENATA', 'M'),
+          cell(1, 'ALEX', ''),
+          cell(2, 'RENATA', ''),
+          cell(2, 'ALEX', 'P'),
+        ],
+      },
+      HEADER.ward,
+    )
 
-    expect(conto).toEqual({ read: 4, expected: 4 })
+    expect(conto).toEqual({ read: 4, expected: 4, columns: 2 })
+  })
+
+  /**
+   * Il falso allarme misurato su settembre: le bande con le colonne geometriche
+   * `[9,10]` e `[11,12]` mostrano **due** colonne di servizio intitolate allo
+   * stesso modo sul foglio (`AIUTO MATT.` due volte di fila), quindi il modello
+   * risponde su tutti e trenta gli incroci ma i nomi collassano su quindici, e
+   * nessuna di quelle celle sopravvive alla fusione. Non manca niente: quella
+   * banda non ha nessuna colonna da leggere, e le celle attese sono zero.
+   */
+  it('non aspetta celle dalle colonne di servizio, nemmeno quando hanno lo stesso nome', () => {
+    const conto = countBandCells(
+      spec([9, 10], 1, 2),
+      band(
+        ['AIUTO MATT.', 'AIUTO MATT.'],
+        [
+          cell(1, 'AIUTO MATT.', ''),
+          cell(1, 'AIUTO MATT.', ''),
+          cell(2, 'AIUTO MATT.', 'DENISE'),
+          cell(2, 'AIUTO MATT.', ''),
+        ],
+      ),
+      HEADER.ward,
+    )
+
+    expect(conto).toEqual({ read: 0, expected: 0, columns: 0 })
+  })
+
+  /** Una banda mista: la colonna di servizio esce dal conto, l altra no. */
+  it('toglie dalle attese la colonna di servizio e tiene quella di persona', () => {
+    const conto = countBandCells(
+      spec([8, 9], 1, 2),
+      band(
+        ['CARMEN', 'AIUTO POM.'],
+        [
+          cell(1, 'CARMEN', 'M'),
+          cell(1, 'AIUTO POM.', ''),
+          cell(2, 'CARMEN', 'P'),
+          cell(2, 'AIUTO POM.', 'ALINA'),
+        ],
+      ),
+      HEADER.ward,
+    )
+
+    expect(conto).toEqual({ read: 2, expected: 2, columns: 1 })
+  })
+
+  /**
+   * L ultima colonna di settembre: il filetto fra `TOT M` e `TOT P` cade sotto
+   * la soglia di `pruneColumnBoundaries`, quindi la geometria vede **una**
+   * colonna e il modello legge **due** nomi. Le colonne di servizio non possono
+   * togliere più di quante colonne la banda abbia: le attese si fermano a zero,
+   * non vanno sotto.
+   */
+  it('non toglie più colonne di quante la banda ne abbia', () => {
+    const conto = countBandCells(
+      spec([13], 1, 2),
+      band(
+        ['TOT M', 'TOT P'],
+        [cell(1, 'TOT M', '5'), cell(1, 'TOT P', '4'), cell(2, 'TOT M', '5'), cell(2, 'TOT P', '4')],
+      ),
+      HEADER.ward,
+    )
+
+    expect(conto).toEqual({ read: 0, expected: 0, columns: 0 })
+  })
+
+  /**
+   * Il difetto opposto, che è quello grave: una colonna di persona **non
+   * nominata** non abbassa le attese, altrimenti la banda che salta una collega
+   * intera si dichiarerebbe completa e i suoi turni spariscono in silenzio. Le
+   * attese scendono solo per le colonne che si **sanno** di servizio.
+   */
+  it('non abbassa le attese quando una colonna di persona non è stata nominata', () => {
+    const conto = countBandCells(
+      spec([1, 2], 1, 2),
+      band(['RENATA'], [cell(1, 'RENATA', 'M'), cell(2, 'RENATA', 'P')]),
+      HEADER.ward,
+    )
+
+    expect(conto).toEqual({ read: 2, expected: 4, columns: 2 })
+  })
+
+  /**
+   * Il nome del reparto non è una colonna del foglio: si scarta come le colonne
+   * di servizio, ma **non** libera una colonna della geometria, altrimenti la
+   * colonna fantasma di agosto (`3°PIANO`, 31 celle) coprirebbe una collega non
+   * letta.
+   */
+  it('il nome del reparto non abbassa le attese', () => {
+    const conto = countBandCells(
+      spec([1, 2], 1, 2),
+      band(
+        ['RENATA', '3°PIANO'],
+        [
+          cell(1, 'RENATA', 'M'),
+          cell(1, '3°PIANO', 'M'),
+          cell(2, 'RENATA', 'P'),
+          cell(2, '3°PIANO', 'P'),
+        ],
+      ),
+      HEADER.ward,
+    )
+
+    expect(conto).toEqual({ read: 2, expected: 4, columns: 2 })
   })
 })
 
