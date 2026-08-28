@@ -7,23 +7,40 @@ export default async function HomePage() {
   return (
     <main className="mx-auto max-w-2xl space-y-6 p-6">
       <h1 className="text-2xl font-semibold">Ciao {user.displayName}</h1>
-      <p className="text-sm text-gray-600">
-        Il caricamento delle tabelle turni arriva nella prossima fase.
-      </p>
 
-      {user.role === 'REFERENTE' && (
-        <nav className="flex gap-4 text-sm">
-          <Link href="/settings/codes" className="underline">
-            Codici turno
-          </Link>
-          <Link href="/settings/users" className="underline">
-            Utenti
-          </Link>
-        </nav>
-      )}
+      <nav className="grid gap-3">
+        <Link
+          href="/rosters"
+          className="rounded-xl bg-primary px-4 py-4 text-center text-base font-medium text-primary-foreground"
+        >
+          Tabelle turni
+        </Link>
+        {user.role === 'REFERENTE' && (
+          <>
+            <Link
+              href="/rosters/upload"
+              className="rounded-xl border px-4 py-4 text-center text-base font-medium"
+            >
+              Carica la foto di un mese
+            </Link>
+            <Link
+              href="/settings/codes"
+              className="rounded-xl border px-4 py-4 text-center text-base font-medium"
+            >
+              Codici turno
+            </Link>
+            <Link
+              href="/settings/users"
+              className="rounded-xl border px-4 py-4 text-center text-base font-medium"
+            >
+              Utenti
+            </Link>
+          </>
+        )}
+      </nav>
 
       <form action="/api/auth/logout" method="post">
-        <button type="submit" className="text-sm text-gray-600 underline">
+        <button type="submit" className="text-sm text-muted-foreground underline">
           Esci
         </button>
       </form>
