@@ -245,6 +245,39 @@ describe('processResumableRosters — cosa fa il processo quando riparte', () =>
   })
 })
 
+describe('processResumableRosters — la conservazione delle foto', () => {
+  it('fa scadere le foto vecchie a ogni giro: le foto sono dati personali di terzi', async () => {
+    const potate: Array<{ days: number }> = []
+
+    await worker.processResumableRosters({
+      ...deps(providerFinto([])),
+      pruneImages: async (days: number) => {
+        potate.push({ days })
+        return []
+      },
+    })
+
+    expect(potate).toHaveLength(1)
+    expect(potate[0].days).toBeGreaterThan(0)
+  })
+
+  it('una potatura che fallisce non impedisce di riprendere le estrazioni', async () => {
+    const r = await tabella()
+    const vecchio = new Date(Date.now() - 60 * 60_000)
+    await repo.prepareExtraction(r.id, 2, vecchio)
+
+    const provider = providerFinto([risposta('CRISTINA', 'M'), risposta('SARA', 'P')])
+    const riprese = await worker.processResumableRosters({
+      ...deps(provider),
+      pruneImages: async () => {
+        throw new Error('volume in sola lettura')
+      },
+    })
+
+    expect(riprese).toEqual([r.id])
+  })
+})
+
 describe('ensureExtractionWorker — un solo giro alla volta', () => {
   it('due richieste ravvicinate non avviano due estrazioni sulla stessa tabella', async () => {
     const r = await tabella()

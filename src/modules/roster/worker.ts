@@ -1,4 +1,5 @@
 import { optionalEnv } from '@/lib/env'
+import { pruneOldImages, retentionDays } from '@/modules/ingest'
 import { runExtractionJob, type JobDeps } from './job'
 import { reclaimStaleExtractions, resumableRosters } from './repository'
 
@@ -24,8 +25,23 @@ export function staleAfterMs(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 10 * 60_000
 }
 
-export async function processResumableRosters(deps: JobDeps = {}): Promise<string[]> {
+export interface WorkerDeps extends JobDeps {
+  /** Iniettabile per i test: nessun test deve toccare il volume delle foto vere. */
+  pruneImages?: (retentionDays: number, now: Date) => Promise<string[]>
+}
+
+export async function processResumableRosters(deps: WorkerDeps = {}): Promise<string[]> {
   const now = deps.now ?? (() => new Date())
+
+  // Le foto sono dati personali di terzi e vanno tenute non oltre la retention.
+  // Farlo qui significa che scadono ogni volta che qualcuno apre l elenco delle
+  // tabelle, senza un job pianificato da tenere in vita.
+  try {
+    await (deps.pruneImages ?? pruneOldImages)(retentionDays(), now())
+  } catch (error) {
+    console.error('Pulizia delle foto scadute non riuscita:', error)
+  }
+
   await reclaimStaleExtractions(now(), staleAfterMs())
 
   const fatte: string[] = []
@@ -53,7 +69,7 @@ export async function processResumableRosters(deps: JobDeps = {}): Promise<strin
  * Avvia il giro se non è già in corso. Restituisce la promessa del giro, così i
  * test possono aspettarlo; il codice applicativo può ignorarla e rispondere subito.
  */
-export function ensureExtractionWorker(deps: JobDeps = {}): Promise<string[]> {
+export function ensureExtractionWorker(deps: WorkerDeps = {}): Promise<string[]> {
   if (giroInCorso) return giroInCorso
 
   giroInCorso = processResumableRosters(deps).finally(() => {

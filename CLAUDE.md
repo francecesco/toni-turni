@@ -2,22 +2,27 @@
 
 Istruzioni per Claude Code su questo repository.
 
-> **Stato: Fase 2A (estrazione) completata.** Oltre alle fondamenta della Fase 1 (Next.js,
+> **Stato: fasi 1, 2A, 2A-bis, 2B e 3 completate.** Oltre alle fondamenta della Fase 1 (Next.js,
 > Prisma/SQLite, legenda dei codici turno, cifratura dei token, login Google, pagine di
-> impostazioni, Docker), sono implementati l'ingestione delle foto (`ingest`), l'estrazione AI con
-> provider Groq/Anthropic e schema di validazione (`extract`), e la persistenza della tabella
-> estratta (`roster`). **Non** sono ancora implementati la griglia di conferma e il sync con Google
-> Calendar: sono le fasi 3-6, e ognuna avrà il suo piano in `docs/superpowers/plans/`.
+> impostazioni, Docker), sono implementati: l'ingestione delle foto e il **ritaglio a bande**
+> (`ingest`), l'estrazione AI banda per banda con provider Groq/Anthropic e schema di validazione
+> (`extract`), la persistenza incrementale con stato per banda e il **job fuori dalla richiesta
+> HTTP** (`roster`), il caricamento e la vista dell'estrazione (Fase 2B) e la **griglia di conferma
+> umana** con `ColumnAlias` e `Assignment` (`review`, Fase 3).
 >
-> **La misura reale dell'estrazione (Fase 2A) ha dato 46/248 celle su una foto di agosto (18,5%),
-> con l'intera tabella mandata in una sola chiamata.** Un esperimento successivo ha mostrato che lo
-> stesso modello, sullo stesso prompt, su un **ritaglio** (colonna giorni + due colonne, mezzo mese)
-> legge 30/30 celle. Di conseguenza la Fase 2A-bis, non ancora pianificata in dettaglio, estrarrà a
-> ritagli invece che sulla tabella intera. Vedi "Trappole note" più sotto per il perché.
+> **Non** è ancora implementato il sync con Google Calendar (`calendar`, Fase 4), né il diff fra
+> versioni (Fase 5) né la rifinitura UI (Fase 6).
 >
-> Resta una verifica in sospeso: il flusso OAuth non è mai stato eseguito con credenziali Google
-> reali — in tutti i test `exchangeGoogleCode` è mockata. La checklist da eseguire è in
-> [docs/verifica-manuale-oauth.md](docs/verifica-manuale-oauth.md).
+> **L'estrazione della tabella intera in una sola chiamata dà 18,5% di celle corrette (46/248);
+> a ritagli lo stesso modello legge tutto.** Perciò `extractRosterByBands` fa una chiamata per
+> banda, con una pausa fra l'una e l'altra: una tabella sono 10-14 letture, cioè **10-20 minuti**,
+> e per questo l'estrazione **non** sta dentro la richiesta HTTP dell'upload.
+>
+> Restano due verifiche in sospeso: il flusso OAuth non è mai stato eseguito con credenziali Google
+> reali — in tutti i test `exchangeGoogleCode` è mockata; la checklist è in
+> [docs/verifica-manuale-oauth.md](docs/verifica-manuale-oauth.md) — e la geometria delle bande non
+> è mai stata provata su una foto vera dall'interfaccia (l'anteprima dei tagli esiste proprio per
+> questo).
 
 ## Cos'è
 
@@ -56,15 +61,22 @@ src/
 ├── app/
 │   ├── api/auth/google/{start,callback}/  # flusso OAuth
 │   ├── api/auth/logout/, api/health/
+│   ├── api/rosters/                       # POST upload (referente)
+│   ├── api/rosters/[id]/{extract,progress,image,preview}/
+│   ├── rosters/                           # elenco, upload
+│   ├── rosters/[id]/                      # vista estrazione + avanzamento
+│   ├── rosters/[id]/columns/              # ColumnAlias: colonna → persona
+│   ├── rosters/[id]/review/               # griglia di conferma
 │   ├── login/, settings/{codes,users}/    # pagine + server action
 │   └── page.tsx, layout.tsx
 ├── modules/
 │   ├── codes/     # types, normalize, slot, defaults, form, repository, index
-│   ├── auth/      # policy, token, session, google, guards, index
-│   ├── ingest/    # normalizzazione foto (auto-rotate EXIF, resize), storage, index
-│   ├── extract/   # VisionProvider (groq, anthropic), schema Zod, prompt, extract, index
-│   └── roster/    # tabella e versioni, salvataggio celle, index
-├── components/ui/ # generati da shadcn, non ancora usati: serviranno alla rifinitura UI
+│   ├── auth/      # policy, token, session, google, guards (authorizeApi), index
+│   ├── ingest/    # normalizzazione foto, ritaglio a bande + anteprima, storage, index
+│   ├── extract/   # VisionProvider (groq, anthropic), schema Zod, prompt, extract, bands
+│   ├── roster/    # tabella, versioni, stato per banda, job ed worker, form, index
+│   └── review/    # access, aliases, grid, holes, confirm, index
+├── components/ui/ # generati da shadcn
 └── lib/           # env, db, time, crypto
 prisma/            # schema, migrations, seed
 tests/             # unit e integrazione, specchio di src/
@@ -73,8 +85,8 @@ fixtures/          # le due foto reali e le trascrizioni di riferimento, per npm
 docker/            # entrypoint: migrate deploy + seed all'avvio
 ```
 
-Moduli previsti dalle fasi successive e **non ancora presenti**: `review` (griglia di conferma
-umana), `calendar` (sync idempotente con Google Calendar).
+Modulo previsto dalle fasi successive e **non ancora presente**: `calendar` (sync idempotente con
+Google Calendar).
 
 **Confini dei moduli:** ogni modulo espone la sua interfaccia pubblica in `index.ts`. Non importare
 file interni di un altro modulo. Se serve, allarga l'`index.ts` — non aggirarlo.
@@ -125,8 +137,32 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
   (vedi `src/modules/extract/providers/groq.ts`).
 - **L'estrazione della tabella intera in una sola chiamata non funziona su questo modello.** La
   misura reale su una foto di agosto ha dato 18,5% di celle corrette (46/248); lo stesso modello e
-  lo stesso prompt, su un ritaglio di due colonne e mezzo mese, legge 30/30. La strategia scelta
-  per la Fase 2A-bis è quindi **a ritagli**, non sulla tabella intera.
+  lo stesso prompt, su un ritaglio di due colonne e mezzo mese, legge 30/30. La strategia è quindi
+  **a ritagli** (`planBands` + `extractRosterByBands`), non sulla tabella intera.
+- **L'estrazione dura 10-20 minuti e non sta in una richiesta HTTP.** L'upload risponde subito;
+  `runExtractionJob` gira dopo, in-process, e persiste **una banda alla volta** su `RosterBand`.
+  Un riavvio del processo lascia una `Roster` in `extracting` con un battito vecchio:
+  `reclaimStaleExtractions` la porta a `interrupted` e il worker riprende dalle bande mancanti.
+  Il worker viene svegliato dall'elenco delle tabelle e dalla route dell'avanzamento — non c'è
+  nessun job pianificato da tenere in vita.
+- **La confidenza per cella è inutilizzabile per decidere cosa rileggere.** Nella misura reale
+  nessuna cella su 519 stava sotto 0,8 ed **entrambe** le celle sbagliate erano dichiarate con
+  confidenza alta; il rilevamento delle correzioni a penna invece ha richiamo 100% (10 su 10). La
+  griglia di conferma evidenzia `handCorrected`, i conflitti fra bande e i codici sconosciuti —
+  **non** la confidenza bassa. La confidenza si propaga comunque fino alla UI (regola 5), ma non
+  guida l'attenzione.
+- **Un buco si dichiara per colonna e giorni, mai per indice di banda.** Su settembre quattro bande
+  risultavano lette a metà, ed erano le colonne di servizio (`AIUTO MATT.`, `TOT M`): dire
+  "15 celle su 30 non lette" fa spaventare un'infermiera che ha tutti i suoi turni, e le insegna a
+  ignorare l'avviso. `columnCoverage` e `describeUnreadBands` traducono un buco in nomi di colonna
+  e giorni, e dove i nomi non si conoscono lo dicono invece di inventarli.
+- **Solo la persona associata a una colonna può confermarla, referente compresa.** La referente
+  *vede* tutte le colonne (le serve), ma confermare la colonna di un'altra metterebbe eventi sul
+  calendario di quella persona senza il suo consenso.
+- **Prisma genera in `node_modules`, che è condiviso fra i worktree.** Se vedi
+  `Unknown argument '<campo>'` su un campo che nello schema esiste, non è un tuo difetto: lancia
+  `npx prisma generate`. Dopo ogni `migrate dev` rilancia `npx prisma generate` **e la suite
+  intera**.
 - **Node 22 è obbligatorio, e la shell può partire su una versione più vecchia.** Verifica con
   `node -v` e, se serve, `nvm use 22` prima di installare o eseguire i test.
 - **`npm run lint` esegue `tsc --noEmit`, che richiede i tipi generati in `.next/types`.** Su un
