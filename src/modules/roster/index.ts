@@ -1,5 +1,6 @@
 export {
   createRoster,
+  getRosterMonth,
   getRosterWithCells,
   markExtractionFailed,
   nextVersion,

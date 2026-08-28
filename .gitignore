@@ -38,3 +38,6 @@ Thumbs.db
 # Log
 *.log
 npm-debug.log*
+
+# Worktree usa-e-getta degli agenti
+.claude/

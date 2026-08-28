@@ -21,6 +21,7 @@ model User {
   role          Role           @default(NURSE)
   createdAt     DateTime       @default(now())
   googleAccount GoogleAccount?
+  assignments   Assignment[]
 }
 
 model GoogleAccount {
@@ -78,8 +79,35 @@ model Roster {
   conflicts Int      @default(0)
   createdAt DateTime @default(now())
   cells     RosterCell[]
+  assignments Assignment[]
 
   @@unique([year, month, ward, version])
+}
+
+/// Il turno di una singola utente in un singolo giorno, dopo il passaggio umano.
+/// `confirmedAt` è il consenso esplicito senza il quale non si scrive su Google:
+/// finché è null l assegnazione resta una bozza. La creazione e la conferma sono
+/// competenza della Fase 3 (`review`); il sync qui legge e aggiorna solo l esito.
+model Assignment {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rosterId    String
+  roster      Roster    @relation(fields: [rosterId], references: [id], onDelete: Cascade)
+  /// Giorno del mese come sta sulla carta: la data locale si compone con anno e mese della tabella.
+  day         Int
+  code        String
+  confirmedAt DateTime?
+  /// Id dell evento Google creato dall app, per aggiornarlo o cancellarlo.
+  eventId     String?
+  /// draft | confirmed | synced | failed
+  syncState   String    @default("draft")
+  /// Messaggio dell ultimo guasto di sync, da mostrare all utente.
+  syncError   String?
+  syncedAt    DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, rosterId, day])
 }
 
 model RosterCell {

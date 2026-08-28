@@ -13,8 +13,13 @@ giro di cookie nel browser non hanno mai girato davvero. Finché questi passi no
    - sviluppo: `http://localhost:3000/api/auth/google/callback` (o `3001`, se la 3000 è occupata da
      un altro progetto: la porta deve combaciare con `APP_URL`)
    - produzione: `https://<tuo-dominio>/api/auth/google/callback`
-2. Nella schermata consenso: scope `openid`, `email`, `profile` e
-   `https://www.googleapis.com/auth/calendar.events`; le utenti vanno inserite come *test users*.
+2. Nella schermata consenso: scope `openid`, `email`, `profile`,
+   `https://www.googleapis.com/auth/calendar.events` e
+   `https://www.googleapis.com/auth/calendar.app.created`; le utenti vanno inserite come *test users*.
+   Il secondo scope del calendario è quello che permette di **creare** il calendario dedicato: con
+   `calendar.events` da solo, la creazione risponde 403. Se hai già dato il consenso prima della
+   Fase 4, va rifatto: revoca l'accesso dell'app da
+   [myaccount.google.com/permissions](https://myaccount.google.com/permissions) e riaccedi.
 3. `.env` compilato con `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_URL` (che deve corrispondere
    **esattamente** al redirect registrato), `SESSION_SECRET`, `APP_ENCRYPTION_KEY`, `DATABASE_URL`.
 4. `npx prisma migrate deploy && npm run db:seed`, poi `npm run dev`.
@@ -47,6 +52,29 @@ Se accade, aggiungi il dominio a `experimental.serverActions.allowedOrigins` in 
 
 È il tipo di guasto che non si vede in sviluppo e si manifesta solo in produzione, sul dispositivo di
 tua moglie, la prima volta che tocca "Salva".
+
+## Fase 4: la prima scrittura sul calendario vero
+
+Il sync è coperto dai test con Google mockata: quello che i test **non** possono provare è il
+consenso reale, la creazione del calendario dedicato e il fatto che gli orari arrivino giusti sul
+telefono. Da fare una volta, con l'account di prova e non con quello di tua moglie.
+
+Serve una `Assignment` confermata: finché la Fase 3 non esiste, la si crea a mano da
+`npx prisma studio` (tabella `Assignment`: `userId`, `rosterId`, `day`, `code`, e **`confirmedAt`
+valorizzato** — senza quello il sync non scrive, per progetto), poi si chiama `syncRoster` da un
+piccolo script `tsx`.
+
+| # | Cosa fare | Cosa deve succedere |
+|---|---|---|
+| 1 | Primo sync di un mese con due o tre turni confermati, uno dei quali `NOTTE` | Su Google compare un calendario nuovo chiamato "Turni — Toni Turni"; gli eventi stanno **lì**, non nel calendario principale. `GoogleAccount.calendarId` è valorizzato |
+| 2 | Guarda la notte sul telefono | Comincia alle 21:00 e finisce alle 07:00 del **giorno dopo** |
+| 3 | Metti a mano un appuntamento personale nel calendario dedicato e rilancia il sync | L'appuntamento è ancora lì, intatto: non ha `shiftKey`, quindi non si tocca. L'esito lo conta fra gli "eventi non creati dall'app" |
+| 4 | Rilancia il sync senza cambiare niente | Zero creati, zero aggiornati, zero cancellati. Se qualcosa si muove, l'idempotenza è rotta: fermati e apri un test |
+| 5 | Cambia il codice di un turno e rilancia | Un solo evento aggiornato, gli altri invariati |
+| 6 | Cancella una riga `Assignment` e rilancia | Il suo evento sparisce, gli altri restano |
+| 7 | Togli `confirmedAt` a un turno già sincronizzato e rilancia | L'evento **resta** e l'esito lo elenca come "non confermato": un turno da riconfermare non fa cancellare quello che c'è |
+| 8 | Revoca l'accesso dell'app da myaccount.google.com e rilancia | Nessun errore grezzo: l'esito dice di rifare il login e `GoogleAccount.status` diventa `needs_reauth` |
+| 9 | Un mese di ottobre con una notte sul 24 | Sul telefono la notte del cambio d'ora dura 11 ore, non 10 |
 
 ## Se qualcosa non torna
 

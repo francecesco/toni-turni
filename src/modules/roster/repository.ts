@@ -108,6 +108,20 @@ export async function markExtractionFailed(
   })
 }
 
+/** Coordinate della tabella, senza le celle: mese e reparto per chi sincronizza. */
+export async function getRosterMonth(rosterId: string): Promise<{
+  id: string
+  year: number
+  month: number
+  ward: string
+  version: number
+} | null> {
+  return prisma.roster.findUnique({
+    where: { id: rosterId },
+    select: { id: true, year: true, month: true, ward: true, version: true },
+  })
+}
+
 export async function getRosterWithCells(rosterId: string) {
   return prisma.roster.findUnique({
     where: { id: rosterId },

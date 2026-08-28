@@ -162,3 +162,21 @@ describe('getRosterWithCells', () => {
     expect(await repo.getRosterWithCells('non-esiste')).toBeNull()
   })
 })
+
+describe('getRosterMonth', () => {
+  it('restituisce mese, anno, reparto e versione della tabella', async () => {
+    const r = await repo.createRoster({ year: 2026, month: 8, ward: '3°PIANO', imagePath: 'a.jpg' })
+
+    await expect(repo.getRosterMonth(r.id)).resolves.toEqual({
+      id: r.id,
+      year: 2026,
+      month: 8,
+      ward: '3°PIANO',
+      version: 1,
+    })
+  })
+
+  it('restituisce null per un id inesistente', async () => {
+    expect(await repo.getRosterMonth('non-esiste')).toBeNull()
+  })
+})

@@ -6,12 +6,11 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.ts'],
     testTimeout: 30_000,
-    // `createTestDb` (tests/helpers/db.ts) lancia `npx prisma migrate deploy` in
-    // un `beforeAll`: misurato 2,0 s a macchina scarica, ma è un sottoprocesso
-    // npm e con i test sulle immagini in parallelo su otto worker sfonda il
-    // limite di default di 10 s. Un tetto sul tempo di un `npx` non asserisce
-    // niente sul codice in prova, misura il carico della macchina: si allinea a
-    // `testTimeout`.
+    // `createTestDb` (tests/helpers/db.ts) migra lo schema **una volta sola** in un
+    // database modello e poi lo copia, quindi un hook non paga più un sottoprocesso
+    // npm per file. Il tetto resta allineato a `testTimeout` come margine per le
+    // macchine lente: un limite di tempo su un `npx` non asserisce niente sul codice
+    // in prova, misura il carico della macchina.
     hookTimeout: 30_000,
   },
   resolve: {

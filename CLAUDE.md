@@ -2,14 +2,17 @@
 
 Istruzioni per Claude Code su questo repository.
 
-> **Stato: Fase 2A-bis (estrazione a bande) completata.** Oltre alle fondamenta della Fase 1
-> (Next.js, Prisma/SQLite, legenda dei codici turno, cifratura dei token, login Google, pagine di
-> impostazioni, Docker), sono implementati l'ingestione delle foto con rilevamento della griglia,
-> raddrizzamento e taglio in bande verticali (`ingest`), l'estrazione AI banda per banda con
-> provider Groq/Anthropic, schema di validazione e fusione (`extract`), e la persistenza della
-> tabella estratta (`roster`). **Non** sono ancora implementati la Fase 2B, la griglia di conferma
-> (Fase 3), il sync con Google Calendar (Fase 4) e la rifinitura UI (Fase 6): ognuna avrà il suo
-> piano in `docs/superpowers/plans/`.
+> **Stato: Fasi 2A-bis (estrazione a bande) e 4 (sync Google Calendar) completate.** Oltre alle
+> fondamenta della Fase 1 (Next.js, Prisma/SQLite, legenda dei codici turno, cifratura dei token,
+> login Google, pagine di impostazioni, Docker), sono implementati l'ingestione delle foto con
+> rilevamento della griglia, raddrizzamento e taglio in bande verticali (`ingest`), l'estrazione AI
+> banda per banda con provider Groq/Anthropic, schema di validazione e fusione (`extract`), la
+> persistenza della tabella estratta (`roster`) e il sync idempotente con Google Calendar
+> (`calendar`).
+>
+> **Non** sono ancora implementate la Fase 2B (upload e visualizzazione) e la **griglia di conferma
+> (Fase 3)**, che è l'anello mancante perché il flusso funzioni da capo a fondo: è lei a creare le
+> `Assignment` con `confirmedAt` da cui il sync parte. Resta anche la rifinitura UI (Fase 6).
 >
 > **Oggi nessuna route usa questa catena:** nessun file sotto `src/app/` importa `modules/ingest`,
 > `modules/extract` o `modules/roster`, e il percorso foto→bande→estrazione→database è raggiungibile
@@ -59,7 +62,12 @@ modifiche non banali**: contiene modello dati, flusso, legenda dei codici turno 
 ## Stack
 
 Next.js 16 (App Router) · TypeScript · Prisma + SQLite · Tailwind + shadcn/ui · `sharp` · `groq-sdk` ·
-`googleapis` · Vitest. Deploy: Docker Compose su ZimaBoard (x86_64) + Cloudflare Tunnel.
+`google-auth-library` · Vitest. Deploy: Docker Compose su ZimaBoard (x86_64) + Cloudflare Tunnel.
+
+> Il design nominava `googleapis`: non è installato e non serve. Il Calendar API si usa con sette
+> chiamate HTTP sopra `OAuth2Client` di `google-auth-library` (che rinnova già l'access token da
+> sé), invece di decine di megabyte di client generato su una ZimaBoard. Vedi
+> `src/modules/calendar/api.ts`.
 
 ## Comandi
 
@@ -94,7 +102,8 @@ src/
 │   │              # + grid* (rilevamento della griglia), layout, crop (taglio in bande)
 │   ├── extract/   # VisionProvider (groq, anthropic), schema Zod, prompt, extract, index
 │   │              # + band-schema (con la fusione), band-prompt, extract-bands
-│   └── roster/    # tabella e versioni, salvataggio celle, index
+│   ├── roster/    # tabella e versioni, salvataggio celle, index
+│   └── calendar/  # shiftKey, event, diff, window (puri) · api, dedicated, repository, lock, sync
 ├── components/ui/ # generati da shadcn, non ancora usati: serviranno alla rifinitura UI
 └── lib/           # env, db, time, crypto, homography (raddrizzamento prospettico)
 prisma/            # schema, migrations, seed
@@ -104,8 +113,8 @@ fixtures/          # le due foto reali e le trascrizioni di riferimento, per npm
 docker/            # entrypoint: migrate deploy + seed all'avvio
 ```
 
-Moduli previsti dalle fasi successive e **non ancora presenti**: `review` (griglia di conferma
-umana), `calendar` (sync idempotente con Google Calendar).
+Modulo previsto dalle fasi successive e **non ancora presente**: `review` (griglia di conferma
+umana, che crea le `Assignment` e le marca `confirmedAt`).
 
 **Confini dei moduli:** ogni modulo espone la sua interfaccia pubblica in `index.ts`. Non importare
 file interni di un altro modulo. Se serve, allarga l'`index.ts` — non aggirarlo. L'eccezione, la
@@ -118,7 +127,9 @@ gira sotto `tsx` fuori dal runtime di Next, dove le facciate tirano dentro il cl
 Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o corrompe i suoi dati.
 
 1. **Nessuna scrittura su Google Calendar senza conferma esplicita dell'utente.** L'estrazione AI
-   produce solo bozze.
+   produce solo bozze. In pratica quel consenso è `Assignment.confirmedAt`: `syncRoster` scrive
+   soltanto per le assegnazioni che lo hanno valorizzato, e un turno tornato in bozza non fa
+   cancellare l'evento già presente.
 2. **Non toccare eventi che l'app non ha creato.** Ogni evento porta
    `extendedProperties.private.shiftKey = "<userId>:<YYYY-MM-DD>"`; update e delete filtrano su quella
    chiave. Nessun `shiftKey`, nessuna modifica.
@@ -162,7 +173,15 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
   l'intestazione del foglio e che su qualche banda il modello elenca fra i nomi di colonna. Si
   scartano per nome normalizzato in fase di fusione, mai per indice.
 - **SQLite non gestisce scritture concorrenti.** Serializza le operazioni di sync; è ampiamente
-  sufficiente per questo carico.
+  sufficiente per questo carico. La coda è `withSyncLock` in `src/modules/calendar/lock.ts`: è
+  unica per tutti gli utenti, non una per utente, perché la risorsa contesa è il database.
+- **Il diff del sync confronta istanti, non stringhe.** Google restituisce gli orari con l'offset
+  già applicato (`...T21:00:00+02:00`) e nella notte del cambio d'ora i due estremi hanno offset
+  diversi: confrontare le stringhe farebbe risultare *diverso* ogni evento a ogni giro, e il sync
+  riscriverebbe tutto ogni volta. Vedi `sameEvent` in `src/modules/calendar/diff.ts`.
+- **Creare il calendario dedicato richiede lo scope `calendar.app.created`.** Con `calendar.events`
+  da solo la creazione risponde 403. Chi aveva già dato il consenso prima della Fase 4 deve
+  rifarlo (revoca da myaccount.google.com/permissions).
 - **`npm run eval` chiama il provider reale e consuma token.** Non eseguirlo in CI né in loop.
 - **Groq conta i token di output *prenotati* nel budget al minuto, non solo quelli usati.** Il
   piano gratuito ha un tetto di 8000 token/minuto: chiedere `max_completion_tokens: 8000` fa
