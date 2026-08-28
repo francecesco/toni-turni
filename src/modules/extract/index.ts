@@ -6,4 +6,11 @@ export { bandExtractionSchema, mergeBandExtractions, parseBandExtraction } from 
 export { buildBandPrompt } from './band-prompt'
 export type { ExtractionOutcome } from './extract'
 export { extractRoster } from './extract'
+export type { BandFailure, BandPacer, BandsOutcome } from './extract-bands'
+export {
+  createTokenPacer,
+  DEFAULT_TOKENS_PER_BAND,
+  extractRosterByBands,
+  GROQ_FREE_TOKENS_PER_MINUTE,
+} from './extract-bands'
 export * from './providers'
