@@ -33,10 +33,11 @@ export interface SyncRosterInput {
   apiFactory?: (userId: string) => Promise<CalendarApi>
 }
 
-function failed(error: string, calendarId = ''): SyncOutcome {
+function failed(error: string, calendarId = '', needsReauth = false): SyncOutcome {
   return {
     ok: false,
     calendarId,
+    ...(needsReauth ? { needsReauth: true } : {}),
     created: 0,
     updated: 0,
     deleted: 0,
@@ -68,11 +69,19 @@ async function applyPlan(input: {
   userId: string
   plan: SyncPlan
   storedEventIds: Map<string, string | null>
-}): Promise<{ created: number; updated: number; deleted: number; unchanged: number; failures: SyncFailure[] }> {
+}): Promise<{
+  created: number
+  updated: number
+  deleted: number
+  unchanged: number
+  failures: SyncFailure[]
+  needsReauth: boolean
+}> {
   let created = 0
   let updated = 0
   let deleted = 0
   let unchanged = 0
+  let needsReauth = false
   const failures: SyncFailure[] = []
 
   for (const step of input.plan.steps) {
@@ -124,12 +133,13 @@ async function applyPlan(input: {
       // errore su ogni turno rimasto.
       if (isReauthNeeded(error)) {
         await markNeedsReauth(input.userId)
+        needsReauth = true
         break
       }
     }
   }
 
-  return { created, updated, deleted, unchanged, failures }
+  return { created, updated, deleted, unchanged, failures, needsReauth }
 }
 
 /**
@@ -183,10 +193,10 @@ export async function syncRoster(input: SyncRosterInput): Promise<SyncOutcome> {
       // far esplodere un errore invece di dire all utente di rifare il login.
       const name = error instanceof Error ? error.name : ''
       if (error instanceof GoogleReauthRequiredError || name === 'GoogleReauthRequiredError') {
-        return failed('Il consenso Google va rinnovato: rifai il login')
+        return failed('Il consenso Google va rinnovato: rifai il login', '', true)
       }
       if (error instanceof GoogleAccountMissingError || name === 'GoogleAccountMissingError') {
-        return failed('Nessun account Google collegato: rifai il login')
+        return failed('Nessun account Google collegato: rifai il login', '', true)
       }
       throw error
     }
@@ -203,7 +213,7 @@ export async function syncRoster(input: SyncRosterInput): Promise<SyncOutcome> {
     } catch (error) {
       if (isReauthNeeded(error)) {
         await markNeedsReauth(input.targetUserId)
-        return failed('Il consenso Google va rinnovato: rifai il login')
+        return failed('Il consenso Google va rinnovato: rifai il login', '', true)
       }
       return failed(error instanceof Error ? error.message : String(error))
     }
@@ -218,7 +228,7 @@ export async function syncRoster(input: SyncRosterInput): Promise<SyncOutcome> {
     } catch (error) {
       if (isReauthNeeded(error)) {
         await markNeedsReauth(input.targetUserId)
-        return failed('Il consenso Google va rinnovato: rifai il login', calendarId)
+        return failed('Il consenso Google va rinnovato: rifai il login', calendarId, true)
       }
       return failed(error instanceof Error ? error.message : String(error), calendarId)
     }
@@ -243,6 +253,9 @@ export async function syncRoster(input: SyncRosterInput): Promise<SyncOutcome> {
 
     return {
       ok: applied.failures.length === 0,
+      // Se il consenso è caduto mentre il piano girava, `applyPlan` si è fermato e ha
+      // già segnato l account: l esito deve dirlo, o l utente ritenterebbe a vuoto.
+      ...(applied.needsReauth ? { needsReauth: true } : {}),
       calendarId,
       created: applied.created,
       updated: applied.updated,

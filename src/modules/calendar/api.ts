@@ -103,6 +103,38 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/**
+ * Il 403 di Google e ambiguo: puo essere una quota superata — si ritenta — oppure uno
+ * scope che il consenso non copre, e allora ritentare non servira mai. Il secondo caso
+ * e la strada normale di questo progetto: un account autorizzato prima della Fase 4 ha
+ * un refresh token valido ma non `calendar.app.created`, e la creazione del calendario
+ * dedicato risponde 403 `insufficientPermissions`. Se non lo riconoscessimo, l utente
+ * leggerebbe "Insufficient Permission" e non avrebbe modo di capire che deve solo
+ * rifare il consenso.
+ */
+function isMissingScope(error: unknown): boolean {
+  if (statusOf(error) !== 403) return false
+
+  const body = bodyOf(error)
+  const nested =
+    typeof body === 'object' && body !== null ? (body as { error?: unknown }).error : undefined
+
+  if (typeof nested === 'object' && nested !== null) {
+    const errors = (nested as { errors?: unknown }).errors
+    if (Array.isArray(errors)) {
+      const reasons = errors.map((e) =>
+        typeof e === 'object' && e !== null ? String((e as { reason?: unknown }).reason ?? '') : '',
+      )
+      if (reasons.includes('insufficientPermissions')) return true
+      // Una ragione dichiarata e diversa e una risposta a tutti gli effetti: non e
+      // uno scope mancante, ed e sbagliato mandare l utente a rifare il login.
+      if (reasons.some((reason) => reason !== '')) return false
+    }
+  }
+
+  return /insufficient (permission|authentication scopes)/i.test(messageOf(error))
+}
+
 function isRevoked(error: unknown): boolean {
   const status = statusOf(error)
   if (status === 401) return true
@@ -111,7 +143,7 @@ function isRevoked(error: unknown): boolean {
   if (status === 400 && typeof body === 'object' && body !== null) {
     return (body as { error?: unknown }).error === 'invalid_grant'
   }
-  return false
+  return isMissingScope(error)
 }
 
 function toCalendarError(error: unknown): CalendarApiError {

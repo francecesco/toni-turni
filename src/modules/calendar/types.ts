@@ -102,4 +102,10 @@ export interface SyncOutcome {
   protectedEvents: number
   /** Valorizzato quando il sync non è nemmeno partito (autorizzazione, token, calendario). */
   error?: string
+  /**
+   * Il consenso Google non è più valido: l unica via d uscita è rifarlo. È un campo a
+   * sé e non una frase da riconoscere nel messaggio, perché l interfaccia ci attacca
+   * un bottone e un messaggio non è un contratto.
+   */
+  needsReauth?: boolean
 }

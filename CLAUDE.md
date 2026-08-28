@@ -13,9 +13,10 @@ Istruzioni per Claude Code su questo repository.
 > Fase 4).
 >
 > **Non** sono implementati il diff fra versioni della stessa tabella (Fase 5) né la rifinitura UI
-> (Fase 6). Il sync della Fase 4 ha la sua orchestrazione e i suoi test, ma **nessun bottone
-> nell'interfaccia lo lancia**: oggi il flusso arriva fino alla conferma, e da lì al calendario si
-> passa solo da codice. È il primo pezzo da collegare.
+> (Fase 6). Il flusso però si chiude: dalla griglia di conferma il bottone «Manda sul mio calendario»
+> lancia `syncRoster` (`syncColumnAction`), e ognuna sincronizza **solo la propria colonna** —
+> referente compresa, perché sincronizzare la colonna di un'altra scriverebbe sul calendario di
+> quella persona senza il suo consenso.
 >
 > **La misura reale dell'estrazione a bande dà 487/488 celle corrette (99,8%)**: agosto 247/248,
 > settembre 240/240. Zero celle mancanti (erano 199), zero celle in eccesso, zero bande fallite su

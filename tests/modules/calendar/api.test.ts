@@ -235,6 +235,54 @@ describe('errori', () => {
     await expect(api.listCalendars()).rejects.toMatchObject({ needsReauth: true })
   })
 
+  it('riconosce il consenso da rifare quando manca uno scope: 403 insufficientPermissions', async () => {
+    // Un account autorizzato prima della Fase 4 ha un refresh token valido ma non lo
+    // scope `calendar.app.created`: Google risponde 403 e non 401. Senza questo
+    // riconoscimento l utente vedrebbe "Insufficient Permission" e non capirebbe che
+    // deve solo rifare il consenso.
+    const api = createCalendarApi(
+      transport([
+        gaxiosError(403, 'Forbidden', {
+          error: {
+            code: 403,
+            message: 'Insufficient Permission',
+            errors: [{ domain: 'global', reason: 'insufficientPermissions' }],
+          },
+        }),
+      ]),
+    )
+
+    await expect(api.listCalendars()).rejects.toMatchObject({ needsReauth: true })
+  })
+
+  it('riconosce il consenso da rifare anche dal solo messaggio sugli scope', async () => {
+    const api = createCalendarApi(
+      transport([
+        gaxiosError(403, 'Forbidden', {
+          error: { code: 403, message: 'Request had insufficient authentication scopes.' },
+        }),
+      ]),
+    )
+
+    await expect(api.listCalendars()).rejects.toMatchObject({ needsReauth: true })
+  })
+
+  it('un 403 di quota NON e un consenso da rifare: ritentare e giusto, rifare il login no', async () => {
+    const api = createCalendarApi(
+      transport([
+        gaxiosError(403, 'Forbidden', {
+          error: {
+            code: 403,
+            message: 'Rate Limit Exceeded',
+            errors: [{ domain: 'usageLimits', reason: 'rateLimitExceeded' }],
+          },
+        }),
+      ]),
+    )
+
+    await expect(api.listCalendars()).rejects.toMatchObject({ needsReauth: false })
+  })
+
   it('riconosce un consenso revocato da invalid_grant', async () => {
     const api = createCalendarApi(
       transport([gaxiosError(400, 'Bad Request', { error: 'invalid_grant' })]),

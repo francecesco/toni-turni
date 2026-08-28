@@ -16,7 +16,13 @@ import {
   rosterColumnLabels,
   visibleColumns,
 } from '@/modules/review'
-import { confirmColumnAction, confirmDayAction, unconfirmDayAction } from './actions'
+import {
+  confirmColumnAction,
+  confirmDayAction,
+  syncColumnAction,
+  unconfirmDayAction,
+} from './actions'
+import { SyncButton } from './sync-button'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,11 +36,17 @@ export default async function ReviewPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ colonna?: string; error?: string; ok?: string }>
+  searchParams: Promise<{
+    colonna?: string
+    error?: string
+    ok?: string
+    sync?: string
+    reauth?: string
+  }>
 }) {
   const user = await requireUser()
   const { id } = await params
-  const { colonna, error, ok } = await searchParams
+  const { colonna, error, ok, sync, reauth } = await searchParams
 
   const roster = await prisma.roster.findUnique({
     where: { id },
@@ -147,6 +159,36 @@ export default async function ReviewPage({
         </p>
       )}
       {ok && <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">{ok}</p>}
+
+      {reauth === '1' ? (
+        <div className="space-y-2 rounded-lg border-2 border-amber-400 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="font-medium">Il collegamento con Google va rinnovato.</p>
+          <p>
+            Non è un guasto e non hai perso niente: l app ha bisogno del tuo permesso per creare il
+            calendario «Turni» e scriverci gli eventi, e quel permesso va dato di nuovo — succede
+            anche a chi aveva già fatto l accesso prima di questa versione. I turni che hai
+            confermato restano dove sono; dopo l autorizzazione torna qui e premi di nuovo il
+            bottone.
+          </p>
+          <a
+            href="/api/auth/google/start"
+            className="inline-block rounded-lg bg-amber-900 px-4 py-3 text-sm font-medium text-amber-50"
+          >
+            Autorizza Google
+          </a>
+        </div>
+      ) : (
+        sync && (
+          <div className="rounded-lg border bg-muted/50 p-3 text-sm">
+            <p className="mb-1 font-medium">Esito del sync</p>
+            {sync.split('\n').map((riga, indice) => (
+              <p key={`${indice}-${riga}`} className="whitespace-pre-wrap text-muted-foreground">
+                {riga}
+              </p>
+            ))}
+          </div>
+        )
+      )}
 
       <Card>
         <CardHeader>
@@ -316,6 +358,17 @@ export default async function ReviewPage({
           <p className="text-center text-xs text-muted-foreground">
             Niente finisce sul calendario prima di questa conferma.
           </p>
+
+          {/* Due decisioni, due bottoni. La conferma dice «ho letto e va bene», il
+              sync dice «scrivilo sul mio calendario»: il secondo non parte mai da sé
+              dopo il primo (regola invariante 1). */}
+          {riassunto.confirmed > 0 && (
+            <form action={syncColumnAction} className="space-y-2 pt-1">
+              <input type="hidden" name="rosterId" value={id} />
+              <input type="hidden" name="columnLabel" value={scelta} />
+              <SyncButton shifts={riassunto.confirmed} />
+            </form>
+          )}
         </div>
       )}
     </main>

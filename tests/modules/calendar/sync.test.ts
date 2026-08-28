@@ -445,6 +445,9 @@ describe('syncRoster — guasti', () => {
 
     expect(esito.ok).toBe(false)
     expect(esito.error).toMatch(/rinnov/i)
+    // Il chiamante non deve leggere il messaggio per capire che serve un nuovo
+    // consenso: l interfaccia deve poter mostrare il bottone "riautorizza".
+    expect(esito.needsReauth).toBe(true)
   })
 
   it('un token revocato durante il sync segna l account come da riautorizzare', async () => {
@@ -457,6 +460,7 @@ describe('syncRoster — guasti', () => {
     const esito = await esegui(finto)
 
     expect(esito.ok).toBe(false)
+    expect(esito.needsReauth).toBe(true)
     const account = await prisma.googleAccount.findUniqueOrThrow({ where: { userId: 'utente1' } })
     expect(account.status).toBe('needs_reauth')
   })

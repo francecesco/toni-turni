@@ -3,7 +3,14 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireUser } from '@/modules/auth'
-import { ReviewForbiddenError, confirmColumn, confirmDays, unconfirmDays } from '@/modules/review'
+import { describeOutcome, syncRoster } from '@/modules/calendar'
+import {
+  ReviewForbiddenError,
+  confirmColumn,
+  confirmDays,
+  requireOwnColumn,
+  unconfirmDays,
+} from '@/modules/review'
 
 /**
  * La conferma. È l unica cosa che autorizza una scrittura sul calendario, quindi
@@ -20,11 +27,13 @@ function text(form: FormData, field: string): string {
 function tornaCon(
   rosterId: string,
   columnLabel: string,
-  params: { error?: string; ok?: string },
+  params: { error?: string; ok?: string; sync?: string; reauth?: boolean },
 ): never {
   const query = new URLSearchParams({ colonna: columnLabel })
   if (params.error) query.set('error', params.error)
   if (params.ok) query.set('ok', params.ok)
+  if (params.sync) query.set('sync', params.sync)
+  if (params.reauth) query.set('reauth', '1')
   redirect(`/rosters/${rosterId}/review?${query.toString()}`)
 }
 
@@ -97,4 +106,42 @@ export async function confirmColumnAction(form: FormData): Promise<void> {
     }
     throw errore
   }
+}
+
+/**
+ * Dalla conferma al calendario. È un atto **separato** dalla conferma, e a posta: la
+ * conferma dice «ho letto e va bene», il sync dice «scrivilo sul mio calendario», e
+ * sono due decisioni che si prendono in due momenti. Non parte mai da sé.
+ *
+ * Chi può premerlo: **solo l intestataria della colonna**, referente compresa. La
+ * barriera è `requireOwnColumn`, la stessa della conferma, e sta qui — lato server —
+ * perché una server action è raggiungibile con un POST diretto, non solo dal bottone.
+ * `syncRoster` ha poi il suo `authorizeSync`, e legge solo i turni con `confirmedAt`:
+ * tre reti sulla stessa regola, nessuna delle quali basta da sola.
+ */
+export async function syncColumnAction(form: FormData): Promise<void> {
+  const user = await requireUser()
+  const rosterId = text(form, 'rosterId')
+  const columnLabel = text(form, 'columnLabel')
+
+  if (rosterId === '' || columnLabel === '') {
+    tornaCon(rosterId, columnLabel, { error: 'Richiesta incompleta' })
+  }
+
+  let targetUserId: string
+  try {
+    targetUserId = await requireOwnColumn(user, columnLabel, 'sincronizzarne i turni')
+  } catch (errore) {
+    if (errore instanceof ReviewForbiddenError) {
+      tornaCon(rosterId, columnLabel, { error: errore.message })
+    }
+    throw errore
+  }
+
+  const esito = await syncRoster({ actor: user, targetUserId, rosterId })
+  revalidatePath(`/rosters/${rosterId}/review`)
+  tornaCon(rosterId, columnLabel, {
+    sync: describeOutcome(esito),
+    reauth: esito.needsReauth === true,
+  })
 }

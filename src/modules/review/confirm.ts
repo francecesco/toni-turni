@@ -44,8 +44,19 @@ export async function requireColumnAccess(viewer: Viewer, columnLabel: string): 
   }
 }
 
-/** Permesso di **confermare** la colonna: solo la persona associata, sempre. */
-async function requireOwnColumn(viewer: Viewer, columnLabel: string): Promise<string> {
+/**
+ * Permesso di **agire** sulla colonna: solo la persona associata, sempre, referente
+ * compresa. È la stessa barriera per la conferma e per il sync, e deve restare una
+ * sola: confermare al posto di un altra metterebbe eventi sul suo calendario senza il
+ * suo consenso, e sincronizzare al posto suo li scriverebbe direttamente.
+ *
+ * `azione` cambia solo la frase mostrata; la regola no.
+ */
+export async function requireOwnColumn(
+  viewer: Viewer,
+  columnLabel: string,
+  azione = 'confermarne i turni',
+): Promise<string> {
   const alias = await aliasFor(columnLabel)
   if (alias === null || alias.ignored || alias.userId === null) {
     throw new ReviewForbiddenError(
@@ -54,7 +65,7 @@ async function requireOwnColumn(viewer: Viewer, columnLabel: string): Promise<st
   }
   if (alias.userId !== viewer.id) {
     throw new ReviewForbiddenError(
-      `Solo la persona associata alla colonna "${columnLabel}" può confermarne i turni`,
+      `Solo la persona associata alla colonna "${columnLabel}" può ${azione}`,
     )
   }
   return alias.userId

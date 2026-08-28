@@ -20,6 +20,7 @@ export {
   confirmColumn,
   confirmDays,
   requireColumnAccess,
+  requireOwnColumn,
   reviewableRosters,
   unconfirmDays,
 } from './confirm'
