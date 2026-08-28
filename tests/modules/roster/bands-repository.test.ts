@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PrismaClient } from '@prisma/client'
 import { createTestDb } from '../../helpers/db'
-import type { BandCell } from '@/modules/extract/bands'
+import type { ExtractedCell } from '@/modules/extract/schema'
 
 let db: ReturnType<typeof createTestDb>
 let prisma: PrismaClient
@@ -40,31 +40,26 @@ async function tabella(overrides: Record<string, unknown> = {}) {
     month: 8,
     ward: '3°PIANO',
     imagePath: 'a.jpg',
-    geometry: {
-      columnCount: 3,
-      columnsPerBand: 1,
-      dayColumnFraction: 0.1,
-      area: { left: 0, top: 0, right: 1, bottom: 1 },
-    },
     ...overrides,
   })
 }
 
-function cella(day: number, column: string, code: string, extra: Partial<BandCell> = {}): BandCell {
+function cella(
+  day: number,
+  column: string,
+  code: string,
+  extra: Partial<ExtractedCell> = {},
+): ExtractedCell {
   return { day, column, code, confidence: 0.95, handCorrected: false, ...extra }
 }
 
 const ORA = new Date('2026-08-28T10:00:00Z')
 
-describe('createRoster — la geometria dichiarata dalla referente resta sulla tabella', () => {
-  it('salva il numero di colonne, la colonna dei giorni e l area del ritaglio', async () => {
+describe('createRoster — una tabella nasce senza autorizzazione e senza geometria', () => {
+  it('non chiede nessuna geometria: la rileva la pipeline sulla foto', async () => {
     const r = await tabella()
 
     const row = await prisma.roster.findUniqueOrThrow({ where: { id: r.id } })
-    expect(row.columnCount).toBe(3)
-    expect(row.columnsPerBand).toBe(1)
-    expect(row.dayColumnFraction).toBeCloseTo(0.1)
-    expect(row.areaRight).toBeCloseTo(1)
     // Nessuna autorizzazione all invio: la foto non è ancora andata da nessuna parte.
     expect(row.requestedAt).toBeNull()
     expect(row.status).toBe('uploaded')
@@ -75,7 +70,7 @@ describe('prepareExtraction — registra l autorizzazione e crea le bande penden
   it('mette la tabella in extracting, segna requestedAt e crea una banda per indice', async () => {
     const r = await tabella()
 
-    await repo.prepareExtraction(r.id, 3, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }, { index: 1, dayFrom: 17, dayTo: 31 }, { index: 2, dayFrom: 1, dayTo: 16 }], ORA)
 
     const row = await prisma.roster.findUniqueOrThrow({ where: { id: r.id } })
     expect(row.status).toBe('extracting')
@@ -88,10 +83,10 @@ describe('prepareExtraction — registra l autorizzazione e crea le bande penden
 
   it('richiamata su una ripresa non azzera le bande già lette', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 3, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }, { index: 1, dayFrom: 17, dayTo: 31 }, { index: 2, dayFrom: 1, dayTo: 16 }], ORA)
     await repo.saveBandCells(r.id, 1, [cella(1, 'MERY', 'M')], { rawOutput: '{}', now: ORA })
 
-    await repo.prepareExtraction(r.id, 3, new Date('2026-08-28T11:00:00Z'))
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }, { index: 1, dayFrom: 17, dayTo: 31 }, { index: 2, dayFrom: 1, dayTo: 16 }], new Date('2026-08-28T11:00:00Z'))
 
     const bande = await prisma.rosterBand.findMany({ where: { rosterId: r.id } })
     expect(bande.filter((b) => b.status === 'done').map((b) => b.index)).toEqual([1])
@@ -104,7 +99,7 @@ describe('prepareExtraction — registra l autorizzazione e crea le bande penden
 describe('pendingBands — cosa manca ancora da leggere', () => {
   it('elenca le bande non lette, comprese quelle fallite, in ordine', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 4, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }, { index: 1, dayFrom: 17, dayTo: 31 }, { index: 2, dayFrom: 1, dayTo: 16 }, { index: 3, dayFrom: 17, dayTo: 31 }], ORA)
     await repo.saveBandCells(r.id, 0, [cella(1, 'A', 'M')], { rawOutput: '{}', now: ORA })
     await repo.markBandFailed(r.id, 2, 'illeggibile', 'spazzatura', ORA)
 
@@ -115,7 +110,7 @@ describe('pendingBands — cosa manca ancora da leggere', () => {
 describe('saveBandCells — salvataggio incrementale, una banda alla volta', () => {
   it('salva le celle risolvendo i codici con la legenda e marca la banda letta', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 2, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }, { index: 1, dayFrom: 17, dayTo: 31 }], ORA)
 
     await repo.saveBandCells(
       r.id,
@@ -142,7 +137,7 @@ describe('saveBandCells — salvataggio incrementale, una banda alla volta', () 
 
   it('scarta le celle vuote: una cella senza codice non è un turno', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 1, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }], ORA)
 
     await repo.saveBandCells(r.id, 0, [cella(1, 'CRISTINA', ''), cella(2, 'CRISTINA', 'M')], {
       rawOutput: '{}',
@@ -154,7 +149,7 @@ describe('saveBandCells — salvataggio incrementale, una banda alla volta', () 
 
   it('conserva la confidenza e la correzione a penna dichiarate dal modello', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 1, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }], ORA)
 
     await repo.saveBandCells(
       r.id,
@@ -170,7 +165,7 @@ describe('saveBandCells — salvataggio incrementale, una banda alla volta', () 
 
   it('aggiorna il battito della tabella, così si distingue un job vivo da uno morto', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 2, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }, { index: 1, dayFrom: 17, dayTo: 31 }], ORA)
     const dopo = new Date('2026-08-28T10:01:00Z')
 
     await repo.saveBandCells(r.id, 0, [cella(1, 'A', 'M')], { rawOutput: '{}', now: dopo })
@@ -181,7 +176,7 @@ describe('saveBandCells — salvataggio incrementale, una banda alla volta', () 
 
   it('due bande sovrapposte che leggono la stessa cella allo stesso modo non fanno conflitto', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 2, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }, { index: 1, dayFrom: 17, dayTo: 31 }], ORA)
 
     await repo.saveBandCells(r.id, 0, [cella(1, 'CRISTINA', 'M')], { rawOutput: '{}', now: ORA })
     const esito = await repo.saveBandCells(r.id, 1, [cella(1, 'CRISTINA', 'M')], {
@@ -196,7 +191,7 @@ describe('saveBandCells — salvataggio incrementale, una banda alla volta', () 
 
   it('due bande che leggono la stessa cella in modo diverso lasciano un conflitto dichiarato', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 2, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }, { index: 1, dayFrom: 17, dayTo: 31 }], ORA)
 
     await repo.saveBandCells(r.id, 0, [cella(1, 'CRISTINA', 'M')], { rawOutput: '{}', now: ORA })
     const esito = await repo.saveBandCells(r.id, 1, [cella(1, 'CRISTINA', 'P')], {
@@ -218,7 +213,7 @@ describe('saveBandCells — salvataggio incrementale, una banda alla volta', () 
 
   it('rileggere la stessa banda dopo un fallimento sostituisce le sue celle e non ne duplica nessuna', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 1, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }], ORA)
 
     await repo.saveBandCells(r.id, 0, [cella(1, 'CRISTINA', 'M'), cella(2, 'CRISTINA', 'M')], {
       rawOutput: '{}',
@@ -235,7 +230,7 @@ describe('saveBandCells — salvataggio incrementale, una banda alla volta', () 
 describe('markBandFailed — una banda non letta è dichiarata, non nascosta', () => {
   it('segna la banda fallita con errore e raw output, senza toccare le celle delle altre', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 2, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }, { index: 1, dayFrom: 17, dayTo: 31 }], ORA)
     await repo.saveBandCells(r.id, 0, [cella(1, 'A', 'M')], { rawOutput: '{}', now: ORA })
 
     await repo.markBandFailed(r.id, 1, 'JSON non valido', 'spazzatura', ORA)
@@ -251,7 +246,7 @@ describe('markBandFailed — una banda non letta è dichiarata, non nascosta', (
 describe('finishExtraction — lo stato finale dice la verità sulle bande', () => {
   it('extracted quando tutte le bande sono lette', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 2, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }, { index: 1, dayFrom: 17, dayTo: 31 }], ORA)
     await repo.saveBandCells(r.id, 0, [cella(1, 'A', 'M')], { rawOutput: '{}', now: ORA })
     await repo.saveBandCells(r.id, 1, [cella(1, 'B', 'M')], { rawOutput: '{}', now: ORA })
 
@@ -265,7 +260,7 @@ describe('finishExtraction — lo stato finale dice la verità sulle bande', () 
 
   it('partial quando qualche banda non è stata letta', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 3, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }, { index: 1, dayFrom: 17, dayTo: 31 }, { index: 2, dayFrom: 1, dayTo: 16 }], ORA)
     await repo.saveBandCells(r.id, 0, [cella(1, 'A', 'M')], { rawOutput: '{}', now: ORA })
     await repo.markBandFailed(r.id, 1, 'illeggibile', null, ORA)
     await repo.markBandFailed(r.id, 2, 'illeggibile', null, ORA)
@@ -277,7 +272,7 @@ describe('finishExtraction — lo stato finale dice la verità sulle bande', () 
 
   it('failed quando nessuna banda è stata letta', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 2, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }, { index: 1, dayFrom: 17, dayTo: 31 }], ORA)
     await repo.markBandFailed(r.id, 0, 'illeggibile', null, ORA)
     await repo.markBandFailed(r.id, 1, 'illeggibile', null, ORA)
 
@@ -290,7 +285,7 @@ describe('finishExtraction — lo stato finale dice la verità sulle bande', () 
 describe('reclaimStaleExtractions — una tabella non resta extracting per sempre', () => {
   it('marca interrupted le estrazioni il cui battito è vecchio', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 2, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }, { index: 1, dayFrom: 17, dayTo: 31 }], ORA)
 
     const molto = new Date(ORA.getTime() + 10 * 60_000)
     const recuperate = await repo.reclaimStaleExtractions(molto, 3 * 60_000)
@@ -302,7 +297,7 @@ describe('reclaimStaleExtractions — una tabella non resta extracting per sempr
 
   it('non tocca un estrazione che ha respirato poco fa', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 2, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }, { index: 1, dayFrom: 17, dayTo: 31 }], ORA)
 
     const poco = new Date(ORA.getTime() + 30_000)
     expect(await repo.reclaimStaleExtractions(poco, 3 * 60_000)).toEqual([])
@@ -312,7 +307,7 @@ describe('reclaimStaleExtractions — una tabella non resta extracting per sempr
 
   it('non tocca una tabella già conclusa', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 1, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }], ORA)
     await repo.saveBandCells(r.id, 0, [cella(1, 'A', 'M')], { rawOutput: '{}', now: ORA })
     await repo.finishExtraction(r.id, { provider: 'groq', now: ORA })
 
@@ -324,7 +319,14 @@ describe('reclaimStaleExtractions — una tabella non resta extracting per sempr
 describe('resumableRosters — cosa riprendere dopo un riavvio', () => {
   it('elenca solo le tabelle per cui la referente aveva autorizzato l invio', async () => {
     const autorizzata = await tabella()
-    await repo.prepareExtraction(autorizzata.id, 2, ORA)
+    await repo.prepareExtraction(
+      autorizzata.id,
+      [
+        { index: 0, dayFrom: 1, dayTo: 16 },
+        { index: 1, dayFrom: 17, dayTo: 31 },
+      ],
+      ORA,
+    )
     await repo.reclaimStaleExtractions(new Date(ORA.getTime() + 10 * 60_000), 3 * 60_000)
     const mai = await tabella({ month: 9 })
 
@@ -336,7 +338,7 @@ describe('resumableRosters — cosa riprendere dopo un riavvio', () => {
 
   it('non elenca una tabella le cui bande sono tutte concluse', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 1, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }], ORA)
     await repo.saveBandCells(r.id, 0, [cella(1, 'A', 'M')], { rawOutput: '{}', now: ORA })
     await repo.finishExtraction(r.id, { provider: 'groq', now: ORA })
 
@@ -347,7 +349,7 @@ describe('resumableRosters — cosa riprendere dopo un riavvio', () => {
 describe('rosterProgress — quello che la pagina mostra mentre aspetta', () => {
   it('conta bande fatte su totali, celle, codici ignoti, correzioni a penna e conflitti', async () => {
     const r = await tabella()
-    await repo.prepareExtraction(r.id, 3, ORA)
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }, { index: 1, dayFrom: 17, dayTo: 31 }, { index: 2, dayFrom: 1, dayTo: 16 }], ORA)
     await repo.saveBandCells(
       r.id,
       0,
@@ -418,5 +420,101 @@ describe('withWriteLock — SQLite non gestisce scritture concorrenti', () => {
     ).rejects.toThrow('guasto')
 
     await expect(repo.withWriteLock(async () => 'fatto')).resolves.toBe('fatto')
+  })
+})
+
+describe('prepareExtraction — l autorizzazione senza il piano delle bande', () => {
+  it('con un elenco vuoto registra solo l autorizzazione: il piano lo fa il job', async () => {
+    // È quello che fa la richiesta HTTP: rilevare il riquadro sulla foto costa
+    // secondi e non può stare dentro la risposta.
+    const r = await tabella()
+
+    await repo.prepareExtraction(r.id, [], ORA)
+
+    const row = await prisma.roster.findUniqueOrThrow({ where: { id: r.id } })
+    expect(row.status).toBe('extracting')
+    expect(row.requestedAt).toEqual(ORA)
+    expect(await prisma.rosterBand.count({ where: { rosterId: r.id } })).toBe(0)
+  })
+
+  it('una tabella autorizzata e senza bande si riprende: non è un vicolo cieco', async () => {
+    const r = await tabella()
+    await repo.prepareExtraction(r.id, [], ORA)
+
+    expect((await repo.resumableRosters()).map((x) => x.id)).toContain(r.id)
+  })
+
+  it('salva i giorni coperti da ogni banda: un buco si dichiara sui giorni', async () => {
+    const r = await tabella()
+
+    await repo.prepareExtraction(
+      r.id,
+      [
+        { index: 0, dayFrom: 1, dayTo: 16 },
+        { index: 1, dayFrom: 17, dayTo: 31 },
+      ],
+      ORA,
+    )
+
+    const bande = await prisma.rosterBand.findMany({
+      where: { rosterId: r.id },
+      orderBy: { index: 'asc' },
+    })
+    expect(bande.map((b) => [b.dayFrom, b.dayTo])).toEqual([
+      [1, 16],
+      [17, 31],
+    ])
+  })
+})
+
+describe('saveBandCells — la stessa infermiera non si spacca fra due bande', () => {
+  it('canonizza l etichetta su quella già scritta quando l identità è la stessa', async () => {
+    const r = await tabella()
+    await repo.prepareExtraction(
+      r.id,
+      [
+        { index: 0, dayFrom: 1, dayTo: 16 },
+        { index: 1, dayFrom: 17, dayTo: 31 },
+      ],
+      ORA,
+    )
+
+    // Le due metà del mese sono due bande, e il modello legge il nome
+    // dall intestazione di ciascuna: `SARA DP.` in una, `SARA DP` nell altra.
+    await repo.saveBandCells(r.id, 0, [cella(1, 'SARA DP.', 'M')], {
+      rawOutput: '{}',
+      now: ORA,
+    })
+    await repo.saveBandCells(r.id, 1, [cella(20, 'SARA DP', 'P')], {
+      rawOutput: '{}',
+      now: ORA,
+    })
+
+    const etichette = await prisma.rosterCell.findMany({
+      where: { rosterId: r.id },
+      distinct: ['columnLabel'],
+      select: { columnLabel: true },
+    })
+    // Una colonna sola, con mezzo mese ciascuna: non due da mezzo mese.
+    expect(etichette.map((e) => e.columnLabel)).toEqual(['SARA DP.'])
+  })
+
+  it('una banda letta a metà tiene le celle e resta un buco dichiarato', async () => {
+    const r = await tabella()
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }], ORA)
+
+    await repo.saveBandCells(r.id, 0, [cella(1, 'CRISTINA', 'M')], {
+      rawOutput: '{}',
+      now: ORA,
+      partial: 'Banda letta solo in parte: 1 cella su 16 attese',
+    })
+
+    const banda = await prisma.rosterBand.findFirstOrThrow({ where: { rosterId: r.id, index: 0 } })
+    expect(banda.status).toBe('partial')
+    expect(banda.error).toMatch(/solo in parte/)
+    expect(await prisma.rosterCell.count({ where: { rosterId: r.id } })).toBe(1)
+
+    // Una banda letta a metà non è una tabella completa.
+    expect(await repo.finishExtraction(r.id, { provider: 'groq', now: ORA })).toBe('partial')
   })
 })

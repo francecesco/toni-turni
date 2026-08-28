@@ -60,7 +60,6 @@ beforeEach(async () => {
       ward: '3°PIANO',
       imagePath: 'a.jpg',
       status: 'extracted',
-      columnCount: 3,
     },
   })
   rosterId = roster.id
@@ -96,6 +95,16 @@ describe('assignColumnToUser — l associazione si fa una volta e si ricorda', (
     expect(alias).toEqual({ label: 'CRISTINA', userId: cristina.id, ignored: false })
   })
 
+  it('la punteggiatura non crea due alias per la stessa infermiera', async () => {
+    // `SARA DP.` letto in una banda e `SARA DP` nell altra: una sola persona, un
+    // solo alias, mezzo mese che non si stacca da lei.
+    await aliases.assignColumnToUser('SARA DP.', sara.id)
+    await aliases.assignColumnToUser('SARA DP', sara.id)
+
+    expect(await prisma.columnAlias.count()).toBe(1)
+    expect((await aliases.aliasFor('SARA  DP.'))?.userId).toBe(sara.id)
+  })
+
   it('riassociare la stessa colonna a un altra persona la sposta, non ne crea due', async () => {
     await aliases.assignColumnToUser('CRISTINA', cristina.id)
     await aliases.assignColumnToUser('CRISTINA', sara.id)
@@ -112,8 +121,10 @@ describe('assignColumnToUser — l associazione si fa una volta e si ricorda', (
   it('ignorare una colonna la lascia senza utente', async () => {
     await aliases.ignoreColumnLabel('TOT M')
 
+    // La chiave dell alias è l identità della colonna (`normalizeColumn`), non il
+    // testo letto: solo lettere e cifre. L etichetta da mostrare viene dalle celle.
     expect(await aliases.aliasFor('TOT M')).toEqual({
-      label: 'TOT M',
+      label: 'TOTM',
       userId: null,
       ignored: true,
     })
@@ -123,8 +134,10 @@ describe('assignColumnToUser — l associazione si fa una volta e si ricorda', (
     await aliases.assignColumnToUser('TOT M', cristina.id)
     await aliases.ignoreColumnLabel('TOT M')
 
+    // La chiave dell alias è l identità della colonna (`normalizeColumn`), non il
+    // testo letto: solo lettere e cifre. L etichetta da mostrare viene dalle celle.
     expect(await aliases.aliasFor('TOT M')).toEqual({
-      label: 'TOT M',
+      label: 'TOTM',
       userId: null,
       ignored: true,
     })
@@ -327,7 +340,14 @@ describe('reviewableRosters — cosa un utente ha da confermare', () => {
 
   it('non elenca una tabella ancora in estrazione a chi non è referente', async () => {
     await aliases.assignColumnToUser('CRISTINA', cristina.id)
-    await rosterRepo.prepareExtraction(rosterId, 2, new Date())
+    await rosterRepo.prepareExtraction(
+      rosterId,
+      [
+        { index: 0, dayFrom: 1, dayTo: 16 },
+        { index: 1, dayFrom: 17, dayTo: 31 },
+      ],
+      new Date(),
+    )
 
     expect(await confirm.reviewableRosters(viewer.cristina())).toEqual([])
     expect((await confirm.reviewableRosters(viewer.anna())).map((r) => r.id)).toEqual([rosterId])

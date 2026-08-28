@@ -46,7 +46,13 @@ export default async function RosterPage({
     aliases,
   })
   const bandeNonLette = describeUnreadBands({
-    bands: roster.bands.map((b) => ({ index: b.index, status: b.status, error: b.error })),
+    bands: roster.bands.map((b) => ({
+      index: b.index,
+      status: b.status,
+      error: b.error,
+      dayFrom: b.dayFrom,
+      dayTo: b.dayTo,
+    })),
     cells: roster.cells,
     aliases,
   })
@@ -104,9 +110,11 @@ export default async function RosterPage({
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Le righe rosse sono i confini fra una lettura e l altra, la riga blu la fine della
-              colonna dei giorni. Devono cadere sulle righe verticali della tabella. Se non
-              coincidono, ricarica la foto cambiando il numero di colonne.
+              La foto qui sotto è già raddrizzata: sopra ci sono disegnati i tagli che verranno
+              usati per leggerla. Le righe rosse sono i confini fra una colonna e l altra, la riga
+              blu la fine del blocco dei giorni, la fascia verde tratteggiata la cucitura fra la
+              prima e la seconda metà del mese. Devono cadere sui filetti stampati: se non ci
+              cadono, rifai la foto inquadrando solo la griglia e più dritta possibile.
             </p>
             {/* eslint-disable-next-line @next/next/no-img-element -- l immagine è privata e servita da una route con autorizzazione: next/image non la ottimizzerebbe comunque */}
             <img
@@ -116,9 +124,8 @@ export default async function RosterPage({
             />
             <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
               La foto contiene i turni di tutte le colleghe. Premendo il bottone la mandi al
-              servizio di lettura automatica, una porzione alla volta. Sono circa{' '}
-              {roster.columnCount ?? '?'} letture da un minuto: puoi chiudere la pagina e tornare
-              dopo.
+              servizio di lettura automatica, una porzione alla volta: una decina di letture da un
+              minuto ciascuna. Puoi chiudere la pagina e tornare dopo.
             </div>
             <form action={`/api/rosters/${id}/extract`} method="post">
               <button

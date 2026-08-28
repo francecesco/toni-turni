@@ -79,13 +79,35 @@ export interface UnreadBandReport {
   error: string | null
   /** Nomi certi: solo quelli che quella banda ha davvero restituito, in passato. */
   knownColumns: string[]
+  /** Giorni coperti dalla banda, quando si sanno: un buco si dichiara sui giorni. */
+  dayFrom: number | null
+  dayTo: number | null
   description: string
   /** Riguarda solo colonne di servizio: non è un buco nei turni di nessuno. */
   serviceOnly: boolean
 }
 
+interface BandLike {
+  index: number
+  status: string
+  error: string | null
+  dayFrom?: number | null
+  dayTo?: number | null
+}
+
+/**
+ * I giorni della banda, a parole. Le bande di questa pipeline coprono **mezzo
+ * mese** ciascuna, quindi senza i giorni la frase mentirebbe per omissione: la
+ * collega leggerebbe "la tua colonna non è stata letta" anche quando le manca solo
+ * la seconda metà del mese.
+ */
+function neiGiorni(banda: BandLike): string {
+  if (banda.dayFrom == null || banda.dayTo == null) return ''
+  return ` nei giorni ${banda.dayFrom}-${banda.dayTo}`
+}
+
 export function describeUnreadBands(input: {
-  bands: Array<{ index: number; status: string; error: string | null }>
+  bands: BandLike[]
   cells: CellLike[]
   aliases: AliasLike[]
 }): UnreadBandReport[] {
@@ -121,18 +143,28 @@ export function describeUnreadBands(input: {
     .sort((a, b) => a.index - b.index)
     .map((banda) => {
       const knownColumns = colonnePerBanda.get(banda.index) ?? []
+      const giorni = neiGiorni(banda)
+      // Una banda `partial` ha risposto e ha prodotto celle: dirla "non letta"
+      // sarebbe falso, e il dettaglio di cosa manca sta nei giorni vuoti della
+      // singola colonna (vedi `columnCoverage`).
+      const aMeta = banda.status === 'partial'
 
       if (knownColumns.length > 0) {
         const serviceOnly = knownColumns.every((label) => isServiceColumn(label, input.aliases))
+        const elenco = knownColumns.join(', ')
         return {
           index: banda.index,
           status: banda.status,
           error: banda.error,
           knownColumns,
+          dayFrom: banda.dayFrom ?? null,
+          dayTo: banda.dayTo ?? null,
           serviceOnly,
           description: serviceOnly
-            ? `le colonne di servizio ${knownColumns.join(', ')} non sono state lette: non sono turni di nessuno`
-            : `le colonne ${knownColumns.join(', ')} non sono state lette`,
+            ? `le colonne di servizio ${elenco} non sono state lette${giorni}: non sono turni di nessuno`
+            : aMeta
+              ? `le colonne ${elenco} sono state lette solo in parte${giorni}`
+              : `le colonne ${elenco} non sono state lette${giorni}`,
         }
       }
 
@@ -141,13 +173,13 @@ export function describeUnreadBands(input: {
 
       let description: string
       if (sinistra !== null && destra !== null) {
-        description = `un gruppo di colonne fra ${sinistra} e ${destra} non è stato letto`
+        description = `un gruppo di colonne fra ${sinistra} e ${destra} non è stato letto${giorni}`
       } else if (sinistra !== null) {
-        description = `un gruppo di colonne dopo ${sinistra} non è stato letto`
+        description = `un gruppo di colonne dopo ${sinistra} non è stato letto${giorni}`
       } else if (destra !== null) {
-        description = `un gruppo di colonne prima di ${destra} non è stato letto`
+        description = `un gruppo di colonne prima di ${destra} non è stato letto${giorni}`
       } else {
-        description = 'nessuna colonna di questa parte della tabella è stata letta'
+        description = `nessuna colonna di questa parte della tabella è stata letta${giorni}`
       }
 
       return {
@@ -155,6 +187,8 @@ export function describeUnreadBands(input: {
         status: banda.status,
         error: banda.error,
         knownColumns: [],
+        dayFrom: banda.dayFrom ?? null,
+        dayTo: banda.dayTo ?? null,
         // Senza i nomi non si può affermare che siano colonne di servizio: nel
         // dubbio si dichiara il buco, non si tace.
         serviceOnly: false,

@@ -1,21 +1,18 @@
 import { prisma } from '@/lib/db'
 import { authorizeApi } from '@/modules/auth'
-import {
-  DEFAULT_COLUMNS_PER_BAND,
-  DEFAULT_DAY_COLUMN_FRACTION,
-  DEFAULT_OVERLAP_FRACTION,
-  imageDimensions,
-  planBands,
-  readRosterImage,
-} from '@/modules/ingest'
+import { rosterImageExists } from '@/modules/ingest'
 import { ensureExtractionWorker, prepareExtraction } from '@/modules/roster'
 
 /**
  * L atto esplicito con cui la referente autorizza l invio della foto al provider
- * AI (regola invariante 9). Registra l autorizzazione, crea le bande pendenti e
- * **risponde subito**: leggere una tabella sono 10-20 minuti e non può stare
- * dentro una richiesta HTTP. Il worker gira dopo, in-process, con lo stato su
- * SQLite.
+ * AI (regola invariante 9). Registra l autorizzazione e **risponde subito**:
+ * leggere una tabella sono 10-20 minuti e non può stare dentro una richiesta
+ * HTTP. Il worker gira dopo, in-process, con lo stato su SQLite.
+ *
+ * Il piano delle bande **non** si fa qui: dipende dal riquadro rilevato sulla
+ * foto, che costa secondi di calcolo, e rifarlo in due posti sarebbe due volte la
+ * stessa geometria con il rischio che divergano. Lo fa il job alla prima passata;
+ * una tabella autorizzata e senza bande è ripresa da `resumableRosters`.
  */
 export async function POST(
   request: Request,
@@ -28,17 +25,7 @@ export async function POST(
 
   const roster = await prisma.roster.findUnique({
     where: { id },
-    select: {
-      id: true,
-      status: true,
-      columnCount: true,
-      columnsPerBand: true,
-      dayColumnFraction: true,
-      areaLeft: true,
-      areaTop: true,
-      areaRight: true,
-      areaBottom: true,
-    },
+    select: { id: true, status: true },
   })
   if (!roster) return new Response('Tabella non trovata', { status: 404 })
 
@@ -51,35 +38,16 @@ export async function POST(
   if (roster.status === 'extracted') {
     return indietro('Questa tabella è già stata letta per intero')
   }
-  if (roster.columnCount === null) {
+
+  // Un `stat`, non un rilevamento: se la retention ha già cancellato la foto,
+  // autorizzare un invio che non può avvenire lascerebbe solo un guasto da capire.
+  if (!(await rosterImageExists(id))) {
     return indietro(
-      'Il numero di colonne della tabella non è stato dichiarato: ricarica la foto indicandolo',
+      'La foto non è più sul server: è stata cancellata dalla conservazione automatica',
     )
   }
 
-  let bandCount: number
-  try {
-    const image = await readRosterImage(id)
-    const { width, height } = await imageDimensions(image)
-    bandCount = planBands({
-      width,
-      height,
-      columns: roster.columnCount,
-      columnsPerBand: roster.columnsPerBand ?? DEFAULT_COLUMNS_PER_BAND,
-      dayColumnFraction: roster.dayColumnFraction ?? DEFAULT_DAY_COLUMN_FRACTION,
-      overlapFraction: DEFAULT_OVERLAP_FRACTION,
-      area: {
-        left: roster.areaLeft ?? 0,
-        top: roster.areaTop ?? 0,
-        right: roster.areaRight ?? 1,
-        bottom: roster.areaBottom ?? 1,
-      },
-    }).length
-  } catch (error) {
-    return indietro(`Non si riesce a preparare le bande: ${(error as Error).message}`)
-  }
-
-  await prepareExtraction(id, bandCount, new Date())
+  await prepareExtraction(id, [], new Date())
 
   // Volutamente non attesa: la risposta parte adesso, il lavoro continua dopo.
   void ensureExtractionWorker()

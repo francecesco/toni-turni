@@ -1,25 +1,16 @@
 import { prisma } from '@/lib/db'
-import { optionalEnv } from '@/lib/env'
 import { listShiftCodes } from '@/modules/codes'
 import {
-  DEFAULT_BAND_PAUSE_MS,
+  createTokenPacer,
   extractRosterByBands,
-  type BandResult,
+  type BandPacer,
 } from '@/modules/extract'
 import {
   fallbackProviderFromEnv,
   providerFromEnv,
   type VisionProvider,
 } from '@/modules/extract/providers'
-import {
-  DEFAULT_COLUMNS_PER_BAND,
-  DEFAULT_DAY_COLUMN_FRACTION,
-  DEFAULT_OVERLAP_FRACTION,
-  cropRosterBands,
-  imageDimensions,
-  planBands,
-  readRosterImage,
-} from '@/modules/ingest'
+import { cropRosterBands, readRosterImage, type RosterBand } from '@/modules/ingest'
 import {
   finishExtraction,
   markBandFailed,
@@ -32,36 +23,36 @@ import {
 
 /**
  * Il job di estrazione. Sta **fuori** dalla richiesta HTTP dell upload: leggere
- * una tabella sono 10-14 chiamate al provider con ~50 secondi di pausa fra l una
- * e l altra, cioè 10-20 minuti. L upload risponde subito, questo gira dopo e lo
+ * una tabella sono 10-14 chiamate al provider distanziate dal tetto di token al
+ * minuto, cioè 10-20 minuti. L upload risponde subito, questo gira dopo e lo
  * stato vive su SQLite banda per banda, così un riavvio riprende invece di
  * ricominciare o, peggio, di lasciare la tabella in un vicolo cieco.
+ *
+ * La geometria delle bande **non si chiede a nessuno**: arriva da
+ * `cropRosterBands`, che rileva il riquadro della tabella e i suoi confini di
+ * colonna sulla foto e la raddrizza. È la pipeline misurata al 99,8% per cella
+ * (487 su 488) contro il 18,5% della tabella intera.
+ *
+ * Le bande si mandano **una alla volta**, non tutte in una chiamata sola, perché
+ * ogni banda letta deve finire su SQLite prima della successiva: è quello che
+ * rende ripartibile un lavoro da venti minuti. Il distanziamento resta uno solo
+ * per tutto il job (`createTokenPacer`), condiviso anche con il ritentativo che
+ * `extractRosterByBands` fa quando il provider risponde 429.
  */
 
 export interface JobDeps {
   provider?: VisionProvider
   fallback?: VisionProvider | null
-  sleep?: (ms: number) => Promise<void>
-  pauseMs?: number
+  pace?: BandPacer
   now?: () => Date
   readImage?: (rosterId: string) => Promise<Buffer>
+  cropBands?: (image: Buffer, daysInMonth: number) => Promise<RosterBand[]>
 }
 
 export interface JobOutcome {
   status: ExtractionStatus | 'skipped'
   reason?: string
   bandsRun: number
-}
-
-/** Pausa fra le bande: il piano gratuito di Groq ha un tetto di token al minuto. */
-export function bandPauseMs(): number {
-  const parsed = Number(optionalEnv('AI_BAND_PAUSE_MS', ''))
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_BAND_PAUSE_MS
-}
-
-function numeroDaEnv(name: string, fallback: number): number {
-  const parsed = Number(optionalEnv(name, ''))
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
 export function daysInMonth(year: number, month: number): number {
@@ -74,6 +65,8 @@ export async function runExtractionJob(
 ): Promise<JobOutcome> {
   const now = deps.now ?? (() => new Date())
   const readImage = deps.readImage ?? readRosterImage
+  const cropBands =
+    deps.cropBands ?? ((image: Buffer, giorni: number) => cropRosterBands(image, { daysInMonth: giorni }))
 
   const roster = await prisma.roster.findUnique({
     where: { id: rosterId },
@@ -81,15 +74,9 @@ export async function runExtractionJob(
       id: true,
       year: true,
       month: true,
+      ward: true,
       status: true,
       requestedAt: true,
-      columnCount: true,
-      columnsPerBand: true,
-      dayColumnFraction: true,
-      areaLeft: true,
-      areaTop: true,
-      areaRight: true,
-      areaBottom: true,
     },
   })
 
@@ -112,91 +99,96 @@ export async function runExtractionJob(
     return { status: 'failed', reason: messaggio, bandsRun: 0 }
   }
 
-  if (roster.columnCount === null) {
-    const messaggio =
-      'Numero di colonne della tabella non dichiarato: non si indovina la geometria delle bande'
-    await markExtractionFailed(rosterId, null, messaggio)
-    return { status: 'failed', reason: messaggio, bandsRun: 0 }
-  }
+  const giorni = daysInMonth(roster.year, roster.month)
 
-  let piano
+  let bande: RosterBand[]
   try {
-    const { width, height } = await imageDimensions(image)
-    piano = planBands({
-      width,
-      height,
-      columns: roster.columnCount,
-      columnsPerBand: roster.columnsPerBand ?? DEFAULT_COLUMNS_PER_BAND,
-      dayColumnFraction: roster.dayColumnFraction ?? DEFAULT_DAY_COLUMN_FRACTION,
-      overlapFraction: numeroDaEnv('BAND_OVERLAP_FRACTION', DEFAULT_OVERLAP_FRACTION),
-      area: {
-        left: roster.areaLeft ?? 0,
-        top: roster.areaTop ?? 0,
-        right: roster.areaRight ?? 1,
-        bottom: roster.areaBottom ?? 1,
-      },
-    })
+    bande = await cropBands(image, giorni)
   } catch (error) {
-    const messaggio = `Geometria delle bande non valida: ${(error as Error).message}`
+    // Un riquadro non trovato non è un errore da nascondere: un raddrizzamento a
+    // caso produrrebbe turni attribuiti al giorno o alla persona sbagliata.
+    const messaggio = `Non si riesce a ritagliare la tabella dalla foto: ${(error as Error).message}`
     await markExtractionFailed(rosterId, null, messaggio)
     return { status: 'failed', reason: messaggio, bandsRun: 0 }
   }
 
-  await prepareExtraction(rosterId, piano.length, now())
+  await prepareExtraction(
+    rosterId,
+    bande.map((banda, index) => ({
+      index,
+      dayFrom: banda.spec.dayFrom,
+      dayTo: banda.spec.dayTo,
+    })),
+    now(),
+  )
 
-  const daLeggere = await pendingBands(rosterId)
+  const daLeggere = (await pendingBands(rosterId)).filter((index) => index < bande.length)
   if (daLeggere.length === 0) {
     const status = await finishExtraction(rosterId, { provider: 'nessuno', now: now() })
     return { status, reason: 'nessuna banda da leggere', bandsRun: 0 }
   }
 
-  const ritagli = await cropRosterBands(
-    image,
-    piano.filter((banda) => daLeggere.includes(banda.index)),
-  )
-
   const legenda = await listShiftCodes()
+  const knownCodes = legenda.map((def) => def.code)
   const provider = deps.provider ?? providerFromEnv()
   const fallback = deps.fallback === undefined ? fallbackProviderFromEnv() : deps.fallback
+  const pace = deps.pace ?? createTokenPacer()
+  const header = { year: roster.year, month: roster.month, ward: roster.ward }
 
-  const salva = async (risultato: BandResult): Promise<void> => {
-    if (risultato.ok && risultato.extraction) {
-      await saveBandCells(rosterId, risultato.index, risultato.extraction.cells, {
-        rawOutput: risultato.rawOutput,
-        now: now(),
-      })
-    } else {
-      await markBandFailed(
-        rosterId,
-        risultato.index,
-        risultato.error ?? 'Banda non letta',
-        risultato.rawOutput,
-        now(),
-      )
-    }
-  }
+  let conflitti = 0
+  let providerUsato = provider.name
+  let lette = 0
 
-  let esito
   try {
-    esito = await extractRosterByBands({
-      bands: ritagli,
-      knownCodes: legenda.map((def) => def.code),
-      daysInMonth: daysInMonth(roster.year, roster.month),
-      provider,
-      fallback,
-      pauseMs: deps.pauseMs ?? bandPauseMs(),
-      sleep: deps.sleep,
-      onBand: salva,
-    })
+    for (const [posizione, index] of daLeggere.entries()) {
+      if (posizione > 0) await pace(index)
+
+      const esito = await extractRosterByBands({
+        bands: [bande[index]],
+        knownCodes,
+        header,
+        provider,
+        fallback,
+        pace,
+      })
+
+      lette += 1
+      providerUsato = esito.provider
+      const rawOutput = esito.rawOutputs[esito.rawOutputs.length - 1] ?? null
+      // Su una banda sola `failures` ha al massimo una voce: con `cells` è una
+      // banda letta a metà (le celle si tengono, il buco si dichiara), senza
+      // `cells` è una banda che non ha prodotto niente di valido.
+      const guasto = esito.failures[0]
+
+      if (guasto !== undefined && guasto.cells === undefined) {
+        await markBandFailed(rosterId, index, guasto.error, rawOutput, now())
+        continue
+      }
+
+      const salvate = await saveBandCells(rosterId, index, esito.extraction.cells, {
+        rawOutput,
+        now: now(),
+        partial: guasto?.error ?? null,
+      })
+      conflitti += salvate.conflicts.length + esito.conflicts
+    }
   } catch (error) {
     // Un guasto imprevisto non deve lasciare la tabella in `extracting` per
     // sempre: le bande già salvate restano, il resto è dichiarato mancante.
     const messaggio = `Estrazione interrotta da un errore: ${(error as Error).message}`
-    const status = await finishExtraction(rosterId, { provider: provider.name, now: now() })
+    const status = await finishExtraction(rosterId, {
+      provider: providerUsato,
+      now: now(),
+      conflicts: conflitti,
+    })
     await prisma.roster.update({ where: { id: rosterId }, data: { error: messaggio } })
-    return { status, reason: messaggio, bandsRun: ritagli.length }
+    return { status, reason: messaggio, bandsRun: lette }
   }
 
-  const status = await finishExtraction(rosterId, { provider: esito.provider, now: now() })
-  return { status, bandsRun: ritagli.length }
+  const status = await finishExtraction(rosterId, {
+    provider: providerUsato,
+    now: now(),
+    conflicts: conflitti,
+  })
+  return { status, bandsRun: lette }
 }

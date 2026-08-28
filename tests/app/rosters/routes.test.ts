@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import sharp from 'sharp'
@@ -92,8 +92,6 @@ async function moduloDiCaricamento(overrides: Record<string, string> = {}): Prom
   form.set('year', '2026')
   form.set('month', '8')
   form.set('ward', '3°PIANO')
-  form.set('columnCount', '4')
-  form.set('dayColumnFraction', '0.1')
   for (const [key, value] of Object.entries(overrides)) form.set(key, value)
   return form
 }
@@ -110,8 +108,6 @@ async function tabella(overrides: Record<string, unknown> = {}) {
       ward: '3°PIANO',
       imagePath: 'x.jpg',
       status: 'uploaded',
-      columnCount: 4,
-      dayColumnFraction: 0.1,
       ...overrides,
     },
   })
@@ -150,7 +146,6 @@ describe('POST /api/rosters — solo la referente carica tabelle', () => {
     const roster = await prisma.roster.findFirstOrThrow()
     expect(response.headers.get('location')).toContain(`/rosters/${roster.id}`)
     expect(roster.status).toBe('uploaded')
-    expect(roster.columnCount).toBe(4)
     // Nessuna autorizzazione all invio: la foto resta locale.
     expect(roster.requestedAt).toBeNull()
     expect(ensureExtractionWorker).not.toHaveBeenCalled()
@@ -184,11 +179,11 @@ describe('POST /api/rosters — solo la referente carica tabelle', () => {
     expect(await prisma.roster.count()).toBe(0)
   })
 
-  it('un numero di colonne assurdo viene rifiutato: la geometria non si indovina', async () => {
+  it('un reparto vuoto viene rifiutato: serve a scartare la colonna fantasma del foglio', async () => {
     await session.openSessionCookie(referente.id)
 
     const response = await uploadRoute.POST(
-      richiestaDiCaricamento(await moduloDiCaricamento({ columnCount: '0' })),
+      richiestaDiCaricamento(await moduloDiCaricamento({ ward: '   ' })),
     )
 
     expect(response.headers.get('location')).toContain('error=')
@@ -222,7 +217,7 @@ describe("POST /api/rosters/[id]/extract — l'invio al provider AI è un atto e
     expect(ensureExtractionWorker).not.toHaveBeenCalled()
   })
 
-  it('con una sessione REFERENTE registra l autorizzazione, crea le bande e sveglia il worker', async () => {
+  it('con una sessione REFERENTE registra l autorizzazione e sveglia il worker', async () => {
     const roster = await tabellaConFoto()
     await session.openSessionCookie(referente.id)
 
@@ -235,7 +230,9 @@ describe("POST /api/rosters/[id]/extract — l'invio al provider AI è un atto e
     const row = await prisma.roster.findUniqueOrThrow({ where: { id: roster.id } })
     expect(row.requestedAt).not.toBeNull()
     expect(row.status).toBe('extracting')
-    expect(await prisma.rosterBand.count({ where: { rosterId: roster.id } })).toBe(4)
+    // Il piano delle bande dipende dal riquadro rilevato sulla foto, che costa
+    // secondi: lo fa il job, e una tabella autorizzata senza bande si riprende.
+    expect(await prisma.rosterBand.count({ where: { rosterId: roster.id } })).toBe(0)
     expect(ensureExtractionWorker).toHaveBeenCalledTimes(1)
   })
 
@@ -254,18 +251,19 @@ describe("POST /api/rosters/[id]/extract — l'invio al provider AI è un atto e
     expect(ensureExtractionWorker).not.toHaveBeenCalled()
   })
 
-  it('senza il numero di colonne rifiuta invece di indovinare la geometria', async () => {
-    const roster = await tabellaConFoto({ columnCount: null })
+  it('riautorizzare una ripresa non riscrive la data della prima autorizzazione', async () => {
+    const primaVolta = new Date('2026-08-20T09:00:00Z')
+    const roster = await tabellaConFoto({ status: 'interrupted', requestedAt: primaVolta })
     await session.openSessionCookie(referente.id)
 
-    const response = await extractRoute.POST(
+    await extractRoute.POST(
       new Request(`http://localhost:3000/api/rosters/${roster.id}/extract`, { method: 'POST' }),
       { params: Promise.resolve({ id: roster.id }) },
     )
 
-    expect(response.headers.get('location')).toContain('error=')
     const row = await prisma.roster.findUniqueOrThrow({ where: { id: roster.id } })
-    expect(row.requestedAt).toBeNull()
+    expect(row.requestedAt).toEqual(primaVolta)
+    expect(row.status).toBe('extracting')
   })
 
   it('su una tabella già letta non riautorizza niente', async () => {
@@ -297,7 +295,15 @@ describe('GET /api/rosters/[id]/progress — l avanzamento che la pagina interro
   it('a un utente autenticato dichiara bande fatte, totali e mancanti', async () => {
     const roster = await tabella()
     const repo = await import('@/modules/roster/repository')
-    await repo.prepareExtraction(roster.id, 3, new Date())
+    await repo.prepareExtraction(
+      roster.id,
+      [
+        { index: 0, dayFrom: 1, dayTo: 16 },
+        { index: 1, dayFrom: 17, dayTo: 31 },
+        { index: 2, dayFrom: 1, dayTo: 16 },
+      ],
+      new Date(),
+    )
     await repo.markBandFailed(roster.id, 2, 'illeggibile', null, new Date())
     await session.openSessionCookie(infermiera.id)
 
@@ -367,24 +373,51 @@ describe('GET /api/rosters/[id]/image e /preview — la foto è dato personale d
     expect(response.status).toBe(404)
   })
 
-  it("l'anteprima delle bande è solo della referente e disegna i tagli sulla foto", async () => {
+  it("l'anteprima dei tagli è solo della referente", async () => {
     const roster = await tabella()
     await storage.saveRosterImage(roster.id, await foto())
-
     await session.openSessionCookie(infermiera.id)
+
     const vietata = await previewRoute.GET(
       new Request(`http://localhost:3000/api/rosters/${roster.id}/preview`),
       { params: Promise.resolve({ id: roster.id }) },
     )
-    expect(vietata.status).toBe(403)
 
+    expect(vietata.status).toBe(403)
+  })
+
+  it("disegna i tagli sul riquadro raddrizzato di una foto vera", async () => {
+    const roster = await tabella()
+    await storage.saveRosterImage(
+      roster.id,
+      readFileSync(join(process.cwd(), 'fixtures', 'roster-2026-08-3piano.jpeg')),
+    )
     await session.openSessionCookie(referente.id)
+
     const permessa = await previewRoute.GET(
       new Request(`http://localhost:3000/api/rosters/${roster.id}/preview`),
       { params: Promise.resolve({ id: roster.id }) },
     )
+
     expect(permessa.status).toBe(200)
+    expect(permessa.headers.get('content-type')).toBe('image/jpeg')
     const meta = await sharp(Buffer.from(await permessa.arrayBuffer())).metadata()
-    expect(meta.width).toBe(800)
+    // Il riquadro raddrizzato, non la foto: è quello che il modello vedrà.
+    expect(meta.width).toBe(1600)
+  })
+
+  it('su una foto in cui non si riconosce una tabella lo dice, invece di rompersi', async () => {
+    const roster = await tabella()
+    // Carta bianca: nessun filetto, nessuna tabella.
+    await storage.saveRosterImage(roster.id, await foto())
+    await session.openSessionCookie(referente.id)
+
+    const response = await previewRoute.GET(
+      new Request(`http://localhost:3000/api/rosters/${roster.id}/preview`),
+      { params: Promise.resolve({ id: roster.id }) },
+    )
+
+    expect(response.status).toBe(409)
+    expect(await response.text()).toMatch(/tabella/i)
   })
 })

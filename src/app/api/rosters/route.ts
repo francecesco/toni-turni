@@ -1,7 +1,5 @@
 import { authorizeApi } from '@/modules/auth'
 import {
-  DEFAULT_COLUMNS_PER_BAND,
-  DEFAULT_DAY_COLUMN_FRACTION,
   normalizeRosterPhoto,
   pruneOldImages,
   retentionDays,
@@ -18,7 +16,7 @@ import { createRoster, parseUploadForm, setRosterImagePath } from '@/modules/ros
  *
  * Risponde subito: normalizza l immagine, la salva sul volume e crea la `Roster`
  * in stato `uploaded`. **Nessuna chiamata al provider AI**: quella parte solo dopo
- * che la referente ha guardato l anteprima delle bande e ha premuto "Estrai".
+ * che la referente ha guardato l anteprima dei tagli e ha premuto "Estrai".
  */
 export async function POST(request: Request): Promise<Response> {
   const auth = await authorizeApi({ referente: true })
@@ -57,12 +55,6 @@ export async function POST(request: Request): Promise<Response> {
     month: parsed.value.month,
     ward: parsed.value.ward,
     imagePath: '',
-    geometry: {
-      columnCount: parsed.value.columnCount,
-      columnsPerBand: parsed.value.columnsPerBand ?? DEFAULT_COLUMNS_PER_BAND,
-      dayColumnFraction: parsed.value.dayColumnFraction ?? DEFAULT_DAY_COLUMN_FRACTION,
-      area: parsed.value.area,
-    },
   })
 
   // Il percorso della foto contiene l id della tabella, quindi la riga nasce prima

@@ -170,3 +170,53 @@ describe('describeUnreadBands — una banda non letta si racconta con i nomi che
     expect(report[0].serviceOnly).toBe(false)
   })
 })
+
+describe('describeUnreadBands — i giorni, perché una banda copre mezzo mese', () => {
+  const aliases = [{ label: 'CRISTINA', userId: 'u-cri', ignored: false }]
+
+  it('dice in quali giorni la colonna non è stata letta', () => {
+    const report = describeUnreadBands({
+      bands: [{ index: 0, status: 'failed', error: 'illeggibile', dayFrom: 17, dayTo: 31 }],
+      cells: [{ day: 20, columnLabel: 'CRISTINA', bandIndex: 0 }],
+      aliases,
+    })
+
+    // Senza i giorni la frase direbbe "la tua colonna non è stata letta" anche a
+    // chi ha tutta la prima metà del mese: un allarme che spaventa a vuoto.
+    expect(report[0].description).toBe(
+      'le colonne CRISTINA non sono state lette nei giorni 17-31',
+    )
+    expect(report[0].dayFrom).toBe(17)
+    expect(report[0].dayTo).toBe(31)
+  })
+
+  it('una banda letta a metà non si dichiara "non letta": ha prodotto delle celle', () => {
+    const report = describeUnreadBands({
+      bands: [
+        {
+          index: 0,
+          status: 'partial',
+          error: 'Banda letta solo in parte: 10 celle su 30 attese',
+          dayFrom: 1,
+          dayTo: 16,
+        },
+      ],
+      cells: [{ day: 3, columnLabel: 'CRISTINA', bandIndex: 0 }],
+      aliases,
+    })
+
+    expect(report[0].description).toBe(
+      'le colonne CRISTINA sono state lette solo in parte nei giorni 1-16',
+    )
+  })
+
+  it('senza i giorni non li inventa', () => {
+    const report = describeUnreadBands({
+      bands: [{ index: 0, status: 'failed', error: null, dayFrom: null, dayTo: null }],
+      cells: [{ day: 3, columnLabel: 'CRISTINA', bandIndex: 0 }],
+      aliases,
+    })
+
+    expect(report[0].description).toBe('le colonne CRISTINA non sono state lette')
+  })
+})

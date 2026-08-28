@@ -101,7 +101,13 @@ export default async function ReviewPage({
   const riassunto = gridSummary(righe)
 
   const bandeNonLette = describeUnreadBands({
-    bands: roster.bands.map((b) => ({ index: b.index, status: b.status, error: b.error })),
+    bands: roster.bands.map((b) => ({
+      index: b.index,
+      status: b.status,
+      error: b.error,
+      dayFrom: b.dayFrom,
+      dayTo: b.dayTo,
+    })),
     cells: celle,
     aliases,
   })
