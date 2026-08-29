@@ -147,6 +147,26 @@ export function parseBandExtraction(
  *    solo sulle colonne che a valle si scoprono utili, la banda che salta una
  *    collega intera si dichiarerebbe completa e i suoi turni sparirebbero in
  *    silenzio.
+ *
+ * Sopra i tre numeri c è un caso che li scavalca: la banda che **non nomina
+ * nulla che non sia di servizio**. Sottrarre per occorrenze non basta, perché
+ * due colonne intitolate allo stesso modo il modello le nomina una volta sola —
+ * è quello che fa sull ultima banda di agosto, dove `AIUTO MATT.` è stampato
+ * due volte e letto una — e `2 - 1 = 1` inventava una colonna che sul foglio non
+ * esiste, lasciando la tabella `partial` a ogni caricamento. Quindi: se la
+ * banda ha nominato **almeno una** colonna di servizio e **nessuna** colonna di
+ * persona, non ha niente da leggere e le attese sono zero.
+ *
+ * I due bordi di questa regola sono deliberati, ed è dove regge il caso opposto:
+ *
+ * - basta **una** colonna di persona nominata perché il silenzio decada e torni
+ *   il conto dei tre numeri, che non scende mai sotto le colonne geometriche
+ *   meno quelle di servizio. La banda mista che risponde corta continua a
+ *   dichiarare il buco;
+ * - il nome del **reparto** non innesca il silenzio da solo: non è una colonna
+ *   del foglio, quindi non prova che non ci fosse niente da leggere. Una banda
+ *   che nomina soltanto `3°PIANO` — o che non nomina niente — è una lettura
+ *   fallita, e resta un buco dichiarato.
  */
 export function countBandCells(
   spec: Pick<BandSpec, 'columns' | 'dayFrom' | 'dayTo'>,
@@ -182,7 +202,12 @@ export function countBandCells(
     geometriche,
     Math.max(servizioInIntestazione, servizioDistinte.size),
   )
-  const attese = Math.min(geometriche, Math.max(diPersona.size, geometriche - scartate))
+  // tutto quello che la banda ha nominato è di servizio: non ha colonne da
+  // leggere, quante ne mostri la geometria non conta
+  const soloDiServizio = servizioDistinte.size > 0 && diPersona.size === 0
+  const attese = soloDiServizio
+    ? 0
+    : Math.min(geometriche, Math.max(diPersona.size, geometriche - scartate))
 
   return {
     read: viste.size,

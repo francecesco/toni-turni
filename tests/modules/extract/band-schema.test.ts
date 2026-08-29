@@ -464,6 +464,41 @@ describe('countBandCells', () => {
     expect(conto).toEqual({ read: 0, expected: 0, columns: 0 })
   })
 
+  /**
+   * Lo stesso falso allarme di agosto, nella forma in cui è arrivato davvero
+   * dall interfaccia: l ultima banda ha **due** colonne geometriche intitolate
+   * entrambe `AIUTO MATT.`, ma il modello il nome lo scrive una volta sola.
+   * Sottrarre le occorrenze nominate (2 - 1 = 1) lasciava una colonna attesa che
+   * sul foglio non esiste, e la tabella restava `partial` a ogni caricamento con
+   * «0 celle su 15 attese». Se **tutto** quello che la banda nomina è di
+   * servizio, non c è nessuna colonna da leggere: le attese sono zero.
+   */
+  it('non aspetta celle dalla banda che nomina solo colonne di servizio, anche se le colonne geometriche sono di più', () => {
+    const conto = countBandCells(
+      spec([9, 10], 17, 31),
+      band(['AIUTO MATT.'], [cell(17, 'AIUTO MATT.', ''), cell(18, 'AIUTO MATT.', 'DENISE')]),
+      HEADER.ward,
+    )
+
+    expect(conto).toEqual({ read: 0, expected: 0, columns: 0 })
+  })
+
+  /**
+   * Il confine del silenzio: il nome del **reparto** non è una colonna del
+   * foglio, quindi da solo non prova che la banda non avesse niente da leggere.
+   * Una banda che nomina soltanto `3°PIANO` è una lettura fallita, e il buco
+   * resta dichiarato.
+   */
+  it('non tace per la banda che nomina soltanto il reparto', () => {
+    const conto = countBandCells(
+      spec([1, 2], 1, 2),
+      band(['3°PIANO'], [cell(1, '3°PIANO', 'M')]),
+      HEADER.ward,
+    )
+
+    expect(conto).toEqual({ read: 0, expected: 4, columns: 2 })
+  })
+
   /** Una banda mista: la colonna di servizio esce dal conto, l altra no. */
   it('toglie dalle attese la colonna di servizio e tiene quella di persona', () => {
     const conto = countBandCells(

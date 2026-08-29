@@ -619,6 +619,31 @@ describe('extractRosterByBands, bande lette solo in parte', () => {
   })
 
   /**
+   * Lo stesso foglio, come è arrivato davvero dall interfaccia: l ultima banda
+   * di agosto ha due colonne geometriche intitolate entrambe `AIUTO MATT.`, ma
+   * il modello il nome lo scrive **una volta sola**. Sottrarre le occorrenze
+   * nominate lasciava una colonna attesa che sul foglio non esiste, e la
+   * tabella restava `partial` con «0 celle su 15 attese» a ogni caricamento.
+   */
+  it('non dichiara nessun buco quando le colonne di servizio omonime sono nominate una volta sola', async () => {
+    const celle: Array<[number, string, string]> = []
+    for (let giorno = 17; giorno <= 31; giorno += 1) celle.push([giorno, 'AIUTO MATT.', ''])
+    const p = provider('groq', risposta(celle, ['AIUTO MATT.']))
+    const { pace } = pacerFinto()
+
+    const outcome = await extractRosterByBands({
+      bands: [band(1, [9, 10], 17, 31)],
+      knownCodes: [],
+      header: HEADER,
+      provider: p,
+      pace,
+    })
+
+    expect(outcome.failures).toEqual([])
+    expect(outcome.extraction.cells).toEqual([])
+  })
+
+  /**
    * Una banda mista, il caso che nascerà con un numero dispari di colonne di
    * persona: la colonna di servizio esce dalle attese, quella di persona no.
    */
