@@ -1,6 +1,7 @@
 import { AppHeader } from '@/components/app-header'
 import { Banner } from '@/components/banner'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { listShiftCodes } from '@/modules/codes'
 import { requireReferente } from '@/modules/auth'
 import { removeShiftCode, saveShiftCode } from './actions'
@@ -74,23 +75,26 @@ export default async function ShiftCodesPage({
             }}
             className="grid grid-cols-2 gap-3 sm:grid-cols-3"
           >
-            <input name="code" placeholder="Codice (es. M)" required className="rounded-lg border p-3 text-base" />
-            <input name="label" placeholder="Etichetta" required className="rounded-lg border p-3 text-base" />
-            <select name="kind" defaultValue="work" className="rounded-lg border p-3 text-base">
+            <Input name="code" placeholder="Codice (es. M)" required />
+            <Input name="label" placeholder="Etichetta" required />
+            <select
+              name="kind"
+              defaultValue="work"
+              className="border-input bg-background h-11 rounded-lg border p-3 text-base"
+            >
               <option value="work">Turno di lavoro</option>
               <option value="absence">Assenza</option>
               <option value="info">Informativo</option>
               <option value="unknown">Da definire</option>
             </select>
-            <input name="startTime" placeholder="Inizio (07:00)" className="rounded-lg border p-3 text-base" />
-            <input name="endTime" placeholder="Fine (14:00)" className="rounded-lg border p-3 text-base" />
-            <input name="location" placeholder="Sede (opzionale)" className="rounded-lg border p-3 text-base" />
-            <input
+            <Input name="startTime" placeholder="Inizio (07:00)" />
+            <Input name="endTime" placeholder="Fine (14:00)" />
+            <Input name="location" placeholder="Sede (opzionale)" />
+            <Input
               name="color"
               placeholder="Colore (es. #f59e0b, opzionale)"
               pattern="#[0-9a-fA-F]{6}"
               title="Un colore esadecimale, es. #f59e0b"
-              className="rounded-lg border p-3 text-base"
             />
             <button
               type="submit"

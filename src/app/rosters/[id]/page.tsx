@@ -80,7 +80,7 @@ export default async function RosterPage({
         subtitle={`${roster.ward}${roster.version > 1 ? ` · versione ${roster.version}` : ''}${roster.provider ? ` · letta con ${roster.provider}` : ''}`}
         menuItems={menuItemsFor(user)}
       />
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4 px-safe pb-10">
+      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-safe pb-10">
         {error && <Banner variant="error">{error}</Banner>}
 
         {roster.error && <Banner variant="error">{roster.error}</Banner>}
@@ -201,7 +201,12 @@ export default async function RosterPage({
             )}
             {(roster.status === 'partial' || roster.status === 'failed') && fotoDisponibile && (
               <form action={`/api/rosters/${id}/extract`} method="post">
-                <Button type="submit" size="touch" variant="outline" className="w-full">
+                <Button
+                  type="submit"
+                  size="touch"
+                  variant="outline"
+                  className="h-auto min-h-12 w-full py-3 leading-tight whitespace-normal"
+                >
                   Riprova le letture che mancano
                 </Button>
               </form>

@@ -2,6 +2,7 @@ import { CameraIcon } from 'lucide-react'
 import { AppHeader } from '@/components/app-header'
 import { Banner } from '@/components/banner'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { prisma } from '@/lib/db'
 import { requireReferente } from '@/modules/auth'
 
@@ -33,7 +34,7 @@ export default async function UploadRosterPage({
   return (
     <>
       <AppHeader title="Carica la tabella" backHref="/rosters" />
-      <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-safe pb-10">
+      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 px-safe pb-10">
         <p className="text-muted-foreground text-sm">
           Fotografa la tabella <strong>inquadrando solo la griglia</strong>, il più possibile
           dritta: i bordi e le colonne li riconosce l app da sola, ma solo se la griglia si vede
@@ -45,17 +46,28 @@ export default async function UploadRosterPage({
 
         <form action="/api/rosters" method="post" encType="multipart/form-data" className="space-y-5">
           <div className="space-y-2">
-            <label
-              htmlFor="photo"
-              className="border-border bg-card flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-6 text-center"
-            >
+            <div className="border-border bg-card flex min-h-32 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-4 py-6 text-center">
               <CameraIcon className="text-muted-foreground size-8" />
-              <span className="font-semibold">Scegli la foto della tabella</span>
-              <span className="text-muted-foreground text-sm">
-                Inquadra tutto il riquadro stampato, il più in piano possibile.
-              </span>
-            </label>
-            <input id="photo" name="photo" type="file" accept="image/*" required className="sr-only" />
+              <div>
+                <label htmlFor="photo" className="font-semibold">
+                  Scegli la foto della tabella
+                </label>
+                <p className="text-muted-foreground text-sm">
+                  Inquadra tutto il riquadro stampato, il più in piano possibile.
+                </p>
+              </div>
+              {/* Input vero e visibile, non `sr-only`: il nome del file scelto lo mostra il
+                  browser da sé, e il messaggio di `required` (se si annulla la scelta) si
+                  ancora a un elemento che si vede, non a un pixel clippato fuori schermo. */}
+              <Input
+                id="photo"
+                name="photo"
+                type="file"
+                accept="image/*"
+                required
+                className="h-auto w-auto border-0 bg-transparent p-0 text-sm"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -63,31 +75,13 @@ export default async function UploadRosterPage({
               <label htmlFor="month" className="block text-sm font-medium">
                 Mese
               </label>
-              <input
-                id="month"
-                name="month"
-                type="number"
-                min={1}
-                max={12}
-                defaultValue={month}
-                required
-                className="border-input bg-background h-11 w-full rounded-lg border p-3 text-base"
-              />
+              <Input id="month" name="month" type="number" min={1} max={12} defaultValue={month} required />
             </div>
             <div className="space-y-2">
               <label htmlFor="year" className="block text-sm font-medium">
                 Anno
               </label>
-              <input
-                id="year"
-                name="year"
-                type="number"
-                min={2020}
-                max={2100}
-                defaultValue={year}
-                required
-                className="border-input bg-background h-11 w-full rounded-lg border p-3 text-base"
-              />
+              <Input id="year" name="year" type="number" min={2020} max={2100} defaultValue={year} required />
             </div>
           </div>
 
@@ -95,13 +89,7 @@ export default async function UploadRosterPage({
             <label htmlFor="ward" className="block text-sm font-medium">
               Reparto
             </label>
-            <input
-              id="ward"
-              name="ward"
-              defaultValue={ultima?.ward ?? '3°PIANO'}
-              required
-              className="border-input bg-background h-11 w-full rounded-lg border p-3 text-base"
-            />
+            <Input id="ward" name="ward" defaultValue={ultima?.ward ?? '3°PIANO'} required />
           </div>
 
           <Button type="submit" size="touch" className="w-full">

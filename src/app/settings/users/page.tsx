@@ -2,6 +2,7 @@ import { AppHeader } from '@/components/app-header'
 import { Banner } from '@/components/banner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { prisma } from '@/lib/db'
 import { requireReferente } from '@/modules/auth'
 import { inviteUser, revokeInvite } from './actions'
@@ -79,12 +80,12 @@ export default async function UsersPage({
             }}
             className="flex gap-2"
           >
-            <input
+            <Input
               name="email"
               type="email"
               required
               placeholder="email della collega"
-              className="border-input bg-background h-12 min-w-0 flex-1 rounded-xl border px-3 text-base"
+              className="h-12 flex-1 rounded-xl"
             />
             <Button type="submit" size="touch" className="shrink-0">
               Invita

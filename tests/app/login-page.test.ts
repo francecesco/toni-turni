@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import { createElement, isValidElement, type ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import LoginPage from '@/app/login/page'
 
@@ -14,7 +14,10 @@ function textOf(node: unknown): string {
   const props = element.props ?? {}
   const attributes = Object.entries(props)
     .filter(([key]) => key !== 'children')
-    .map(([, value]) => (typeof value === 'string' ? value : ''))
+    // Un elemento React dentro un prop che non è `children` (es. `render={<a/>}`)
+    // porta anche lui del testo: senza scenderci, una prova d'assenza può passare
+    // a vuoto pur avendo quel testo davanti.
+    .map(([, value]) => (typeof value === 'string' ? value : isValidElement(value) ? textOf(value) : ''))
     .join(' ')
   return `${attributes} ${textOf(props.children)}`
 }
@@ -57,5 +60,21 @@ describe('pagina di accesso', () => {
     vi.stubEnv('DEV_LOGIN_EMAILS', 'anna@example.com')
 
     expect(await render()).not.toContain('/api/auth/dev-login')
+  })
+})
+
+describe('textOf non perde testo dentro un prop `render`', () => {
+  // Il caso che il revisore ha segnalato: un domani `Button render={<a href="…"/>}>`
+  // porta il link dentro un prop che non è `children`. Se `textOf` lo ignora, una
+  // prova d'assenza («in produzione non mostra nulla») può passare a vuoto pur
+  // avendo quel link davanti agli occhi — perché non lo vede, non perché non c è.
+  it('trova il testo di un elemento React annidato in un prop diverso da `children`', () => {
+    // `isValidElement` guarda il marcatore interno di React (`$$typeof`): un
+    // oggetto letterale che imita la forma di un elemento non basta, serve un
+    // elemento vero, creato con `createElement` (il file è `.ts`, non `.tsx`).
+    const nodo = createElement('div', {
+      render: createElement('a', { href: '/api/auth/dev-login' }, 'link-nascosto-in-render'),
+    })
+    expect(textOf(nodo)).toContain('link-nascosto-in-render')
   })
 })

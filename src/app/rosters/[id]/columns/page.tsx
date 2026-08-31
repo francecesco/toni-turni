@@ -3,13 +3,6 @@ import { AppHeader } from '@/components/app-header'
 import { Banner } from '@/components/banner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { prisma } from '@/lib/db'
 import { monthLabel } from '@/lib/time'
 import { requireReferente } from '@/modules/auth'
@@ -50,7 +43,7 @@ export default async function RosterColumnsPage({
     <>
       <AppHeader
         title="Colonne e persone"
-        backHref={`/rosters/${id}/review`}
+        backHref={`/rosters/${id}`}
         subtitle={`${monthLabel(roster.year, roster.month)} · ${roster.ward}`}
       />
       <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-safe pb-10">
@@ -90,20 +83,20 @@ export default async function RosterColumnsPage({
                     <label className="sr-only" htmlFor={`user-${label}`}>
                       Persona associata a {label}
                     </label>
-                    <Select name="userId" defaultValue={attuale}>
-                      <SelectTrigger id={`user-${label}`} size="touch" className="min-w-48 flex-1">
-                        <SelectValue placeholder="Da assegnare" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">Da assegnare</SelectItem>
-                        {utenti.map((utente) => (
-                          <SelectItem key={utente.id} value={utente.id}>
-                            {utente.displayName} ({utente.email})
-                          </SelectItem>
-                        ))}
-                        <SelectItem value="ignora">Non è un turno (aiuti, totali)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <select
+                      id={`user-${label}`}
+                      name="userId"
+                      defaultValue={attuale}
+                      className="border-input bg-background h-11 min-w-0 flex-1 rounded-lg border px-3 text-base"
+                    >
+                      <option value="">Da assegnare</option>
+                      {utenti.map((utente) => (
+                        <option key={utente.id} value={utente.id}>
+                          {utente.displayName} ({utente.email})
+                        </option>
+                      ))}
+                      <option value="ignora">Non è un turno (aiuti, totali)</option>
+                    </select>
                     <Button type="submit" size="touch" className="shrink-0">
                       Salva
                     </Button>

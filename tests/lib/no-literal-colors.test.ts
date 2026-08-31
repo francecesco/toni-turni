@@ -13,6 +13,20 @@ const UTILITY =
 const CON_CIFRE = new RegExp(`\\b(?:${UTILITY})-(?:${FAMIGLIE})-\\d{2,3}\\b`, 'g')
 /** `bg-white` non ha cifre e sfuggirebbe al primo modello. */
 const SENZA_CIFRE = /\b(?:bg|text|border|fill|stroke|divide|ring)-(?:white|black)\b/g
+/**
+ * `bg-[#ff0000]`, `border-[rgb(0,255,0)]`, `text-[hsl(0,0%,0%)]`: un valore
+ * arbitrario scavalca i token tanto quanto un nome di famiglia.
+ *
+ * `color-mix(...)` **non** è colpevole di per sé: `button.tsx` lo usa già per
+ * sfumare un token sopra un altro
+ * (`bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)]`), zero
+ * colori letterali, solo due variabili. La prima versione di questo modello
+ * flaggava anche quello — verificato per mutazione contro il codice vero, non
+ * solo contro un file di prova — quindi `color-mix` è sospetto solo se dentro
+ * le parentesi compare un `#` prima della chiusura: lì dentro c è un colore
+ * scritto a mano, non due token mescolati.
+ */
+const ARBITRARIO = new RegExp(`\\b(?:${UTILITY})-\\[(?:#|rgba?\\(|hsla?\\(|oklch\\(|color-mix\\([^\\]]*#)`, 'g')
 
 function sorgenti(cartella: string): string[] {
   const trovati: string[] = []
@@ -26,7 +40,9 @@ function sorgenti(cartella: string): string[] {
 
 function coloriLetterali(file: string): string[] {
   const testo = readFileSync(file, 'utf8')
-  return [...testo.matchAll(CON_CIFRE), ...testo.matchAll(SENZA_CIFRE)].map((m) => m[0])
+  return [...testo.matchAll(CON_CIFRE), ...testo.matchAll(SENZA_CIFRE), ...testo.matchAll(ARBITRARIO)].map(
+    (m) => m[0],
+  )
 }
 
 const TUTTI = [
