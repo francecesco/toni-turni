@@ -26,3 +26,5 @@ export {
 } from './confirm'
 export type { CellCorrection, CorrectionResult } from './correct'
 export { ReviewRejectedError, correctCell } from './correct'
+export type { LandingCandidate, MonthEntry } from './landing'
+export { landingRoster, monthPickerEntries } from './landing'

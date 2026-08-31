@@ -74,3 +74,23 @@ export function wallClockToUtc(wallClock: string, timeZone: string): Date {
 export function hoursBetween(a: Date, b: Date): number {
   return (b.getTime() - a.getTime()) / 3_600_000
 }
+
+/**
+ * Anno e mese (1-based) di un istante, letti sul calendario di Roma. Serve a
+ * sapere su quale mese aprire l app: `getMonth()` darebbe il mese UTC, e alle
+ * 00:30 del primo settembre a Roma l UTC dice ancora agosto.
+ */
+export function romeYearMonth(instant: Date): { year: number; month: number } {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ROME_TZ,
+    year: 'numeric',
+    month: '2-digit',
+  })
+
+  const parti: Record<string, string> = {}
+  for (const parte of formatter.formatToParts(instant)) {
+    if (parte.type !== 'literal') parti[parte.type] = parte.value
+  }
+
+  return { year: Number(parti.year), month: Number(parti.month) }
+}
