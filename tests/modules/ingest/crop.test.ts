@@ -4,6 +4,7 @@ import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 import {
   cropRosterBands,
+  cropRosterWhole,
   deskewRoster,
   GridNotFoundError,
   type DeskewedRoster,
@@ -121,10 +122,9 @@ describe('cropRosterBands', () => {
   })
 
   /**
-   * Il tetto di token al minuto di Groq è 8000 e conta anche quelli prenotati
-   * per l'uscita, quindi la banda più grossa non può crescere a piacere. Il
-   * ritaglio misurato al 100% di accuratezza era 700x1313, cioè 0,92 Mpx: si
-   * resta in quell'ordine di grandezza.
+   * Il ritaglio misurato al 100% di accuratezza era 700x1313, cioè 0,92 Mpx: una
+   * banda che cresce oltre quell'ordine di grandezza perde pixel per riga, e la
+   * leggibilità va rimisurata prima, non dopo.
    */
   it('tiene ogni banda nell’ordine di grandezza del ritaglio misurato al 100%', async () => {
     for (const [path, giorni] of [
@@ -701,5 +701,93 @@ describe('cropRosterBands, la cucitura di metà mese', () => {
         MARGINE_MINIMO_RIGHE,
       )
     }
+  })
+})
+
+/**
+ * Il ritaglio della **tabella intera in una sola immagine**: la strategia a
+ * chiamata singola.
+ *
+ * Quello che la distingue dall estrazione a tabella intera misurata al 18,5%
+ * non e la quantita di celle nell immagine — quella e la stessa — ma tre cose
+ * che allora non c erano: la tabella e **raddrizzata** invece di vista in
+ * prospettiva, e **ritagliata** sulla griglia stampata invece di annegata nella
+ * foto, ed e ricampionata ai **pixel per riga della configurazione misurata al
+ * 100%**. Se la misura dira che non basta, sara questo il numero da guardare.
+ */
+describe('cropRosterWhole', () => {
+  it('e una banda sola che copre tutti i giorni e tutte le colonne', async () => {
+    const intera = await cropRosterWhole(readFileSync(AGOSTO), { daysInMonth: 31 })
+
+    expect(intera.spec.dayFrom).toBe(1)
+    expect(intera.spec.dayTo).toBe(31)
+    // agosto: 10 colonne di contenuto
+    expect(intera.spec.columns).toHaveLength(10)
+  })
+
+  it('e un JPEG con le dimensioni che dichiara', async () => {
+    const intera = await cropRosterWhole(readFileSync(SETTEMBRE), { daysInMonth: 30 })
+
+    const meta = await sharp(intera.image).metadata()
+    expect(meta.format).toBe('jpeg')
+    expect(meta.width).toBe(intera.width)
+    expect(meta.height).toBe(intera.height)
+    expect(intera.image.byteLength).toBeGreaterThan(1000)
+  })
+
+  /**
+   * Il numero che conta: il ritaglio letto al 100% dava ~77 px per riga.
+   *
+   * Misurato: agosto **78,0** px per riga (2762x2574), settembre **65,2**
+   * (3000x2087). Su settembre il bersaglio non si raggiunge e non e un difetto,
+   * e geometria: quella tabella ha 13 colonne di contenuto su un riquadro
+   * 1600x1113, quindi il tetto sul lato lungo morde prima. 65 px per riga sono
+   * ancora il doppio del dettaglio vero della foto (~32 px per riga a 1600 px di
+   * lato lungo), e la soglia sta a 60 per lasciare margine a un modulo con una
+   * colonna in piu senza smettere di accorgersi di un crollo.
+   */
+  it('da alla tabella intera i pixel per riga della configurazione misurata al 100%', async () => {
+    for (const [path, giorni] of [
+      [AGOSTO, 31],
+      [SETTEMBRE, 30],
+    ] as const) {
+      const intera = await cropRosterWhole(readFileSync(path), { daysInMonth: giorni })
+      const righe = giorni + 2 // + le due righe d intestazione
+      expect(intera.height / righe, path).toBeGreaterThan(60)
+    }
+  })
+
+  /**
+   * Oltre un certo lato il provider ricampiona l immagine da se: spendere byte
+   * sopra quel limite non aggiunge dettaglio, lo fa solo decidere a qualcun
+   * altro.
+   */
+  it('non sfora il lato massimo che il provider tiene senza ricampionare', async () => {
+    for (const [path, giorni] of [
+      [AGOSTO, 31],
+      [SETTEMBRE, 30],
+    ] as const) {
+      const intera = await cropRosterWhole(readFileSync(path), { daysInMonth: giorni })
+      expect(Math.max(intera.width, intera.height), path).toBeLessThanOrEqual(3072)
+    }
+  })
+
+  it('affianca il blocco dei giorni una volta sola, non due', async () => {
+    // Il blocco dei giorni e gia il lato sinistro della tabella: se il ritaglio
+    // delle colonne partisse da 0 comparirebbe due volte, e il modello vedrebbe
+    // due colonne di giorni accanto.
+    const intera = await cropRosterWhole(readFileSync(AGOSTO), { daysInMonth: 31 })
+    const raddrizzata = await raddrizzataDi(AGOSTO)
+
+    const larghezzaAttesa = raddrizzata.columns.at(-1)! - raddrizzata.columns[0]
+    const larghezzaComposta =
+      intera.spec.days.width + intera.spec.crop.width
+    expect(larghezzaComposta).toBeCloseTo(larghezzaAttesa, 3)
+  })
+
+  it('fallisce con GridNotFoundError se la foto non contiene una tabella', async () => {
+    await expect(
+      cropRosterWhole(await foglioBianco(), { daysInMonth: 31 }),
+    ).rejects.toThrow(GridNotFoundError)
   })
 })

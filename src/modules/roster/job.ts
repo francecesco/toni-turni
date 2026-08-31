@@ -1,16 +1,18 @@
 import { prisma } from '@/lib/db'
 import { listShiftCodes } from '@/modules/codes'
 import {
-  createTokenPacer,
+  createRetryAfterPacer,
+  extractionStrategyFromEnv,
   extractRosterByBands,
   type BandPacer,
+  type ExtractionStrategy,
 } from '@/modules/extract'
 import {
   fallbackProviderFromEnv,
   providerFromEnv,
   type VisionProvider,
 } from '@/modules/extract/providers'
-import { cropRosterBands, readRosterImage, type RosterBand } from '@/modules/ingest'
+import { cropRosterBands, cropRosterWhole, readRosterImage, type RosterBand } from '@/modules/ingest'
 import {
   finishExtraction,
   markBandFailed,
@@ -22,23 +24,43 @@ import {
 } from './repository'
 
 /**
- * Il job di estrazione. Sta **fuori** dalla richiesta HTTP dell upload: leggere
- * una tabella sono 10-14 chiamate al provider distanziate dal tetto di token al
- * minuto, cioè 10-20 minuti. L upload risponde subito, questo gira dopo e lo
- * stato vive su SQLite banda per banda, così un riavvio riprende invece di
- * ricominciare o, peggio, di lasciare la tabella in un vicolo cieco.
+ * Il job di estrazione. Sta **fuori** dalla richiesta HTTP dell upload: anche una
+ * chiamata sola su una tabella intera sono decine di secondi, e il rilevamento
+ * del riquadro piu il raddrizzamento ne aggiungono altri. L upload risponde
+ * subito, questo gira dopo e lo stato vive su SQLite banda per banda, cosi un
+ * riavvio riprende invece di ricominciare o, peggio, di lasciare la tabella in
+ * un vicolo cieco.
  *
- * La geometria delle bande **non si chiede a nessuno**: arriva da
- * `cropRosterBands`, che rileva il riquadro della tabella e i suoi confini di
- * colonna sulla foto e la raddrizza. È la pipeline misurata al 99,8% per cella
- * (487 su 488) contro il 18,5% della tabella intera.
+ * La geometria **non si chiede a nessuno**: arriva dal ritaglio, che rileva il
+ * riquadro della tabella e i suoi confini di colonna sulla foto e la raddrizza.
  *
- * Le bande si mandano **una alla volta**, non tutte in una chiamata sola, perché
- * ogni banda letta deve finire su SQLite prima della successiva: è quello che
- * rende ripartibile un lavoro da venti minuti. Il distanziamento resta uno solo
- * per tutto il job (`createTokenPacer`), condiviso anche con il ritentativo che
- * `extractRosterByBands` fa quando il provider risponde 429.
+ * Il percorso e uno solo, con due configurazioni (`AI_STRATEGY`):
+ *
+ * - `whole`, il default: la tabella intera in **una banda sola**, cioe una
+ *   chiamata. E la strategia veloce.
+ * - `bands`: mezzo mese per due colonne, la pipeline misurata al 99,8% per cella
+ *   (487 su 488). Piu chiamate, e il ripiego se la chiamata sola non regge.
+ *
+ * In entrambi i casi le bande si mandano **una alla volta**, perche ogni banda
+ * letta deve finire su SQLite prima della successiva: e quello che rende
+ * ripartibile il lavoro. Con `whole` la banda e una e la ripresa e tutto o
+ * niente, che e una proprieta della strategia, non un difetto del job.
  */
+
+export { extractionStrategyFromEnv, type ExtractionStrategy }
+
+/**
+ * Il ritaglio che la strategia richiede. Le due configurazioni escono dalla
+ * stessa forma — un elenco di bande — quindi il resto del job non le distingue.
+ */
+function cropForStrategy(
+  strategy: ExtractionStrategy,
+): (image: Buffer, daysInMonth: number) => Promise<RosterBand[]> {
+  if (strategy === 'bands') {
+    return (image, giorni) => cropRosterBands(image, { daysInMonth: giorni })
+  }
+  return async (image, giorni) => [await cropRosterWhole(image, { daysInMonth: giorni })]
+}
 
 export interface JobDeps {
   provider?: VisionProvider
@@ -65,8 +87,7 @@ export async function runExtractionJob(
 ): Promise<JobOutcome> {
   const now = deps.now ?? (() => new Date())
   const readImage = deps.readImage ?? readRosterImage
-  const cropBands =
-    deps.cropBands ?? ((image: Buffer, giorni: number) => cropRosterBands(image, { daysInMonth: giorni }))
+  const cropBands = deps.cropBands ?? cropForStrategy(extractionStrategyFromEnv())
 
   const roster = await prisma.roster.findUnique({
     where: { id: rosterId },
@@ -132,7 +153,7 @@ export async function runExtractionJob(
   const knownCodes = legenda.map((def) => def.code)
   const provider = deps.provider ?? providerFromEnv()
   const fallback = deps.fallback === undefined ? fallbackProviderFromEnv() : deps.fallback
-  const pace = deps.pace ?? createTokenPacer()
+  const pace = deps.pace ?? createRetryAfterPacer()
   const header = { year: roster.year, month: roster.month, ward: roster.ward }
 
   let conflitti = 0

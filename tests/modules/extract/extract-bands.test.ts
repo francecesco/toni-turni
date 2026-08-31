@@ -2,9 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import type { BandSpec } from '@/modules/ingest/layout'
 import type { RosterBand } from '@/modules/ingest/crop'
 import {
-  createTokenPacer,
+  createRetryAfterPacer,
   extractRosterByBands,
-  GROQ_FREE_TOKENS_PER_MINUTE,
 } from '@/modules/extract/extract-bands'
 import {
   VisionProviderError,
@@ -59,9 +58,13 @@ function provider(name: string, ...risposte: Array<string | Error>): VisionProvi
 
 /** Un pacer che non attende: nessun test deve dormire. */
 function pacerFinto() {
-  const chiamate: Array<{ index: number; retryAfterSeconds?: number }> = []
-  const pace = async (index: number, retryAfterSeconds?: number) => {
-    chiamate.push({ index, retryAfterSeconds })
+  const chiamate: Array<{ index: number; retryAfterSeconds?: number; rateLimited?: boolean }> = []
+  const pace = async (
+    index: number,
+    retryAfterSeconds?: number,
+    options?: { rateLimited?: boolean },
+  ) => {
+    chiamate.push({ index, retryAfterSeconds, rateLimited: options?.rateLimited })
   }
   return { pace, chiamate }
 }
@@ -69,7 +72,7 @@ function pacerFinto() {
 describe('extractRosterByBands', () => {
   it('fonde due bande riuscite in un unica estrazione', async () => {
     const p = provider(
-      'groq',
+      'gemini',
       risposta([[1, 'RENATA', 'M']]),
       risposta([[1, 'ALEX', 'P']]),
     )
@@ -90,14 +93,14 @@ describe('extractRosterByBands', () => {
     expect(outcome.extraction.columns).toEqual(['RENATA', 'ALEX'])
     expect(outcome.extraction.year).toBe(2026)
     expect(outcome.rawOutputs).toHaveLength(2)
-    expect(outcome.provider).toBe('groq')
+    expect(outcome.provider).toBe('gemini')
     expect(outcome.attempts).toBe(2)
     expect(outcome.conflicts).toBe(0)
   })
 
   it('una banda fallita finisce in failures, le altre restano', async () => {
     const p = provider(
-      'groq',
+      'gemini',
       risposta([[1, 'RENATA', 'M']]),
       new VisionProviderError('quota esaurita'),
       risposta([[1, 'ALEX', 'P']]),
@@ -124,14 +127,14 @@ describe('extractRosterByBands', () => {
     let inVolo = 0
     let massimoInVolo = 0
     const p: VisionProvider = {
-      name: 'groq',
+      name: 'gemini',
       extract: vi.fn(async (request) => {
         inVolo += 1
         massimoInVolo = Math.max(massimoInVolo, inVolo)
         ordine.push(request.image[0])
         await Promise.resolve()
         inVolo -= 1
-        return { raw: risposta([]), model: 'm', provider: 'groq' }
+        return { raw: risposta([]), model: 'm', provider: 'gemini' }
       }),
     }
     const { pace } = pacerFinto()
@@ -149,7 +152,7 @@ describe('extractRosterByBands', () => {
   })
 
   it('chiama pace fra le bande e non dopo l ultima', async () => {
-    const p = provider('groq', risposta([]), risposta([]), risposta([]))
+    const p = provider('gemini', risposta([]), risposta([]), risposta([]))
     const { pace, chiamate } = pacerFinto()
 
     await extractRosterByBands({
@@ -165,7 +168,7 @@ describe('extractRosterByBands', () => {
 
   it('passa al pacer il retryAfterSeconds dell errore e ritenta la banda una volta sola', async () => {
     const p = provider(
-      'groq',
+      'gemini',
       new VisionProviderError('troppe richieste', { status: 429, retryAfterSeconds: 12 }),
       risposta([[1, 'RENATA', 'M']]),
     )
@@ -179,7 +182,7 @@ describe('extractRosterByBands', () => {
       pace,
     })
 
-    expect(chiamate).toEqual([{ index: 0, retryAfterSeconds: 12 }])
+    expect(chiamate).toEqual([{ index: 0, retryAfterSeconds: 12, rateLimited: true }])
     expect(p.extract).toHaveBeenCalledTimes(2)
     expect(outcome.failures).toEqual([])
     expect(outcome.extraction.cells).toHaveLength(1)
@@ -188,7 +191,7 @@ describe('extractRosterByBands', () => {
 
   it('non ritenta più di una volta una banda che va sempre in rate limit', async () => {
     const p = provider(
-      'groq',
+      'gemini',
       new VisionProviderError('troppe richieste', { status: 429, retryAfterSeconds: 3 }),
       new VisionProviderError('troppe richieste', { status: 429, retryAfterSeconds: 3 }),
     )
@@ -206,8 +209,53 @@ describe('extractRosterByBands', () => {
     expect(outcome.failures).toHaveLength(1)
   })
 
+  it('ritenta un rate limit anche quando il provider non indica quanto attendere', async () => {
+    // Groq mandava sempre `retry-after`; non tutti lo fanno. Gate sul solo header
+    // significava non ritentare affatto, cioe perdere la banda al primo 429.
+    const p = provider(
+      'gemini',
+      new VisionProviderError('troppe richieste', { status: 429 }),
+      risposta([[1, 'RENATA', 'M']]),
+    )
+    const { pace, chiamate } = pacerFinto()
+
+    const outcome = await extractRosterByBands({
+      bands: [band(1, [1], 1, 1)],
+      knownCodes: [],
+      header: HEADER,
+      provider: p,
+      pace,
+    })
+
+    expect(p.extract).toHaveBeenCalledTimes(2)
+    expect(chiamate).toEqual([{ index: 0, retryAfterSeconds: undefined, rateLimited: true }])
+    expect(outcome.failures).toEqual([])
+    expect(outcome.extraction.cells).toHaveLength(1)
+  })
+
+  it('non ritenta un errore del provider che non e un rate limit', async () => {
+    // Una chiave sbagliata o un modello inesistente non migliorano riprovando.
+    const p = provider(
+      'gemini',
+      new VisionProviderError('chiave non valida', { status: 401 }),
+      risposta([[1, 'RENATA', 'M']]),
+    )
+    const { pace } = pacerFinto()
+
+    const outcome = await extractRosterByBands({
+      bands: [band(1, [1], 1, 1)],
+      knownCodes: [],
+      header: HEADER,
+      provider: p,
+      pace,
+    })
+
+    expect(p.extract).toHaveBeenCalledTimes(1)
+    expect(outcome.failures).toHaveLength(1)
+  })
+
   it('non ritenta una risposta troncata: rimandarla la troncherebbe di nuovo', async () => {
-    const p = provider('groq', new VisionTruncatedError('risposta troncata'))
+    const p = provider('gemini', new VisionTruncatedError('risposta troncata'))
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({
@@ -224,7 +272,7 @@ describe('extractRosterByBands', () => {
   })
 
   it('chiede una riparazione quando l output della banda non è valido, e riesce', async () => {
-    const p = provider('groq', '{"columns": ["RENATA"]}', risposta([[1, 'RENATA', 'M']]))
+    const p = provider('gemini', '{"columns": ["RENATA"]}', risposta([[1, 'RENATA', 'M']]))
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({
@@ -242,7 +290,7 @@ describe('extractRosterByBands', () => {
   })
 
   it('passa alla riserva la banda che il provider principale non riesce a leggere', async () => {
-    const primario = provider('groq', new VisionProviderError('quota esaurita'))
+    const primario = provider('gemini', new VisionProviderError('quota esaurita'))
     const riserva = provider('anthropic', risposta([[1, 'RENATA', 'M']]))
     const { pace } = pacerFinto()
 
@@ -264,7 +312,7 @@ describe('extractRosterByBands', () => {
     // il numero di bande dipende da quante colonne ha la foto (10 su agosto,
     // 14 su settembre): il test non lo fissa
     const bande = Array.from({ length: 11 }, (_, i) => band(i, [i + 1], 1, 16))
-    const p = provider('groq', ...bande.map(() => new VisionProviderError('quota esaurita')))
+    const p = provider('gemini', ...bande.map(() => new VisionProviderError('quota esaurita')))
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({
@@ -278,11 +326,11 @@ describe('extractRosterByBands', () => {
     expect(outcome.failures).toHaveLength(bande.length)
     expect(outcome.extraction.cells).toEqual([])
     expect(outcome.extraction.columns).toEqual([])
-    expect(outcome.provider).toBe('groq')
+    expect(outcome.provider).toBe('gemini')
   })
 
   it('costruisce per ogni banda il prompt del suo intervallo di giorni e delle sue colonne', async () => {
-    const p = provider('groq', risposta([]), risposta([]))
+    const p = provider('gemini', risposta([]), risposta([]))
     const { pace } = pacerFinto()
 
     await extractRosterByBands({
@@ -305,7 +353,7 @@ describe('extractRosterByBands', () => {
 
   it('propaga i conflitti della fusione e scarta le colonne di servizio', async () => {
     const p = provider(
-      'groq',
+      'gemini',
       risposta([
         [1, 'RENATA', 'M'],
         [1, 'AIUTO MATT.', '3'],
@@ -330,7 +378,7 @@ describe('extractRosterByBands', () => {
   })
 
   it('conserva il testo grezzo anche delle bande fallite, che è ciò che si guarda dopo', async () => {
-    const p = provider('groq', 'questa non è una risposta', 'nemmeno questa')
+    const p = provider('gemini', 'questa non è una risposta', 'nemmeno questa')
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({
@@ -346,7 +394,7 @@ describe('extractRosterByBands', () => {
   })
 
   it('senza bande non chiama il provider e non lancia', async () => {
-    const p = provider('groq')
+    const p = provider('gemini')
     const { pace, chiamate } = pacerFinto()
 
     const outcome = await extractRosterByBands({
@@ -364,121 +412,56 @@ describe('extractRosterByBands', () => {
   })
 })
 
-describe('createTokenPacer', () => {
-  /** Orologio e attesa finti: il pacer non deve mai dormire in un test. */
+describe('createRetryAfterPacer', () => {
+  /** Attesa finta: nessun test deve dormire davvero. */
   function orologio() {
-    let adesso = 0
     const attese: number[] = []
-    return {
-      attese,
-      now: () => adesso,
-      sleep: async (ms: number) => {
-        attese.push(ms)
-        adesso += ms
-      },
-      avanza: (ms: number) => {
-        adesso += ms
-      },
-    }
+    return { attese, sleep: async (ms: number) => void attese.push(ms) }
   }
 
-  it('attende l intervallo che tiene il consumo sotto il tetto di token al minuto', async () => {
+  it('fra due bande non attende affatto', async () => {
+    // Il pacer di prima esisteva per il tetto di 8000 token al minuto del piano
+    // gratuito di Groq, e faceva ~50 s di attesa fra una banda e l altra: il 92%
+    // del tempo di un estrazione era quello. Senza quel tetto non c e niente da
+    // distanziare, e distanziare "per prudenza" costerebbe minuti a vuoto.
     const o = orologio()
-    const pace = createTokenPacer({
-      tokensPerMinute: 8000,
-      tokensPerBand: 4000,
-      now: o.now,
-      sleep: o.sleep,
-    })
+    const pace = createRetryAfterPacer({ sleep: o.sleep })
 
     await pace(1)
-
-    // 4000 token per banda su un tetto di 8000 al minuto: una banda ogni 30 s
-    expect(o.attese).toEqual([30_000])
-  })
-
-  it('sottrae il tempo già passato nella chiamata al modello', async () => {
-    const o = orologio()
-    const pace = createTokenPacer({
-      tokensPerMinute: 8000,
-      tokensPerBand: 4000,
-      now: o.now,
-      sleep: o.sleep,
-    })
-
-    await pace(1)
-    o.avanza(10_000) // la banda successiva ha impiegato 10 s
     await pace(2)
+    await pace(3)
 
-    expect(o.attese).toEqual([30_000, 20_000])
+    expect(o.attese).toEqual([])
   })
 
-  it('non attende affatto se è già passato più dell intervallo', async () => {
+  it('attende quando il provider ha chiesto di riprovare piu tardi', async () => {
     const o = orologio()
-    const pace = createTokenPacer({
-      tokensPerMinute: 8000,
-      tokensPerBand: 4000,
-      now: o.now,
-      sleep: o.sleep,
-    })
+    const pace = createRetryAfterPacer({ sleep: o.sleep })
 
-    await pace(1)
-    o.avanza(90_000)
-    await pace(2)
+    await pace(1, 30)
 
     expect(o.attese).toEqual([30_000])
   })
 
-  it('rispetta un retryAfterSeconds più lungo dell intervallo', async () => {
+  it('attende un ritardo di riserva quando il provider non lo indica', async () => {
+    // Un rate limit senza `retry-after` c e: riprovare subito prende un altro
+    // rate limit e brucia il solo ritentativo che una banda ha.
     const o = orologio()
-    const pace = createTokenPacer({
-      tokensPerMinute: 8000,
-      tokensPerBand: 4000,
-      now: o.now,
-      sleep: o.sleep,
-    })
+    const pace = createRetryAfterPacer({ sleep: o.sleep })
 
-    await pace(1, 45)
+    await pace(1, undefined, { rateLimited: true })
 
-    expect(o.attese).toEqual([45_000])
+    expect(o.attese).toHaveLength(1)
+    expect(o.attese[0]).toBeGreaterThanOrEqual(5_000)
   })
 
-  it('col retryAfterSeconds più corto dell intervallo attende comunque l intervallo', async () => {
+  it('rispetta il ritardo di riserva configurato', async () => {
     const o = orologio()
-    const pace = createTokenPacer({
-      tokensPerMinute: 8000,
-      tokensPerBand: 4000,
-      now: o.now,
-      sleep: o.sleep,
-    })
+    const pace = createRetryAfterPacer({ sleep: o.sleep, defaultBackoffSeconds: 3 })
 
-    await pace(1, 2)
+    await pace(1, undefined, { rateLimited: true })
 
-    expect(o.attese).toEqual([30_000])
-  })
-
-  it('col ritmo di default copre la banda piu pesante misurata, prenotati compresi', async () => {
-    // Numeri della misura reale su 24 bande (due foto): l input per banda e
-    // 1577-1581 nel caso normale e 2601-2605 sulle bande larghe, quelle che
-    // includono le colonne di aiuto. Groq mette nel budget al minuto anche i
-    // token di output **prenotati** con `max_completion_tokens`, quindi la
-    // banda peggiore pesa 2605 + 4000 = 6605. Col ritmo tarato su 5500 si sono
-    // vista 3 risposte 429.
-    const INPUT_BANDA_PEGGIORE = 2605
-    const OUTPUT_PRENOTATI = 4000
-    const pesoBandaPeggiore = INPUT_BANDA_PEGGIORE + OUTPUT_PRENOTATI
-
-    const o = orologio()
-    const pace = createTokenPacer({ now: o.now, sleep: o.sleep })
-
-    await pace(1)
-
-    const intervallo = o.attese[0]
-    expect(intervallo).toBeGreaterThan(0)
-    // quante bande stanno in un minuto a questo ritmo: anche se sono tutte
-    // della specie peggiore, devono stare sotto il tetto
-    const bandePerMinuto = 60_000 / intervallo
-    expect(bandePerMinuto * pesoBandaPeggiore).toBeLessThanOrEqual(GROQ_FREE_TOKENS_PER_MINUTE)
+    expect(o.attese).toEqual([3_000])
   })
 })
 
@@ -492,7 +475,7 @@ describe('createTokenPacer', () => {
 describe('extractRosterByBands, bande lette solo in parte', () => {
   it('dichiara un buco quando la banda restituisce meno celle di quelle chieste', async () => {
     const p = provider(
-      'groq',
+      'gemini',
       risposta([
         [1, 'RENATA', 'M'],
         [1, 'ALEX', 'P'],
@@ -519,7 +502,7 @@ describe('extractRosterByBands, bande lette solo in parte', () => {
   })
 
   it('dichiara un buco anche quando la banda risponde con zero celle', async () => {
-    const p = provider('groq', risposta([]))
+    const p = provider('gemini', risposta([]))
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({
@@ -537,7 +520,7 @@ describe('extractRosterByBands, bande lette solo in parte', () => {
 
   it('non dichiara nessun buco quando la banda è completa', async () => {
     const p = provider(
-      'groq',
+      'gemini',
       risposta([
         [1, 'RENATA', 'M'],
         [1, 'ALEX', ''],
@@ -566,7 +549,7 @@ describe('extractRosterByBands, bande lette solo in parte', () => {
    */
   it('non lascia che duplicati e celle fuori intervallo riempiano il buco', async () => {
     const p = provider(
-      'groq',
+      'gemini',
       risposta([
         [1, 'RENATA', 'M'],
         [1, 'RENATA', 'M'],
@@ -603,7 +586,7 @@ describe('extractRosterByBands, bande lette solo in parte', () => {
     for (let giorno = 1; giorno <= 15; giorno += 1) {
       celle.push([giorno, 'AIUTO MATT.', ''], [giorno, 'AIUTO MATT.', ''])
     }
-    const p = provider('groq', risposta(celle, ['AIUTO MATT.', 'AIUTO MATT.']))
+    const p = provider('gemini', risposta(celle, ['AIUTO MATT.', 'AIUTO MATT.']))
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({
@@ -628,7 +611,7 @@ describe('extractRosterByBands, bande lette solo in parte', () => {
   it('non dichiara nessun buco quando le colonne di servizio omonime sono nominate una volta sola', async () => {
     const celle: Array<[number, string, string]> = []
     for (let giorno = 17; giorno <= 31; giorno += 1) celle.push([giorno, 'AIUTO MATT.', ''])
-    const p = provider('groq', risposta(celle, ['AIUTO MATT.']))
+    const p = provider('gemini', risposta(celle, ['AIUTO MATT.']))
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({
@@ -652,7 +635,7 @@ describe('extractRosterByBands, bande lette solo in parte', () => {
     for (let giorno = 1; giorno <= 15; giorno += 1) {
       celle.push([giorno, 'CARMEN', 'M'], [giorno, 'AIUTO POM.', ''])
     }
-    const p = provider('groq', risposta(celle, ['CARMEN', 'AIUTO POM.']))
+    const p = provider('gemini', risposta(celle, ['CARMEN', 'AIUTO POM.']))
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({
@@ -676,7 +659,7 @@ describe('extractRosterByBands, bande lette solo in parte', () => {
   it('dichiara il buco della colonna di persona che la banda non ha nominato', async () => {
     const celle: Array<[number, string, string]> = []
     for (let giorno = 1; giorno <= 15; giorno += 1) celle.push([giorno, 'CARMEN', 'M'])
-    const p = provider('groq', risposta(celle, ['CARMEN']))
+    const p = provider('gemini', risposta(celle, ['CARMEN']))
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({
@@ -694,7 +677,7 @@ describe('extractRosterByBands, bande lette solo in parte', () => {
 
   /** Una banda non letta per niente resta un buco senza conteggio di celle. */
   it('distingue la banda non letta da quella letta a metà', async () => {
-    const p = provider('groq', new VisionProviderError('quota esaurita'))
+    const p = provider('gemini', new VisionProviderError('quota esaurita'))
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({

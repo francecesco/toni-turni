@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 /**
- * L avanzamento mentre si aspetta. Leggere una tabella sono 10-20 minuti: la
+ * L avanzamento mentre si aspetta. Leggere una tabella e una chiamata al modello
+ * (o una per banda, con `AI_STRATEGY=bands`): la
  * pagina si aggiorna da sola invece di chiedere all utente di ricaricare.
  *
  * Interroga l avanzamento e ridisegna solo i numeri; quando lo **stato** cambia
@@ -80,7 +81,7 @@ export function ExtractionProgress({
       <p className="text-xs text-muted-foreground">
         {progresso.status === 'interrupted'
           ? "L'estrazione si era interrotta: riprende dalle letture che mancano."
-          : 'Ogni lettura richiede circa un minuto: puoi chiudere questa pagina e tornare dopo.'}
+          : 'Puoi chiudere questa pagina e tornare dopo: la lettura va avanti da sé.'}
       </p>
     </div>
   )

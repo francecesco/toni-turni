@@ -7,8 +7,8 @@ afterEach(() => {
 })
 
 describe('providerFromEnv', () => {
-  it('usa Groq per default', () => {
-    expect(providerFromEnv().name).toBe('groq')
+  it('usa Gemini per default', () => {
+    expect(providerFromEnv().name).toBe('gemini')
   })
 
   it('usa Anthropic quando AI_PROVIDER lo chiede', () => {
@@ -33,8 +33,8 @@ describe('fallbackProviderFromEnv', () => {
   })
 
   it('ignora un fallback identico al provider principale', () => {
-    process.env.AI_PROVIDER = 'groq'
-    process.env.AI_FALLBACK_PROVIDER = 'groq'
+    process.env.AI_PROVIDER = 'gemini'
+    process.env.AI_FALLBACK_PROVIDER = 'gemini'
     expect(fallbackProviderFromEnv()).toBeNull()
   })
 })

@@ -10,7 +10,7 @@ import { reclaimStaleExtractions, resumableRosters } from './repository'
  * estrazioni il cui battito è vecchio (processo morto a metà) e riprende ogni
  * tabella autorizzata a cui manca una banda. Le estrazioni girano **in serie**,
  * perché SQLite non gestisce scritture concorrenti e perché il provider AI ha un
- * tetto di token al minuto.
+ * tempo del rilevamento e delle chiamate al modello.
  */
 
 // Stato di processo: se il processo muore, muore anche questo — ed è esattamente

@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { prisma } from '@/lib/db'
 import { monthLabel } from '@/lib/time'
 import { requireReferente } from '@/modules/auth'
-import { normalizeColumn } from '@/modules/extract'
+import { extractionStrategyFromEnv, normalizeColumn } from '@/modules/extract'
 import { rosterImageExists } from '@/modules/ingest'
 import { rosterProgress } from '@/modules/roster'
 import { columnCoverage, describeUnreadBands, listColumnAliases } from '@/modules/review'
@@ -23,6 +23,10 @@ export default async function RosterPage({
   await requireReferente()
   const { id } = await params
   const { error } = await searchParams
+  // Quanto durera la lettura dipende dalla strategia, e dire "una decina di
+  // letture da un minuto" quando ne parte una sola insegna a non fidarsi
+  // dell avviso.
+  const strategia = extractionStrategyFromEnv()
 
   const roster = await prisma.roster.findUnique({
     where: { id },
@@ -124,8 +128,11 @@ export default async function RosterPage({
             />
             <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
               La foto contiene i turni di tutte le colleghe. Premendo il bottone la mandi al
-              servizio di lettura automatica, una porzione alla volta: una decina di letture da un
-              minuto ciascuna. Puoi chiudere la pagina e tornare dopo.
+              servizio di lettura automatica.{' '}
+              {strategia === 'whole'
+                ? 'È una lettura sola e ci vuole meno di un minuto.'
+                : 'Una porzione alla volta: una decina di letture da un minuto ciascuna.'}{' '}
+              Puoi chiudere la pagina e tornare dopo.
             </div>
             <form action={`/api/rosters/${id}/extract`} method="post">
               <button

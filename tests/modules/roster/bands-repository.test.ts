@@ -250,12 +250,12 @@ describe('finishExtraction — lo stato finale dice la verità sulle bande', () 
     await repo.saveBandCells(r.id, 0, [cella(1, 'A', 'M')], { rawOutput: '{}', now: ORA })
     await repo.saveBandCells(r.id, 1, [cella(1, 'B', 'M')], { rawOutput: '{}', now: ORA })
 
-    const stato = await repo.finishExtraction(r.id, { provider: 'groq', now: ORA })
+    const stato = await repo.finishExtraction(r.id, { provider: 'gemini', now: ORA })
 
     expect(stato).toBe('extracted')
     const row = await prisma.roster.findUniqueOrThrow({ where: { id: r.id } })
     expect(row.status).toBe('extracted')
-    expect(row.provider).toBe('groq')
+    expect(row.provider).toBe('gemini')
   })
 
   it('partial quando qualche banda non è stata letta', async () => {
@@ -265,7 +265,7 @@ describe('finishExtraction — lo stato finale dice la verità sulle bande', () 
     await repo.markBandFailed(r.id, 1, 'illeggibile', null, ORA)
     await repo.markBandFailed(r.id, 2, 'illeggibile', null, ORA)
 
-    const stato = await repo.finishExtraction(r.id, { provider: 'groq', now: ORA })
+    const stato = await repo.finishExtraction(r.id, { provider: 'gemini', now: ORA })
 
     expect(stato).toBe('partial')
   })
@@ -276,7 +276,7 @@ describe('finishExtraction — lo stato finale dice la verità sulle bande', () 
     await repo.markBandFailed(r.id, 0, 'illeggibile', null, ORA)
     await repo.markBandFailed(r.id, 1, 'illeggibile', null, ORA)
 
-    const stato = await repo.finishExtraction(r.id, { provider: 'groq', now: ORA })
+    const stato = await repo.finishExtraction(r.id, { provider: 'gemini', now: ORA })
 
     expect(stato).toBe('failed')
   })
@@ -309,7 +309,7 @@ describe('reclaimStaleExtractions — una tabella non resta extracting per sempr
     const r = await tabella()
     await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }], ORA)
     await repo.saveBandCells(r.id, 0, [cella(1, 'A', 'M')], { rawOutput: '{}', now: ORA })
-    await repo.finishExtraction(r.id, { provider: 'groq', now: ORA })
+    await repo.finishExtraction(r.id, { provider: 'gemini', now: ORA })
 
     const molto = new Date(ORA.getTime() + 10 * 60_000)
     expect(await repo.reclaimStaleExtractions(molto, 3 * 60_000)).toEqual([])
@@ -340,7 +340,7 @@ describe('resumableRosters — cosa riprendere dopo un riavvio', () => {
     const r = await tabella()
     await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 16 }], ORA)
     await repo.saveBandCells(r.id, 0, [cella(1, 'A', 'M')], { rawOutput: '{}', now: ORA })
-    await repo.finishExtraction(r.id, { provider: 'groq', now: ORA })
+    await repo.finishExtraction(r.id, { provider: 'gemini', now: ORA })
 
     expect(await repo.resumableRosters()).toEqual([])
   })
@@ -515,6 +515,6 @@ describe('saveBandCells — la stessa infermiera non si spacca fra due bande', (
     expect(await prisma.rosterCell.count({ where: { rosterId: r.id } })).toBe(1)
 
     // Una banda letta a metà non è una tabella completa.
-    expect(await repo.finishExtraction(r.id, { provider: 'groq', now: ORA })).toBe('partial')
+    expect(await repo.finishExtraction(r.id, { provider: 'gemini', now: ORA })).toBe('partial')
   })
 })

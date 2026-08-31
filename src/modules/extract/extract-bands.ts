@@ -45,79 +45,57 @@ export interface BandsOutcome {
 }
 
 /**
- * Attesa fra una banda e l altra. Il secondo argomento è il `retry-after` che
- * il provider ha indicato sull errore, quando c era.
+ * Attesa fra una banda e l altra.
+ *
+ * Il secondo argomento e il `retry-after` che il provider ha indicato
+ * sull errore, quando c era; il terzo dice che si trattava di un **rate limit**
+ * anche se non ha indicato nulla, perche non tutti i provider mandano
+ * quell header e riprovare subito prenderebbe un altro rifiuto.
  */
-export type BandPacer = (index: number, retryAfterSeconds?: number) => Promise<void>
-
-/** Tetto di token al minuto del piano gratuito di Groq. */
-export const GROQ_FREE_TOKENS_PER_MINUTE = 8000
+export type BandPacer = (
+  index: number,
+  retryAfterSeconds?: number,
+  options?: { rateLimited?: boolean },
+) => Promise<void>
 
 /**
- * Quanto pesa una banda nel budget al minuto. **Tarato sul dato misurato**, non
- * su una stima.
- *
- * Groq conta i token di output **prenotati** con `max_completion_tokens`, non
- * solo quelli usati: 4000 (il default di `GROQ_MAX_OUTPUT_TOKENS`) sono
- * prenotati a ogni chiamata anche se una banda ne produce ~1600. Ai 4000 si
- * aggiunge l input, immagine compresa, e la misura su 24 bande (due foto) dice
- * quanto vale:
- *
- * - banda normale: input **1577-1581** → peso **5581**;
- * - banda larga, quella che include le colonne di aiuto e che è anche la più
- *   grande in pixel: input **2601-2605** → peso **6605**;
- * - banda a colonna singola: input 1832-1836 → peso 5836.
- *
- * Il valore precedente era 5500, dedotto da una stima di ~1500 token di input:
- * sotto il peso reale anche della banda più leggera, e infatti si sono viste
- * **3 risposte 429**, assorbite dal ritentativo con `retry-after` senza perdere
- * bande, ma spendendo quota due volte su quelle tre.
- *
- * 6700 copre la banda peggiore misurata con un margine, e fa un intervallo di
- * ~50 s fra due bande: 24 bande sono ~20 minuti di sole immagini. È lento, ed è
- * il vincolo del piano, non una scelta.
- *
- * **Non si abbassa `GROQ_MAX_OUTPUT_TOKENS` per accorciare l attesa.** Portarlo
- * a ~2500 farebbe scendere il peso a ~4100 e l intervallo a ~31 s, ma l output
- * vero è ~1600 con punte a 1713 su una banda di sole due colonne: un
- * troncamento è una **banda persa**, e quel rischio non vale nove secondi.
+ * Quanto attendere davanti a un rate limit che non dice quanto attendere.
+ * Serve solo a non riprovare nello stesso istante: se il provider indica un
+ * tempo, vince il suo.
  */
-export const DEFAULT_TOKENS_PER_BAND = 6700
+const DEFAULT_BACKOFF_SECONDS = 10
 
 function attendi(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /**
- * Pacer di produzione: tiene le chiamate distanziate quanto basta a stare sotto
- * il tetto di token al minuto, sottraendo il tempo che la chiamata precedente ha
- * già consumato da sola.
+ * Pacer di produzione: **non distanzia** le chiamate, attende soltanto quando il
+ * provider ha risposto con un rate limit.
  *
- * La prima attesa è piena: quando il pacer viene chiamato una richiesta è
- * appena partita (si chiama **fra** le bande), e non si sa da quanto.
+ * Prima qui c era un pacer a token: il piano gratuito di Groq aveva un tetto di
+ * 8000 token al minuto e contava anche i token di output *prenotati*, quindi fra
+ * due bande servivano ~50 s. Nella misura reale erano 417 s di attesa su 461 di
+ * estrazione (agosto) e 603 su 657 (settembre): il **92% del tempo era quello**,
+ * non il modello, che lavorava ~4 s per banda. Togliere il tetto togliendo Groq
+ * toglie anche la ragione di distanziare, e distanziare per prudenza costerebbe
+ * minuti a vuoto a ogni tabella.
  *
- * `now` e `sleep` sono iniettabili perché i test non devono dormire.
+ * `sleep` e iniettabile perche i test non devono dormire.
  */
-export function createTokenPacer(options?: {
-  tokensPerMinute?: number
-  tokensPerBand?: number
-  now?: () => number
+export function createRetryAfterPacer(options?: {
+  defaultBackoffSeconds?: number
   sleep?: (ms: number) => Promise<void>
 }): BandPacer {
-  const tokensPerMinute = options?.tokensPerMinute ?? GROQ_FREE_TOKENS_PER_MINUTE
-  const tokensPerBand = options?.tokensPerBand ?? DEFAULT_TOKENS_PER_BAND
-  const now = options?.now ?? Date.now
+  const backoff = options?.defaultBackoffSeconds ?? DEFAULT_BACKOFF_SECONDS
   const sleep = options?.sleep ?? attendi
 
-  const intervallo = Math.round((60_000 * tokensPerBand) / tokensPerMinute)
-  let ultima: number | null = null
-
-  return async (_index: number, retryAfterSeconds?: number) => {
-    const trascorso = ultima === null ? 0 : now() - ultima
-    const attesa = Math.max(intervallo - trascorso, (retryAfterSeconds ?? 0) * 1000, 0)
-
-    if (attesa > 0) await sleep(attesa)
-    ultima = now()
+  return async (_index: number, retryAfterSeconds?: number, opzioni?: { rateLimited?: boolean }) => {
+    if (retryAfterSeconds !== undefined) {
+      await sleep(retryAfterSeconds * 1000)
+      return
+    }
+    if (opzioni?.rateLimited === true) await sleep(backoff * 1000)
   }
 }
 
@@ -132,8 +110,8 @@ interface BandAttempt {
 /**
  * Una banda, un provider. Due possibilità in tutto:
  *
- * - un **rate limit** (errore con `retryAfterSeconds`) vale un solo
- *   ritentativo, dopo aver passato l attesa richiesta al pacer;
+ * - un **rate limit** (stato 429, o un errore che indica `retry-after`) vale un
+ *   solo ritentativo, dopo aver passato l attesa al pacer;
  * - un output che non passa la validazione vale una sola richiesta di
  *   riparazione, con l errore in mano.
  *
@@ -170,11 +148,19 @@ async function tryBand(
       const message = error instanceof Error ? error.message : String(error)
       if (error instanceof VisionTruncatedError) return { ok: false, raws, attempts, error: message }
 
+      // Un rate limit si riconosce dallo stato 429 **o** dal `retry-after`:
+      // gate sul solo header significava non ritentare i provider che non lo
+      // mandano, cioe perdere la banda al primo rifiuto per quota. Gli altri
+      // errori del provider (chiave sbagliata, modello inesistente) non
+      // migliorano riprovando.
       const retryAfterSeconds =
         error instanceof VisionProviderError ? error.retryAfterSeconds : undefined
-      if (retryAfterSeconds !== undefined && !rateLimitRitentato) {
+      const rateLimited =
+        error instanceof VisionProviderError &&
+        (error.status === 429 || retryAfterSeconds !== undefined)
+      if (rateLimited && !rateLimitRitentato) {
         rateLimitRitentato = true
-        await pace(index, retryAfterSeconds)
+        await pace(index, retryAfterSeconds, { rateLimited: true })
         continue
       }
 
@@ -196,9 +182,11 @@ async function tryBand(
 /**
  * Estrae una tabella turni **banda per banda** e fonde i risultati.
  *
- * Le bande si elaborano in sequenza, non in parallelo: il tetto è sui token al
- * minuto e il parallelismo lo farebbe scattare alla seconda banda. Fra una
- * banda e l altra si chiama `pace`, mai dopo l ultima.
+ * Le bande si elaborano in sequenza. Non e piu per un tetto di token al minuto
+ * (quello era di Groq, e Groq non c e piu): e perche chi chiama persiste una
+ * banda alla volta, ed e quello che rende ripartibile il lavoro. Fra una banda
+ * e l altra si chiama `pace`, mai dopo l ultima; il pacer di produzione ora
+ * attende solo davanti a un rate limit.
  *
  * Una banda che non si legge **non interrompe le altre**: finisce in `failures`
  * col suo motivo, e chi chiama la registra come buco dichiarato (stato
@@ -222,7 +210,7 @@ export async function extractRosterByBands(input: {
   fallback?: VisionProvider | null
   pace?: BandPacer
 }): Promise<BandsOutcome> {
-  const pace = input.pace ?? createTokenPacer()
+  const pace = input.pace ?? createRetryAfterPacer()
 
   const letture: Array<{ spec: BandSpec; extraction: BandExtraction }> = []
   const rawOutputs: string[] = []
@@ -280,6 +268,7 @@ export async function extractRosterByBands(input: {
       dayFrom: band.spec.dayFrom,
       dayTo: band.spec.dayTo,
       columnCount: band.spec.columns.length,
+      wholeTable: band.spec.whole,
     })
 
     const primario = await tryBand(input.provider, band, prompt, index, pace)

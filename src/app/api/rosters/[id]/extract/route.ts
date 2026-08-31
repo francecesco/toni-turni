@@ -6,7 +6,8 @@ import { ensureExtractionWorker, prepareExtraction } from '@/modules/roster'
 /**
  * L atto esplicito con cui la referente autorizza l invio della foto al provider
  * AI (regola invariante 9). Registra l autorizzazione e **risponde subito**:
- * leggere una tabella sono 10-20 minuti e non può stare dentro una richiesta
+ * leggere una tabella e il rilevamento del riquadro piu almeno una chiamata al
+ * modello, e non può stare dentro una richiesta
  * HTTP. Il worker gira dopo, in-process, con lo stato su SQLite.
  *
  * Il piano delle bande **non** si fa qui: dipende dal riquadro rilevato sulla

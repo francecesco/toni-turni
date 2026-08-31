@@ -23,7 +23,7 @@ export function createAnthropicProvider(create?: MessageCreator): VisionProvider
     async extract(request: VisionRequest) {
       const model = optionalEnv('ANTHROPIC_MODEL', ANTHROPIC_DEFAULT_MODEL)
 
-      // Guardia esplicita, simmetrica a Groq: un guasto di configurazione deve uscire
+      // Guardia esplicita, simmetrica a Gemini: un guasto di configurazione deve uscire
       // come VisionProviderError, non come errore grezzo dell SDK (da cui dipende il fallback).
       let createMessage: MessageCreator
       if (create) {

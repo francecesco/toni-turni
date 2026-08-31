@@ -35,7 +35,7 @@ Non-obiettivi (esplicitamente fuori scope):
 | Input | Foto da smartphone (JPEG/PNG/HEIC) |
 | Chi carica | Solo l'utente con ruolo `referente`; le altre confermano la propria colonna |
 | Calendario | Evento con orario su un **calendario dedicato** creato dall'app |
-| AI | Provider vision astratto: Groq come default, provider alternativo selezionabile da env |
+| AI | Provider vision astratto: Gemini come default, provider alternativo selezionabile da env |
 | Rete | Cloudflare Tunnel + dominio https (richiesto dal redirect OAuth Google) |
 | Stack | Next.js 16 + Prisma/SQLite + Tailwind + shadcn/ui, un solo container applicativo |
 | Legenda turni | Default precaricati, **modificabili dalla referente** in Impostazioni |
@@ -281,7 +281,7 @@ Impostazioni.
 
 1. **Fondamenta** — progetto Next.js, Prisma/SQLite, Docker, login Google con ruoli e inviti, legenda
    turni con orari configurabili.
-2. **Ingest + estrazione** — upload, normalizzazione, `VisionProvider` Groq, schema Zod, golden test.
+2. **Ingest + estrazione** — upload, normalizzazione, `VisionProvider` Gemini, schema Zod, golden test.
 3. **Review** — griglia di conferma, mapping colonne → utenti, gestione codici ignoti.
 4. **Sync Google** — OAuth, calendario dedicato, motore di diff idempotente.
 5. **Versioning** — re-upload, diff tra versioni, riconferma parziale.

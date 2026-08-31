@@ -64,7 +64,7 @@ describe('saveExtraction', () => {
         { day: 1, column: 'RENATA', code: 'M', confidence: 0.99, handCorrected: false },
         { day: 2, column: 'RENATA', code: 'm rsf', confidence: 0.7, handCorrected: false },
       ]),
-      { provider: 'groq', rawOutput: '{...}' },
+      { provider: 'gemini', rawOutput: '{...}' },
     )
 
     expect(esito).toEqual({ cells: 2, unresolved: 0 })
@@ -81,7 +81,7 @@ describe('saveExtraction', () => {
     const esito = await repo.saveExtraction(
       r.id,
       estrazione([{ day: 1, column: 'MERY', code: 'XYZ', confidence: 0.3, handCorrected: true }]),
-      { provider: 'groq', rawOutput: '{...}' },
+      { provider: 'gemini', rawOutput: '{...}' },
     )
 
     expect(esito).toEqual({ cells: 1, unresolved: 1 })
@@ -100,7 +100,7 @@ describe('saveExtraction', () => {
         { day: 1, column: 'RENATA', code: '', confidence: 0.9, handCorrected: false },
         { day: 2, column: 'RENATA', code: '  ', confidence: 0.9, handCorrected: false },
       ]),
-      { provider: 'groq', rawOutput: '{}' },
+      { provider: 'gemini', rawOutput: '{}' },
     )
 
     expect(esito.cells).toBe(0)
@@ -110,11 +110,11 @@ describe('saveExtraction', () => {
   it('porta la tabella nello stato extracted e conserva provider e output grezzo', async () => {
     const r = await repo.createRoster({ year: 2026, month: 8, ward: '3°PIANO', imagePath: 'a.jpg' })
 
-    await repo.saveExtraction(r.id, estrazione([]), { provider: 'groq', rawOutput: 'RAW' })
+    await repo.saveExtraction(r.id, estrazione([]), { provider: 'gemini', rawOutput: 'RAW' })
 
     const salvata = await prisma.roster.findUniqueOrThrow({ where: { id: r.id } })
     expect(salvata.status).toBe('extracted')
-    expect(salvata.provider).toBe('groq')
+    expect(salvata.provider).toBe('gemini')
     expect(salvata.rawOutput).toBe('RAW')
   })
 
@@ -122,8 +122,8 @@ describe('saveExtraction', () => {
     const r = await repo.createRoster({ year: 2026, month: 8, ward: '3°PIANO', imagePath: 'a.jpg' })
     const cells = [{ day: 1, column: 'RENATA', code: 'M', confidence: 0.9, handCorrected: false }]
 
-    await repo.saveExtraction(r.id, estrazione(cells), { provider: 'groq', rawOutput: 'a' })
-    await repo.saveExtraction(r.id, estrazione(cells), { provider: 'groq', rawOutput: 'b' })
+    await repo.saveExtraction(r.id, estrazione(cells), { provider: 'gemini', rawOutput: 'a' })
+    await repo.saveExtraction(r.id, estrazione(cells), { provider: 'gemini', rawOutput: 'b' })
 
     expect(await prisma.rosterCell.count({ where: { rosterId: r.id } })).toBe(1)
   })
@@ -150,7 +150,7 @@ describe('getRosterWithCells', () => {
         { day: 2, column: 'MERY', code: 'M', confidence: 1, handCorrected: false },
         { day: 1, column: 'RENATA', code: 'M', confidence: 1, handCorrected: false },
       ]),
-      { provider: 'groq', rawOutput: '{}' },
+      { provider: 'gemini', rawOutput: '{}' },
     )
 
     const caricata = await repo.getRosterWithCells(r.id)

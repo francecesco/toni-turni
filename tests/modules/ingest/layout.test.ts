@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_ROSTER_LAYOUT,
   planBands,
+  planWholeTable,
   pruneColumnBoundaries,
 } from '@/modules/ingest/layout'
 
@@ -252,5 +253,58 @@ describe('planBands', () => {
 
   it('rifiuta una tabella senza colonne di contenuto oltre a quella dei giorni', () => {
     expect(() => planBands([0, 1], { daysInMonth: 31 })).toThrow(/colonne/i)
+  })
+})
+
+/**
+ * La tabella intera in **una banda sola**: e la strategia a chiamata singola.
+ *
+ * Non e un secondo percorso nel codice, e una configurazione della stessa
+ * macchina: una banda che tiene tutte le colonne e tutti i giorni. Da questo
+ * dipende che tutto quello che sta a valle — rilevamento dei buchi per colonna,
+ * scarto delle colonne di servizio per nome, persistenza che protegge le
+ * correzioni a mano — resti quello gia misurato, invece di essere riscritto.
+ */
+describe('planWholeTable', () => {
+  it('restituisce una banda sola', () => {
+    expect(planWholeTable(AGOSTO, { daysInMonth: 31 })).toHaveLength(1)
+    expect(planWholeTable(SETTEMBRE, { daysInMonth: 30 })).toHaveLength(1)
+  })
+
+  it('copre tutti i giorni del mese, senza cucitura di meta mese', () => {
+    const [banda] = planWholeTable(AGOSTO, { daysInMonth: 31 })
+
+    expect(banda.dayFrom).toBe(1)
+    expect(banda.dayTo).toBe(31)
+    // l intestazione con i nomi e dentro il ritaglio, non da anteporre
+    expect(banda.header).toBeNull()
+    expect(banda.crop.top).toBe(0)
+    expect(banda.crop.top + banda.crop.height).toBe(1)
+  })
+
+  it('tiene tutte le colonne di contenuto, e solo quelle', () => {
+    const [banda] = planWholeTable(AGOSTO, { daysInMonth: 31 })
+    // AGOSTO_PULITI ha 12 confini = 11 colonne, di cui la 0 e il blocco dei giorni
+    expect(banda.columns).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+  })
+
+  it('affianca comunque il blocco dei giorni, che e l unica cosa che dice il giorno', () => {
+    const [banda] = planWholeTable(SETTEMBRE, { daysInMonth: 30 })
+
+    expect(banda.days.left).toBe(SETTEMBRE_PULITI[0])
+    expect(banda.days.width).toBeCloseTo(SETTEMBRE_PULITI[1] - SETTEMBRE_PULITI[0], 6)
+    // il ritaglio delle colonne parte **dopo** il blocco dei giorni: senza questo
+    // il blocco comparirebbe due volte, e il modello leggerebbe due colonne di
+    // giorni affiancate
+    expect(banda.crop.left).toBe(SETTEMBRE_PULITI[1])
+    expect(banda.crop.left + banda.crop.width).toBe(1)
+  })
+
+  it('rifiuta un mese non plausibile come planBands', () => {
+    expect(() => planWholeTable(AGOSTO, { daysInMonth: 40 })).toThrow(/40/)
+  })
+
+  it('rifiuta una tabella senza colonne di contenuto', () => {
+    expect(() => planWholeTable([0, 1], { daysInMonth: 31 })).toThrow(/colonne/)
   })
 })

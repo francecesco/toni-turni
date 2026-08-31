@@ -7,7 +7,7 @@ import { planBands, pruneColumnBoundaries } from './layout'
  * rilevati e la cucitura fra le due metà del mese disegnati sopra.
  *
  * È il controllo umano che sta **fra** il rilevamento della griglia e venti
- * minuti di chiamate al provider. Il rilevamento non fallisce in modo rumoroso
+ * chiamate al provider su un ritaglio sbagliato. Il rilevamento non fallisce in modo rumoroso
  * quando sbaglia di poco: produce ritagli spostati, cioè turni attribuiti al
  * giorno o alla persona sbagliata, che dal risultato non si distinguono da una
  * lettura sfortunata. Guardare una volta dove cadono i tagli costa dieci secondi

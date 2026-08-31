@@ -5,12 +5,11 @@ Istruzioni per Claude Code su questo repository.
 > **Stato: fasi 1, 2A, 2A-bis, 2B, 3 e 4 completate.** Sopra le fondamenta della Fase 1 (Next.js,
 > Prisma/SQLite, legenda dei codici turno, cifratura dei token, login Google, pagine di
 > impostazioni, Docker) ci sono: l'ingestione delle foto con **rilevamento della griglia,
-> raddrizzamento e taglio a bande** (`ingest`), l'estrazione AI banda per banda con provider
-> Groq/Anthropic, validazione Zod e fusione (`extract`), la persistenza **incrementale** con stato
-> per banda e il job fuori dalla richiesta HTTP (`roster`), il caricamento della foto con anteprima
-> dei tagli e la vista dell'estrazione (Fase 2B), la **griglia di conferma umana** con `ColumnAlias`
-> e `Assignment` (`review`, Fase 3) e il **sync idempotente con Google Calendar** (`calendar`,
-> Fase 4).
+> raddrizzamento e ritaglio** (`ingest`), l'estrazione AI con provider **Gemini**/Anthropic,
+> validazione Zod e fusione (`extract`), la persistenza **incrementale** con stato per banda e il
+> job fuori dalla richiesta HTTP (`roster`), il caricamento della foto con anteprima dei tagli e la
+> vista dell'estrazione (Fase 2B), la **griglia di conferma umana** con `ColumnAlias` e `Assignment`
+> (`review`, Fase 3) e il **sync idempotente con Google Calendar** (`calendar`, Fase 4).
 >
 > **Non** sono implementati il diff fra versioni della stessa tabella (Fase 5) né la rifinitura UI
 > (Fase 6). Il flusso però si chiude: dalla griglia di conferma il bottone «Manda sul mio calendario»
@@ -21,13 +20,40 @@ Istruzioni per Claude Code su questo repository.
 > propria colonna, la referente su qualsiasi colonna. Correggere annulla la conferma di quel giorno:
 > si corregge, si conferma, si sincronizza.
 >
-> **La misura reale dell'estrazione a bande dà 487/488 celle corrette (99,8%)**: agosto 247/248,
-> settembre 240/240. Zero celle mancanti (erano 199), zero celle in eccesso, zero bande fallite su
-> 24, zero conflitti di fusione. La strategia precedente — l'intera tabella in una sola chiamata —
-> dava 46/248 (18,5%). Il rapporto della misura è in
-> `.superpowers/sdd/2026-08-26-fase-2a-bis-ritagli/correzioni-finali-report.md`; quello del Task 8,
-> con 486/488, è il transcript della misura fatta **prima** delle correzioni finali e non è più
-> riproducibile dal codice di oggi.
+> ## Provider e strategia: Gemini, una chiamata sola
+>
+> **Groq non c'è più.** Il provider è **Gemini** (`AI_PROVIDER=gemini`, chiamate HTTP diritte su
+> `generativelanguage.googleapis.com`, nessun SDK: vedi `src/modules/extract/providers/gemini.ts`), e
+> la strategia di default è **la tabella intera in una sola chiamata** (`AI_STRATEGY=whole`).
+>
+> Il motivo del cambio non era l'accuratezza, era la **latenza**, e non stava nel codice: nella
+> misura reale l'estrazione durava 461 s su agosto **di cui 417 di sola attesa** e 657 su settembre
+> **di cui 603 di attesa**. Il modello lavorava ~4 s per banda; il 92% del tempo era il pacer che
+> rispettava il tetto di 8000 token al minuto del piano gratuito di Groq, che contava anche i token
+> *prenotati*. Togliendo quel tetto è caduta anche la ragione di distanziare le chiamate:
+> `createRetryAfterPacer` attende **solo** davanti a un rate limit.
+>
+> **La tabella intera è una banda sola**, non un secondo percorso: `planWholeTable` produce una
+> `BandSpec` che tiene tutte le colonne e tutti i giorni, e `cropRosterWhole` la materializza. Tutto
+> quello che sta a valle resta quello già misurato — scarto delle colonne di servizio **per nome**,
+> buchi dichiarati per colonna e giorni, persistenza che non sovrascrive una cella corretta a mano,
+> conferma, sync. Un percorso separato avrebbe dovuto riguadagnarsi quelle proprietà una per una.
+>
+> **Attenzione, e non è un dettaglio: la chiamata singola NON è ancora misurata.** L'unico numero
+> che questa strategia ha è il **18,5% (46/248 celle)** della Fase 2A, e quella misura mandava al
+> modello la **foto**: tabella in prospettiva, annegata nello sfondo, riga di un giorno alta ~32 px,
+> su un altro modello. Oggi l'immagine è raddrizzata sull'omografia del riquadro, ritagliata sulla
+> griglia stampata e ricampionata ai pixel per riga della configurazione che ha misurato il 100%
+> (agosto 2762x2574 = **78,0 px per riga**, settembre 3000x2087 = **65,2**, contro le ~77 del
+> ritaglio letto al 100%). Sono differenze vere, non è la stessa prova — ma finché `npm run eval`
+> non parla, **il 18,5% è l'unico dato che esiste**. Se non regge, `AI_STRATEGY=bands` riporta al
+> percorso misurato al 99,8% senza toccare il codice.
+>
+> ## La misura che esiste (strategia `bands`)
+>
+> **487/488 celle corrette (99,8%)**: agosto 247/248, settembre 240/240. Zero celle mancanti (erano
+> 199), zero celle in eccesso, zero bande fallite su 24, zero conflitti di fusione. Il rapporto è in
+> `.superpowers/sdd/2026-08-26-fase-2a-bis-ritagli/correzioni-finali-report.md`.
 >
 > Nella misura quattro bande su 24 (settembre) risultavano «lette a metà», ed era un **falso
 > allarme**: erano le bande delle colonne di servizio, che il modello legge tutte e che la fusione
@@ -49,8 +75,8 @@ Istruzioni per Claude Code su questo repository.
 >    `exchangeGoogleCode` è mockata; la checklist è in
 >    [docs/verifica-manuale-oauth.md](docs/verifica-manuale-oauth.md);
 > 2. il percorso foto → anteprima → estrazione non è mai stato percorso **dall'interfaccia** su una
->    foto vera: l'anteprima dei tagli esiste proprio per rendere visibile un rilevamento sbagliato
->    prima di spendere venti minuti di chiamate;
+>    foto vera con Gemini: l'anteprima dei tagli esiste proprio per rendere visibile un rilevamento
+>    sbagliato prima di spendere una chiamata;
 > 3. le trascrizioni di riferimento in `fixtures/` portano ancora `"verified": false`: le percentuali
 >    qui sopra valgono quanto la trascrizione, che nessuno che conosce il reparto ha ancora guardato.
 
@@ -64,13 +90,16 @@ modifiche non banali**: contiene modello dati, flusso, legenda dei codici turno 
 
 ## Stack
 
-Next.js 16 (App Router) · TypeScript · Prisma + SQLite · Tailwind + shadcn/ui · `sharp` · `groq-sdk` ·
-`google-auth-library` · Vitest. Deploy: Docker Compose su ZimaBoard (x86_64) + Cloudflare Tunnel.
+Next.js 16 (App Router) · TypeScript · Prisma + SQLite · Tailwind + shadcn/ui · `sharp` ·
+`@anthropic-ai/sdk` · `google-auth-library` · Vitest. Deploy: Docker Compose su ZimaBoard (x86_64) +
+Cloudflare Tunnel.
 
-> Il design nominava `googleapis`: non è installato e non serve. Il Calendar API si usa con sette
-> chiamate HTTP sopra `OAuth2Client` di `google-auth-library` (che rinnova già l'access token da
-> sé), invece di decine di megabyte di client generato su una ZimaBoard. Vedi
-> `src/modules/calendar/api.ts`.
+> Due SDK nominati altrove **non ci sono, e non servono**. `googleapis`: il Calendar API si usa con
+> sette chiamate HTTP sopra `OAuth2Client` di `google-auth-library` (che rinnova già l'access token
+> da sé), invece di decine di megabyte di client generato su una ZimaBoard — vedi
+> `src/modules/calendar/api.ts`. `groq-sdk`: era dichiarato in questo file ma non è mai stato in
+> `package.json`, e Gemini si chiama con un `fetch` e trenta righe. Un client generato per una
+> chiamata al mese su una ZimaBoard è peso senza ritorno.
 
 ## Comandi
 
@@ -108,9 +137,10 @@ src/
 │   ├── codes/     # types, normalize, slot, defaults, form, repository, index
 │   ├── auth/      # policy, token, session, google, guards (authorizeApi), googleAccount, index
 │   ├── ingest/    # normalizzazione foto (auto-rotate EXIF, resize), storage, index
-│   │              # + grid* (rilevamento della griglia), layout, crop (taglio a bande), preview
-│   ├── extract/   # VisionProvider (groq, anthropic), schema Zod, prompt, extract, index
-│   │              # + band-schema (con la fusione), band-prompt, extract-bands
+│   │              # + grid* (rilevamento della griglia), layout (planBands, planWholeTable),
+│   │              # + crop (cropRosterWhole, cropRosterBands), preview
+│   ├── extract/   # VisionProvider (gemini, anthropic), schema Zod, strategy, index
+│   │              # + band-schema (con la fusione), band-prompt, extract-bands, prompt (riparazione)
 │   ├── roster/    # tabella, versioni, stato per banda, job e worker, form, index
 │   ├── review/    # access, aliases, grid, holes, confirm, correct, index
 │   └── calendar/  # shiftKey, event, diff, window (puri) · api, dedicated, repository, lock, sync
@@ -201,36 +231,56 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
   da solo la creazione risponde 403. Chi aveva già dato il consenso prima della Fase 4 deve
   rifarlo (revoca da myaccount.google.com/permissions).
 - **`npm run eval` chiama il provider reale e consuma token.** Non eseguirlo in CI né in loop.
-- **Groq conta i token di output *prenotati* nel budget al minuto, non solo quelli usati.** Il
-  piano gratuito ha un tetto di 8000 token/minuto: chiedere `max_completion_tokens: 8000` fa
-  pesare la richiesta 10369 token e la fa rifiutare con un errore sulla dimensione della
-  richiesta, che non c'entra nulla con l'immagine. `GROQ_MAX_OUTPUT_TOKENS` di default è 4000
-  (vedi `src/modules/extract/providers/groq.ts`).
-- **L'estrazione della tabella intera in una sola chiamata non funziona su questo modello.** La
-  misura reale su una foto di agosto ha dato 18,5% di celle corrette (46/248). L'estrazione a
-  **bande verticali** (blocco dei giorni + due colonne, mezzo mese), stesso modello, è stata
-  misurata e dà **99,8%** (487/488). Non tornare indietro alla tabella intera, e non allargare le
-  bande senza misurare.
+- **La chiamata singola non è misurata, e il solo numero che ha è 18,5%.** La tabella intera in una
+  chiamata, misurata nella Fase 2A **sulla foto** (prospettiva, sfondo, ~32 px per riga, altro
+  modello), diede 46/248 celle. Oggi l'immagine è raddrizzata, ritagliata sulla griglia e
+  ricampionata a 78 px per riga (agosto) — è una prova diversa, non la stessa. Ma **non ripetere il
+  99,8% parlando della strategia `whole`**: quel numero è di `bands`. Prima di dichiarare qualsiasi
+  cosa, `npm run eval`.
+- **Il tetto di token in uscita di Gemini va largo, non stretto.** ~250 celle di JSON sono ~6000
+  token, e i token di **ragionamento** contano nello stesso budget: `GEMINI_MAX_OUTPUT_TOKENS` di
+  default è 32768. Gemini fattura gli usati e non i prenotati, quindi chiederne molti non costa
+  nulla — mentre un tetto stretto tronca la tabella a metà, e una risposta troncata **non si
+  ritenta** (rimandare la stessa immagine la tronca di nuovo).
+- **`bandExtractionSchema` limita le colonne a 40, non a 12.** Il vecchio tetto di 12 era scritto
+  quando una banda portava due colonne: con la tabella intera settembre ne ha 13, e quel tetto
+  faceva **rifiutare l'intera lettura** per un limite che non riguardava più niente. Se aggiungi un
+  vincolo a quello schema, chiediti prima come si comporta su una banda che è tutta la tabella.
+- **Il conto delle celle attese può dichiarare un buco che non c'è, e sulla tabella intera il
+  rischio è più grande.** Se il modello nomina *meno* colonne di servizio di quante ne stampi il
+  foglio — e con `AIUTO MATT.` due volte di fila lo fa spesso, nominandola una volta —
+  `countBandCells` non sa se le colonne mancanti siano di servizio o colleghe saltate, e sceglie il
+  verso prudente. Su settembre: 4 nomi di servizio invece di 6 fanno salire le attese da 240 a 270,
+  e una lettura perfetta si dichiara incompleta. Prudente è giusto (una cella che sparisce in
+  silenzio è peggio di un avviso di troppo), ma un avviso inaffidabile insegna a ignorarlo. Il caso
+  è coperto da un test che lo **documenta** invece di asserire il numero che si vorrebbe:
+  `npm run eval` dirà se capita sulle foto vere, e allora si risolve col dato in mano.
+- **Due colonne possono avere lo stesso nome, e in una chiamata sola finiscono nella stessa
+  risposta.** Sul foglio di settembre `AIUTO MATT.` compare due volte di fila. `bandExtractionSchema`
+  **non** pretende coppie giorno/colonna distinte, al contrario di `extractionSchema`: pretenderlo
+  farebbe cadere la lettura di tutta la tabella per due colonne che vengono buttate subito dopo.
 - **La geometria dei ritagli non si chiede a nessuno e non si configura.** La rileva
   `cropRosterBands` sulla foto (`detectTableQuad` → omografia → `pruneColumnBoundaries` →
   `planBands`). Frazioni fisse non trasferiscono da una foto all'altra: fra agosto e settembre
   l'area delle infermiere passa da 0,693 a 0,552 del riquadro. L'anteprima
   (`/api/rosters/[id]/preview`) disegna i confini rilevati sul riquadro raddrizzato: è il controllo
-  umano prima di spendere venti minuti di chiamate.
-- **Le bande sono lente, e non è colpa del codice.** 24 bande per due foto sono ~18 minuti, di cui
-  15,7 di sola attesa: il modello lavora ~4 s per banda. Il resto è il tetto di 8000 token al
-  minuto del piano gratuito, che conta anche i token **prenotati** (vedi la trappola sopra). Un
-  pacer serializza le chiamate; la taratura di `DEFAULT_TOKENS_PER_BAND` è sul dato misurato, vedi
-  il commento in `src/modules/extract/extract-bands.ts`. Non esiste un'env per accorciare l'attesa.
-- **L'estrazione dura 10-20 minuti e non sta in una richiesta HTTP.** L'upload risponde subito;
+  umano prima di spendere una chiamata.
+- **La lentezza di prima era il pacer, non il modello.** 24 bande per due foto erano ~18 minuti, di
+  cui 15,7 di **sola attesa**: il modello lavorava ~4 s per banda. Era il tetto di 8000 token al
+  minuto del piano gratuito di Groq, che contava anche i token prenotati. Non c'è più:
+  `createRetryAfterPacer` attende **solo** davanti a un rate limit, e con `retry-after` assente usa
+  un ritardo di riserva invece di riprovare nello stesso istante — perché non tutti i provider
+  mandano quell'header, e senza quel ramo un 429 perdeva la banda al primo colpo.
+- **L'estrazione non sta in una richiesta HTTP, nemmeno con una chiamata sola.** L'upload risponde
+  subito;
   `runExtractionJob` gira dopo, in-process, e persiste **una banda alla volta** su `RosterBand`.
   Un riavvio del processo lascia una `Roster` in `extracting` con un battito vecchio:
   `reclaimStaleExtractions` la porta a `interrupted` e il worker riprende dalle bande mancanti.
   Il worker viene svegliato dall'elenco delle tabelle e dalla route dell'avanzamento — non c'è
   nessun job pianificato da tenere in vita.
-- **La confidenza per cella è inutilizzabile per decidere cosa rileggere.** Nella misura reale
-  nessuna cella su 519 stava sotto 0,8 ed **entrambe** le celle sbagliate erano dichiarate con
-  confidenza alta; il rilevamento delle correzioni a penna invece ha richiamo 100% (10 su 10) e
+- **La confidenza per cella è inutilizzabile per decidere cosa rileggere.** Nella misura reale (su
+  Groq: da rifare su Gemini) nessuna cella su 519 stava sotto 0,8 ed **entrambe** le celle sbagliate
+  erano dichiarate con confidenza alta; il rilevamento delle correzioni a penna invece ha richiamo 100% (10 su 10) e
   precisione 91%. La griglia di conferma evidenzia `handCorrected`, i conflitti fra bande e i codici
   sconosciuti — **non** la confidenza bassa. La confidenza si propaga comunque fino alla UI (regola
   invariante 5) e si mostra come dato accessorio, ma non guida l'attenzione.

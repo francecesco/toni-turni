@@ -166,6 +166,14 @@ export interface BandSpec {
    * dell'intestazione stanno sopra le colonne a cui appartengono.
    */
   header: { top: number; height: number } | null
+  /**
+   * La banda e la **tabella intera** (strategia a chiamata singola).
+   *
+   * Sta nella spec e non fra le opzioni di chi estrae perche descrive
+   * l immagine, e chi compone il prompt ha in mano la spec e non le opzioni del
+   * job. Assente vale `false`: le bande vere non hanno bisogno di dichiararsi.
+   */
+  whole?: boolean
 }
 
 /**
@@ -204,6 +212,12 @@ export function planBands(
     headerHeight?: number
     columnsPerBand?: number
     overlap?: number
+    /**
+     * Se tagliare il mese in due meta. Con `false` ogni banda copre il mese
+     * intero: e la forma che serve alla strategia a chiamata singola, dove
+     * tagliare il mese vorrebbe dire due chiamate invece di una.
+     */
+    splitMonth?: boolean
   },
 ): BandSpec[] {
   const { daysInMonth } = options
@@ -228,7 +242,18 @@ export function planBands(
   const meta = Math.ceil(daysInMonth / 2)
   const cucitura = headerHeight + (1 - headerHeight) * (meta / daysInMonth)
 
-  const meta_mese = [
+  const meta_mese = options.splitMonth === false
+    ? ([
+        {
+          dayFrom: 1,
+          dayTo: daysInMonth,
+          top: 0,
+          bottom: 1,
+          // la riga dei nomi e dentro il ritaglio: niente da anteporre
+          header: null,
+        },
+      ] as const)
+    : ([
     {
       dayFrom: 1,
       dayTo: meta,
@@ -244,7 +269,7 @@ export function planBands(
       bottom: 1,
       header: { top: 0, height: DEFAULT_ROSTER_LAYOUT.headerStrip },
     },
-  ] as const
+  ] as const)
 
   const bande: BandSpec[] = []
 
@@ -273,6 +298,44 @@ export function planBands(
         header: meta.header,
       })
     }
+  }
+
+  return bande
+}
+
+/**
+ * La tabella intera come **una banda sola**: tutte le colonne, tutti i giorni.
+ *
+ * E la strategia a chiamata singola, e volutamente non e un secondo percorso nel
+ * codice: e una configurazione della stessa macchina delle bande. Tutto quello
+ * che sta a valle resta quello gia misurato — il blocco dei giorni affiancato,
+ * lo scarto delle colonne di servizio **per nome**, il rilevamento dei buchi per
+ * colonna e giorni, la persistenza che non sovrascrive una cella corretta a mano.
+ * Un percorso separato avrebbe dovuto riguadagnarsi tutte quelle proprieta una
+ * per una.
+ *
+ * Il blocco dei giorni si affianca anche qui, benche sia gia il lato sinistro
+ * della tabella: `crop` parte **dopo** di lui, altrimenti comparirebbe due volte
+ * e il modello vedrebbe due colonne di giorni una accanto all altra.
+ *
+ * Non c e cucitura di meta mese e non c e striscia d intestazione da anteporre:
+ * la riga dei nomi e dentro il ritaglio, dove il modello se l aspetta.
+ */
+export function planWholeTable(
+  columns: readonly number[],
+  options: { daysInMonth: number },
+): BandSpec[] {
+  const bande = planBands(columns, {
+    daysInMonth: options.daysInMonth,
+    columnsPerBand: Number.POSITIVE_INFINITY,
+    splitMonth: false,
+  }).map((banda) => ({ ...banda, whole: true }))
+
+  // `planBands` con questi argomenti produce una banda e una sola. Se un giorno
+  // non fosse piu vero, e meglio saperlo qui che scoprire a valle un mese letto
+  // a meta senza che nessuno lo dichiari.
+  if (bande.length !== 1) {
+    throw new Error(`La tabella intera deve essere una banda sola, pianificate ${bande.length}`)
   }
 
   return bande

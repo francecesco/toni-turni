@@ -76,7 +76,7 @@ export async function createRoster(input: {
  *
  * È il salvataggio **in un colpo solo**, quello che usa `npm run eval`: prende
  * l estrazione già fusa di tutte le bande. Il percorso applicativo passa invece da
- * `saveBandCells`, banda per banda, perché un estrazione da 10-20 minuti deve
+ * `saveBandCells`, banda per banda, perché un estrazione lunga deve
  * poter riprendere dopo un riavvio.
  *
  * `meta.missingBands` sono le bande che il modello non ha letto, o ha letto solo

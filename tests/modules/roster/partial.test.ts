@@ -62,7 +62,7 @@ describe('saveExtraction con bande non lette', () => {
   it('senza bande mancanti lo stato è extracted e missingBands resta null', async () => {
     const r = await roster()
 
-    await repo.saveExtraction(r.id, estrazione(), { provider: 'groq', rawOutput: '{}' })
+    await repo.saveExtraction(r.id, estrazione(), { provider: 'gemini', rawOutput: '{}' })
 
     const salvato = await prisma.roster.findUniqueOrThrow({ where: { id: r.id } })
     expect(salvato.status).toBe('extracted')
@@ -74,7 +74,7 @@ describe('saveExtraction con bande non lette', () => {
     const buchi = [bandaNonLetta(17, 31, 'quota esaurita'), bandaNonLetta(1, 16, 'risposta troncata')]
 
     await repo.saveExtraction(r.id, estrazione(), {
-      provider: 'groq',
+      provider: 'gemini',
       rawOutput: '{}',
       missingBands: buchi,
     })
@@ -95,7 +95,7 @@ describe('saveExtraction con bande non lette', () => {
     const r = await roster()
 
     await repo.saveExtraction(r.id, estrazione(), {
-      provider: 'groq',
+      provider: 'gemini',
       rawOutput: '{}',
       missingBands: [],
     })
@@ -109,11 +109,11 @@ describe('saveExtraction con bande non lette', () => {
     const r = await roster()
 
     await repo.saveExtraction(r.id, estrazione(), {
-      provider: 'groq',
+      provider: 'gemini',
       rawOutput: '{}',
       missingBands: [bandaNonLetta(1, 16, 'quota esaurita')],
     })
-    await repo.saveExtraction(r.id, estrazione(), { provider: 'groq', rawOutput: '{}' })
+    await repo.saveExtraction(r.id, estrazione(), { provider: 'gemini', rawOutput: '{}' })
 
     const salvato = await prisma.roster.findUniqueOrThrow({ where: { id: r.id } })
     expect(salvato.status).toBe('extracted')
@@ -125,7 +125,7 @@ describe('saveExtraction con bande non lette', () => {
     const r = await roster()
 
     const esito = await repo.saveExtraction(r.id, estrazione(), {
-      provider: 'groq',
+      provider: 'gemini',
       rawOutput: '{}',
       missingBands: [bandaNonLetta(17, 31, 'quota esaurita')],
     })
@@ -144,7 +144,7 @@ describe('saveExtraction con bande non lette', () => {
     await repo.saveExtraction(
       r.id,
       { year: 2026, month: 8, ward: '3°PIANO', columns: [], cells: [] },
-      { provider: 'groq', rawOutput: 'niente', missingBands: [bandaNonLetta(1, 16, 'quota')] },
+      { provider: 'gemini', rawOutput: 'niente', missingBands: [bandaNonLetta(1, 16, 'quota')] },
     )
 
     const salvato = await prisma.roster.findUniqueOrThrow({ where: { id: r.id } })
@@ -165,7 +165,7 @@ describe('saveExtraction e i conflitti di fusione', () => {
     const r = await roster()
 
     await repo.saveExtraction(r.id, estrazione(), {
-      provider: 'groq',
+      provider: 'gemini',
       rawOutput: '{}',
       conflicts: 3,
     })
@@ -177,7 +177,7 @@ describe('saveExtraction e i conflitti di fusione', () => {
   it('senza conflitti dichiarati il contatore resta a zero', async () => {
     const r = await roster()
 
-    await repo.saveExtraction(r.id, estrazione(), { provider: 'groq', rawOutput: '{}' })
+    await repo.saveExtraction(r.id, estrazione(), { provider: 'gemini', rawOutput: '{}' })
 
     const salvato = await prisma.roster.findUniqueOrThrow({ where: { id: r.id } })
     expect(salvato.conflicts).toBe(0)
@@ -197,7 +197,7 @@ describe('saveExtraction e i conflitti di fusione', () => {
     }
 
     await expect(
-      repo.saveExtraction(r.id, rotta, { provider: 'groq', rawOutput: '{}' }),
+      repo.saveExtraction(r.id, rotta, { provider: 'gemini', rawOutput: '{}' }),
     ).rejects.toThrow()
 
     const salvato = await prisma.roster.findUniqueOrThrow({ where: { id: r.id } })

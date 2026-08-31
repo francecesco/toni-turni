@@ -15,7 +15,15 @@ import {
  * a inventarli. Arrivano dal chiamante in fase di fusione.
  */
 export const bandExtractionSchema = z.object({
-  columns: z.array(z.string().trim().min(1).max(60)).max(12),
+  /**
+   * Il tetto e quello di una **tabella intera**, non di una banda: alla
+   * strategia a chiamata singola la banda e tutta la tabella, e settembre ha 13
+   * colonne di contenuto. Un tetto a 12, scritto quando una banda ne portava
+   * due, faceva rifiutare l intera lettura per un limite che non riguardava piu
+   * niente. 40 e lo stesso tetto di `extractionSchema`: un foglio di reparto con
+   * quaranta colonne non esiste, ma non e questo il posto dove accorgersene.
+   */
+  columns: z.array(z.string().trim().min(1).max(60)).max(40),
   cells: z.array(extractedCellSchema),
 })
 

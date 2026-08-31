@@ -1,12 +1,16 @@
 /**
- * Misura l accuratezza dell estrazione **a bande** contro le fixture, chiamando il
- * provider REALE. Non è un test: consuma token e non gira in CI. Uso: npm run eval
+ * Misura l accuratezza dell estrazione contro le fixture, chiamando il provider
+ * REALE. Non è un test: consuma token e non gira in CI. Uso: npm run eval
  *
  * Il percorso misurato è quello di produzione, nello stesso ordine: si normalizza la
- * foto, si raddrizza la tabella e si taglia in bande, si estrae **banda per banda col
- * pacing reale**, si fonde e si confronta con la trascrizione di riferimento. Il
- * pacing è la ragione per cui la misura dura ~17 minuti: il piano gratuito di Groq ha
- * un tetto di token al minuto e le bande vanno distanziate, non è un blocco.
+ * foto, si rileva il riquadro e si raddrizza, si ritaglia secondo la **strategia**
+ * (`AI_STRATEGY`: `whole`, la tabella intera in una chiamata, oppure `bands`, mezzo
+ * mese per due colonne), si estrae, si fonde e si confronta con la trascrizione di
+ * riferimento.
+ *
+ * Con `whole` la misura dura meno di un minuto: non c è più nessun pacing da
+ * aspettare. Il pacer di prima esisteva per il tetto di 8000 token al minuto del
+ * piano gratuito di Groq e valeva il 92% del tempo di una misura.
  *
  * `year`, `month` e `ward` **non** sono misurati: una banda non mostra
  * l intestazione del foglio, quindi arrivano dal chiamante (qui dalla fixture) come
@@ -15,15 +19,14 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DEFAULT_SHIFT_CODES } from '../src/modules/codes/defaults'
-import { cropRosterBands } from '../src/modules/ingest/crop'
+import { cropRosterBands, cropRosterWhole } from '../src/modules/ingest/crop'
 import { normalizeRosterPhoto } from '../src/modules/ingest/normalize'
 import {
-  createTokenPacer,
+  createRetryAfterPacer,
   extractRosterByBands,
-  DEFAULT_TOKENS_PER_BAND,
-  GROQ_FREE_TOKENS_PER_MINUTE,
   type BandPacer,
 } from '../src/modules/extract/extract-bands'
+import { extractionStrategyFromEnv } from '../src/modules/extract/strategy'
 import { fallbackProviderFromEnv, providerFromEnv } from '../src/modules/extract/providers'
 import type { VisionProvider } from '../src/modules/extract/providers'
 import { compareExtraction, validateExpectedRoster, type ExpectedRoster } from './accuracy'
@@ -33,31 +36,20 @@ const FIXTURES = join(process.cwd(), 'fixtures')
 /**
  * Chiave d ambiente richiesta da ciascun provider, per fallire **subito**.
  *
- * Senza questa guardia una chiave mancante si scoprirebbe una banda alla volta, ognuna
- * dopo la sua attesa di pacing: ~17 minuti per non misurare niente e un messaggio
- * ripetuto 24 volte invece di uno chiaro.
+ * Senza questa guardia una chiave mancante si scoprirebbe una banda alla volta, con
+ * lo stesso messaggio ripetuto una volta per banda invece di uno chiaro.
  */
 const CHIAVE_RICHIESTA: Record<string, string> = {
-  groq: 'GROQ_API_KEY',
+  gemini: 'GEMINI_API_KEY',
   anthropic: 'ANTHROPIC_API_KEY',
 }
-
-/**
- * Token di output che Groq **prenota** a ogni chiamata, e che conta nel budget al
- * minuto anche se la risposta ne usa poche decine. Il default vero sta in
- * `src/modules/extract/providers/groq.ts`; qui serve solo a stimare quanto pesa una
- * banda nel budget, cioè a tarare `DEFAULT_TOKENS_PER_BAND`.
- */
-const TOKEN_DI_OUTPUT_PRENOTATI = Number(process.env.GROQ_MAX_OUTPUT_TOKENS ?? '') > 0
-  ? Number(process.env.GROQ_MAX_OUTPUT_TOKENS)
-  : 4000
 
 /**
  * `tsx` non carica `.env` da sé, al contrario di `next`: senza questo la chiave non
  * arriverebbe mai al provider e la misura fallirebbe su tutte le bande.
  *
  * `loadEnvFile` **non sovrascrive** le variabili già presenti nell ambiente, nemmeno
- * quelle impostate a stringa vuota: `GROQ_API_KEY= npm run eval` continua quindi a
+ * quelle impostate a stringa vuota: `GEMINI_API_KEY= npm run eval` continua quindi a
  * valere "chiave assente", che è esattamente la verifica che deve restare possibile.
  */
 function caricaEnvLocale(): void {
@@ -93,7 +85,9 @@ function osservaChiamateAlModello(): void {
 
   const osservato: typeof fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-    if (!/api\.(groq|anthropic)\.com/.test(url)) return fetchOriginale(input, init)
+    if (!/generativelanguage\.googleapis\.com|api\.anthropic\.com/.test(url)) {
+      return fetchOriginale(input, init)
+    }
 
     const inizio = Date.now()
     const risposta = await fetchOriginale(input, init)
@@ -107,19 +101,27 @@ function osservaChiamateAlModello(): void {
       try {
         // `clone()`: il corpo deve restare leggibile dal provider
         const corpo = (await risposta.clone().json()) as {
-          usage?: {
-            prompt_tokens?: number
-            completion_tokens?: number
-            total_tokens?: number
-            input_tokens?: number
-            output_tokens?: number
+          usage?: { input_tokens?: number; output_tokens?: number }
+          usageMetadata?: {
+            promptTokenCount?: number
+            candidatesTokenCount?: number
+            thoughtsTokenCount?: number
+            totalTokenCount?: number
           }
         }
         const usage = corpo.usage
-        inputTokens = usage?.prompt_tokens ?? usage?.input_tokens ?? null
-        outputTokens = usage?.completion_tokens ?? usage?.output_tokens ?? null
+        const gemini = corpo.usageMetadata
+        inputTokens = gemini?.promptTokenCount ?? usage?.input_tokens ?? null
+        // I token di ragionamento sono token di uscita fatturati e contano nel
+        // tetto di `maxOutputTokens`: tenerli fuori farebbe sembrare la risposta
+        // molto piu leggera di quanto e, e sono la ragione per cui il tetto e largo.
+        const ragionamento = gemini?.thoughtsTokenCount ?? 0
+        outputTokens =
+          gemini?.candidatesTokenCount !== undefined
+            ? gemini.candidatesTokenCount + ragionamento
+            : (usage?.output_tokens ?? null)
         totalTokens =
-          usage?.total_tokens ??
+          gemini?.totalTokenCount ??
           (inputTokens !== null && outputTokens !== null ? inputTokens + outputTokens : null)
       } catch {
         // corpo non decodificabile: i token restano ignoti, la misura prosegue
@@ -206,19 +208,22 @@ async function main(): Promise<void> {
 
   const knownCodes = DEFAULT_SHIFT_CODES.map((def) => def.code)
 
-  // Un solo pacer per tutta la misura: il tetto è sui token al minuto e non si azzera
-  // fra una foto e l altra. Con un pacer per foto, la prima banda della seconda foto
-  // partirebbe subito dopo l ultima della prima e le due chiamate cadrebbero nello
-  // stesso minuto.
-  const pacer = createTokenPacer()
-  const intervallo = (60 * DEFAULT_TOKENS_PER_BAND) / GROQ_FREE_TOKENS_PER_MINUTE
+  const strategy = extractionStrategyFromEnv()
+
+  // Il pacer attende solo davanti a un rate limit: non c e piu nessun tetto di
+  // token al minuto da rispettare, e distanziare per prudenza costerebbe minuti a
+  // vuoto a ogni misura.
+  const pacer = createRetryAfterPacer()
 
   console.log(
     `provider: ${provider.name}${fallback ? ` (riserva: ${fallback.name})` : ' (nessuna riserva)'}`,
   )
   console.log(
-    `pacing: ${DEFAULT_TOKENS_PER_BAND} token stimati per banda su ${GROQ_FREE_TOKENS_PER_MINUTE} al minuto ` +
-      `= ${intervallo.toFixed(1)}s fra due bande`,
+    `strategia: ${strategy}${
+      strategy === 'whole'
+        ? ' — la tabella intera in una chiamata sola'
+        : ' — mezzo mese per due colonne, il percorso misurato al 99,8%'
+    }`,
   )
 
   let totalCells = 0
@@ -240,7 +245,6 @@ async function main(): Promise<void> {
   // Se anche una sola fixture misurata non è verificata, il TOTALE finale non può
   // sembrare un dato definitivo.
   let riferimentoNonVerificato = false
-  let primaFoto = true
 
   const inizioMisura = Date.now()
 
@@ -270,7 +274,10 @@ async function main(): Promise<void> {
     const inizioTaglio = Date.now()
     let bands
     try {
-      bands = await cropRosterBands(image.data, { daysInMonth })
+      bands =
+        strategy === 'whole'
+          ? [await cropRosterWhole(image.data, { daysInMonth })]
+          : await cropRosterBands(image.data, { daysInMonth })
     } catch (error) {
       // Tabella non rilevata o confini inservibili: non c è niente da mandare al
       // modello, e un ritaglio a caso produrrebbe turni sbagliati.
@@ -279,16 +286,11 @@ async function main(): Promise<void> {
       continue
     }
     console.log(
-      `taglio: ${bands.length} bande in ${((Date.now() - inizioTaglio) / 1000).toFixed(1)}s ` +
-        `(${daysInMonth} giorni, ${bands[0].spec.columns.length} colonne per banda)`,
+      `taglio: ${bands.length} ${bands.length === 1 ? 'immagine' : 'bande'} in ` +
+        `${((Date.now() - inizioTaglio) / 1000).toFixed(1)}s ` +
+        `(${daysInMonth} giorni, ${bands[0].spec.columns.length} colonne, ` +
+        `${bands[0].width}x${bands[0].height} px = ${(bands[0].height / (bands[0].spec.dayTo - bands[0].spec.dayFrom + 3)).toFixed(0)} px per riga)`,
     )
-
-    // Attesa fra le due foto: vedi il commento sul pacer condiviso.
-    if (!primaFoto) {
-      console.log(`attesa di pacing fra le due foto (fino a ${intervallo.toFixed(0)}s)...`)
-      await pacer(0)
-    }
-    primaFoto = false
 
     registro = []
     const inizioBanda: number[] = [0]
@@ -478,7 +480,8 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `bande: ${totalBands} in tutto, ${totalFailedBands} non lette, ${totalPartialBands} lette a metà | ` +
+    `immagini mandate al modello: ${totalBands} in tutto, ${totalFailedBands} non lette, ` +
+      `${totalPartialBands} lette a metà | ` +
       `tempo totale ${((Date.now() - inizioMisura) / 1000 / 60).toFixed(1)} minuti | ` +
       `token consumati ${totalTokens}`,
   )
@@ -488,17 +491,7 @@ async function main(): Promise<void> {
         `non dichiarato in ${handCorrectedNonMisurabile.join(', ')} ***`,
     )
   }
-  console.log(`token di input per banda: ${estremi(inputPerBanda)}`)
-  const inputMediano = mediana(inputPerBanda)
-  if (inputMediano !== null) {
-    // Groq conta nel budget al minuto anche i token di output **prenotati**: è la
-    // somma qui sotto, non i token consumati, che va confrontata con
-    // DEFAULT_TOKENS_PER_BAND.
-    console.log(
-      `peso di una banda nel budget al minuto: ${inputMediano} di input + ${TOKEN_DI_OUTPUT_PRENOTATI} prenotati ` +
-        `= ${inputMediano + TOKEN_DI_OUTPUT_PRENOTATI}, contro DEFAULT_TOKENS_PER_BAND = ${DEFAULT_TOKENS_PER_BAND}`,
-    )
-  }
+  console.log(`token di input per chiamata: ${estremi(inputPerBanda)}`)
 
   if (failedPhotos.length > 0) {
     console.error(`\n${failedPhotos.length} estrazione/i su ${expectedFiles.length} non riuscita/e: vedi gli errori sopra.`)

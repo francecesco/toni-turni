@@ -1,7 +1,7 @@
 import sharp from 'sharp'
 import { warpPerspective, type Point } from '@/lib/homography'
 import { detectTableQuad } from './grid'
-import { planBands, pruneColumnBoundaries, type BandSpec } from './layout'
+import { planBands, planWholeTable, pruneColumnBoundaries, type BandSpec } from './layout'
 
 /**
  * Larghezza del riquadro raddrizzato. Sui riquadri delle due foto reali (1148 e
@@ -24,8 +24,9 @@ const TARGET_BAND_HEIGHT = 1300
 
 /**
  * Tetto ai pixel di una banda. Il ritaglio misurato al 100% era 700x1313 = 0,92
- * Mpx e costava circa 4020 token: il tetto di Groq è 8000 token al minuto e conta
- * anche quelli prenotati per l'uscita, quindi le bande non possono crescere.
+ * Mpx e costava circa 4020 token. Il tetto esisteva per il piano gratuito di Groq,
+ * che contava anche i token prenotati per l'uscita; resta perché una banda che
+ * cresce perde pixel per riga, e quello va rimisurato prima, non dopo.
  *
  * Da quando le bande sono **composte** (blocco dei giorni affiancato al gruppo di
  * colonne) la loro larghezza è quasi costante e vicina a quella del ritaglio di
@@ -36,6 +37,31 @@ const TARGET_BAND_HEIGHT = 1300
  * leggibilità va rimisurata.
  */
 const MAX_BAND_PIXELS = 920_000
+
+/**
+ * Pixel per riga a cui si porta la **tabella intera**, quando ci sta.
+ *
+ * Il riferimento e la configurazione misurata al 100%: un ritaglio alto 1313 px
+ * per ~17 righe, cioe ~77 px per riga. Non e risoluzione vera — le foto reali
+ * arrivano a 1600 px di lato lungo e una riga vale ~32 px di dettaglio
+ * effettivo — ma il ricampionamento e proprio quello che rendeva leggibili le
+ * bande, e non c e ragione di darne meno alla tabella intera.
+ */
+const TARGET_WHOLE_ROW_HEIGHT = 78
+
+/**
+ * Lato massimo dell immagine della tabella intera.
+ *
+ * Sopra un certo lato il provider ricampiona da se: spendere byte oltre non
+ * aggiunge dettaglio, fa solo decidere a qualcun altro con che filtro ridurre.
+ * 3000 sta sotto quel limite con un margine.
+ *
+ * Su una tabella larga il tetto morde prima del bersaglio sui pixel per riga, e
+ * va bene cosi: e geometria, non una scelta. Settembre (14 colonne, riquadro
+ * 1600x1113) arriva a ~67 px per riga invece di 78, che e ancora il doppio del
+ * dettaglio vero.
+ */
+const MAX_WHOLE_EDGE = 3000
 
 /** Il riquadro raddrizzato, con i confini di colonna già ripuliti. */
 export interface DeskewedRoster {
@@ -237,6 +263,47 @@ async function impila(sopra: Piece, sotto: Piece): Promise<Piece> {
 }
 
 /**
+ * Compone l immagine di una banda dal riquadro raddrizzato: il blocco dei giorni
+ * affiancato alle colonne del gruppo, con la riga dei nomi in cima.
+ *
+ * Il blocco dei giorni prende `top` e `height` dal ritaglio: e cio che rende
+ * **esatta** la cucitura fra la riga del giorno e la cella che le sta accanto,
+ * invece che approssimata.
+ *
+ * La composizione va materializzata prima di qualunque ridimensionamento: sharp
+ * ridimensiona la base *prima* di comporre, e le strisce non ci starebbero piu.
+ */
+async function componi(rect: RawImage, spec: BandSpec): Promise<Piece> {
+  const righe = await affianca(
+    await ritaglia(rect, {
+      left: spec.days.left,
+      top: spec.crop.top,
+      width: spec.days.width,
+      height: spec.crop.height,
+    }),
+    await ritaglia(rect, spec.crop),
+  )
+
+  if (!spec.header) return righe
+
+  const testa = await affianca(
+    await ritaglia(rect, {
+      left: spec.days.left,
+      top: spec.header.top,
+      width: spec.days.width,
+      height: spec.header.height,
+    }),
+    await ritaglia(rect, {
+      left: spec.crop.left,
+      top: spec.header.top,
+      width: spec.crop.width,
+      height: spec.header.height,
+    }),
+  )
+  return impila(testa, righe)
+}
+
+/**
  * Taglia la foto nelle bande verticali da mandare al modello una alla volta.
  *
  * Mandare la tabella intera in una sola chiamata dà il 18,5% di celle corrette;
@@ -274,44 +341,10 @@ export async function cropRosterBands(
   const bande: RosterBand[] = []
 
   for (const spec of specifiche) {
-    // il blocco dei giorni prende `top` e `height` dal ritaglio: è ciò che rende
-    // esatta la cucitura fra la riga del giorno e la cella che le sta accanto
-    const righe = await affianca(
-      await ritaglia(rect, {
-        left: spec.days.left,
-        top: spec.crop.top,
-        width: spec.days.width,
-        height: spec.crop.height,
-      }),
-      await ritaglia(rect, spec.crop),
-    )
-
-    // La composizione va materializzata prima del ridimensionamento: sharp
-    // ridimensiona la base *prima* di comporre, e le strisce non ci starebbero
-    // più.
-    let sorgente = righe
-    if (spec.header) {
-      const testa = await affianca(
-        await ritaglia(rect, {
-          left: spec.days.left,
-          top: spec.header.top,
-          width: spec.days.width,
-          height: spec.header.height,
-        }),
-        await ritaglia(rect, {
-          left: spec.crop.left,
-          top: spec.header.top,
-          width: spec.crop.width,
-          height: spec.header.height,
-        }),
-      )
-      sorgente = await impila(testa, righe)
-    }
-
+    const sorgente = await componi(rect, spec)
     const { width, height } = sorgente
     // Si scala sull'altezza, che è quello che decide i pixel per riga, ma non
-    // oltre il tetto di pixel: il budget di token di Groq conta anche quelli
-    // prenotati per l'uscita.
+    // oltre il tetto di pixel per banda.
     const scala = Math.min(
       TARGET_BAND_HEIGHT / height,
       Math.sqrt(MAX_BAND_PIXELS / (width * height)),
@@ -331,4 +364,55 @@ export async function cropRosterBands(
   }
 
   return bande
+}
+
+/**
+ * Ritaglia la tabella **intera in una sola immagine**: la strategia a chiamata
+ * singola.
+ *
+ * La tabella intera in una chiamata, misurata nella Fase 2A, dava il 18,5% di
+ * celle corrette. Quella misura pero mandava al modello la **foto**: tabella in
+ * prospettiva, annegata nello sfondo, con la riga di un giorno alta ~32 px. Qui
+ * la tabella e raddrizzata sull omografia del riquadro, ritagliata sulla griglia
+ * stampata e ricampionata ai pixel per riga della configurazione che ha
+ * misurato il 100%. Sono tre differenze, non zero — e restano da misurare:
+ * finche `npm run eval` non parla, il 18,5% e l unico numero che questa
+ * strategia ha.
+ *
+ * Non e un percorso di codice separato: e `planWholeTable`, cioe una banda sola
+ * che tiene tutte le colonne e tutti i giorni. Tutto quello che sta a valle —
+ * scarto delle colonne di servizio per nome, buchi dichiarati per colonna e
+ * giorni, persistenza che rispetta le correzioni a mano — resta quello gia
+ * misurato.
+ */
+export async function cropRosterWhole(
+  image: Buffer,
+  options: { daysInMonth: number; deskewWidth?: number; quality?: number },
+): Promise<RosterBand> {
+  const { rect, columns } = await warpRoster(image, options.deskewWidth ?? DEFAULT_DESKEW_WIDTH)
+  const [spec] = planWholeTable(columns, { daysInMonth: options.daysInMonth })
+
+  const sorgente = await componi(rect, spec)
+  const { width, height } = sorgente
+
+  // Le righe sono i giorni del mese piu le due righe d intestazione (nomi e
+  // giorno della settimana): e su quelle che si decide la scala.
+  const righe = options.daysInMonth + 2
+  const scala = Math.min(
+    (TARGET_WHOLE_ROW_HEIGHT * righe) / height,
+    MAX_WHOLE_EDGE / Math.max(width, height),
+  )
+
+  const larghezzaFinale = Math.max(1, Math.round(width * scala))
+  const altezzaFinale = Math.max(1, Math.round(height * scala))
+
+  return {
+    spec,
+    image: await sharp(sorgente.data)
+      .resize(larghezzaFinale, altezzaFinale, { fit: 'fill', kernel: 'lanczos3' })
+      .jpeg({ quality: options.quality ?? DEFAULT_QUALITY, mozjpeg: true })
+      .toBuffer(),
+    width: larghezzaFinale,
+    height: altezzaFinale,
+  }
 }

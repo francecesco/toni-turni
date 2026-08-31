@@ -18,13 +18,13 @@ a penna incluse. Chi lo riceve ricopia a mano trenta caselle sul calendario del 
 
 ```
 Foto della tabella  →  Estrazione AI  →  Conferma dell'infermiera  →  Google Calendar
-   (referente)         (Groq vision)      (griglia editabile)         (calendario dedicato)
+   (referente)        (Gemini vision)     (griglia editabile)         (calendario dedicato)
 ```
 
 1. **Caricamento** — l'infermiera referente carica la foto del mese. L'immagine viene raddrizzata e
    ottimizzata localmente.
-2. **Estrazione** — un modello vision legge la griglia e restituisce mese, colonne e una cella per
-   giorno, **con un livello di confidenza per ciascuna**.
+2. **Estrazione** — la tabella raddrizzata va a un modello vision in **una sola chiamata**, che
+   restituisce le colonne e una cella per ogni giorno, **con un livello di confidenza per ciascuna**.
 3. **Conferma** — ogni infermiera vede solo la propria colonna. Celle incerte, correzioni a penna e
    codici mai visti prima sono evidenziati. Niente viene scritto su Google finché non si conferma.
 4. **Sincronizzazione** — i turni finiscono su un calendario dedicato "Turni", separato da quello
@@ -42,7 +42,7 @@ Foto della tabella  →  Estrazione AI  →  Conferma dell'infermiera  →  Goog
 - **Calendario dedicato** — si può nascondere o rimuovere in blocco senza intaccare il calendario
   personale.
 - **Multi-utente** — ogni infermiera collega il proprio account Google e vede solo i propri turni.
-- **Provider AI sostituibile** — Groq per default, alternativa selezionabile da configurazione.
+- **Provider AI sostituibile** — Gemini per default, alternativa selezionabile da configurazione.
 - **Funziona anche senza AI** — l'inserimento manuale resta sempre disponibile.
 
 ## Requisiti
@@ -50,7 +50,7 @@ Foto della tabella  →  Estrazione AI  →  Conferma dell'infermiera  →  Goog
 - Docker e Docker Compose (testato su ZimaBoard, x86_64, 8 GB RAM)
 - Un dominio con Cloudflare (il piano gratuito basta) per il tunnel https
 - Un progetto Google Cloud con Google Calendar API attiva
-- Una chiave API [Groq](https://console.groq.com)
+- Una chiave API [Google AI Studio](https://aistudio.google.com/apikey) per Gemini
 
 Il dominio https non è un vezzo: Google accetta redirect OAuth solo su `https` o `http://localhost`.
 
@@ -80,8 +80,9 @@ SESSION_SECRET=                           # openssl rand -base64 32
 TZ=Europe/Rome
 
 # Provider AI
-AI_PROVIDER=groq                          # groq | anthropic
-GROQ_API_KEY=
+AI_PROVIDER=gemini                        # gemini | anthropic
+GEMINI_API_KEY=
+AI_STRATEGY=whole                         # whole: tabella intera in una chiamata | bands
 ANTHROPIC_API_KEY=                        # opzionale, provider alternativo
 
 # Google OAuth

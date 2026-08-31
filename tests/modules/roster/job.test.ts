@@ -281,6 +281,148 @@ describe('runExtractionJob — l estrazione lunga fuori dalla richiesta HTTP', (
   })
 })
 
+/**
+ * La strategia di lettura: **una chiamata sola con la tabella intera** per
+ * default, le bande come ripiego.
+ *
+ * La tabella intera in una chiamata, misurata nella Fase 2A sulla **foto**, dava
+ * il 18,5% di celle corrette; le bande danno il 99,8% ma su Groq costavano ~50 s
+ * di attesa l una per il tetto di token al minuto. Togliendo Groq quell attesa
+ * non c e piu, e la tabella intera arriva al modello raddrizzata, ritagliata
+ * sulla griglia e ricampionata: sono tre differenze rispetto alla misura del
+ * 18,5%. Se `npm run eval` dicesse che non bastano, `AI_STRATEGY=bands` riporta
+ * al percorso misurato senza toccare il codice.
+ */
+describe('extractionStrategyFromEnv', () => {
+  it('legge la tabella intera in una chiamata sola, per default', () => {
+    expect(job.extractionStrategyFromEnv()).toBe('whole')
+  })
+
+  it('torna alle bande quando AI_STRATEGY lo chiede', () => {
+    process.env.AI_STRATEGY = 'bands'
+    try {
+      expect(job.extractionStrategyFromEnv()).toBe('bands')
+    } finally {
+      delete process.env.AI_STRATEGY
+    }
+  })
+
+  it('rifiuta una strategia sconosciuta invece di ripiegare in silenzio', () => {
+    // Ripiegare vorrebbe dire leggere la tabella in un modo diverso da quello
+    // che l ambiente ha chiesto, e non dirlo a nessuno.
+    process.env.AI_STRATEGY = 'inventata'
+    try {
+      expect(() => job.extractionStrategyFromEnv()).toThrow(/inventata/)
+    } finally {
+      delete process.env.AI_STRATEGY
+    }
+  })
+})
+
+describe('runExtractionJob con la tabella intera in una banda sola', () => {
+  /** La tabella intera: una banda, tutte le colonne, tutti i giorni del mese. */
+  function bandaIntera(immagine: Buffer): RosterBand[] {
+    return [
+      {
+        spec: {
+          columns: [1, 2],
+          dayFrom: 1,
+          dayTo: 1,
+          days: { left: 0, width: 0.1 },
+          crop: { left: 0.1, top: 0, width: 0.9, height: 1 },
+          header: null,
+          whole: true,
+        },
+        image: immagine,
+        width: 2762,
+        height: 2574,
+      },
+    ]
+  }
+
+  it('con una chiamata sola salva tutte le celle e conclude extracted', async () => {
+    const r = await tabella({ requestedAt: new Date('2026-08-26T10:00:00Z') })
+    const provider = providerFinto([
+      JSON.stringify({
+        columns: ['RENATA', 'MERY'],
+        cells: [
+          { day: 1, column: 'RENATA', code: 'M', confidence: 0.9, handCorrected: false },
+          { day: 1, column: 'MERY', code: 'P', confidence: 0.9, handCorrected: false },
+        ],
+      }),
+    ])
+
+    const esito = await job.runExtractionJob(r.id, {
+      ...deps(provider),
+      cropBands: async (img: Buffer) => bandaIntera(img),
+    })
+
+    expect(provider.chiamate).toBe(1)
+    expect(esito.status).toBe('extracted')
+    expect(esito.bandsRun).toBe(1)
+    const celle = await prisma.rosterCell.findMany({ where: { rosterId: r.id } })
+    expect(celle).toHaveLength(2)
+  })
+
+  it('una tabella intera letta a meta resta partial: il buco si dichiara', async () => {
+    // E il guasto peggiore della chiamata unica: una risposta valida e corta
+    // somiglia a un foglio con le celle vuote. Su una banda sola non c e nessuna
+    // altra banda che copra il buco.
+    const r = await tabella({ requestedAt: new Date('2026-08-26T10:00:00Z') })
+    const provider = providerFinto([
+      JSON.stringify({
+        columns: ['RENATA', 'MERY'],
+        cells: [{ day: 1, column: 'RENATA', code: 'M', confidence: 0.9, handCorrected: false }],
+      }),
+    ])
+
+    const esito = await job.runExtractionJob(r.id, {
+      ...deps(provider),
+      cropBands: async (img: Buffer) => bandaIntera(img),
+    })
+
+    expect(esito.status).toBe('partial')
+    // il buco vive sulla banda, che e dove la Fase 3 lo va a leggere per
+    // tradurlo in nomi di colonna e giorni
+    const bande = await prisma.rosterBand.findMany({ where: { rosterId: r.id } })
+    expect(bande).toHaveLength(1)
+    expect(bande[0].status).toBe('partial')
+    expect(bande[0].error).toMatch(/1.*2|2.*1/)
+    // la cella letta si tiene: buttarla non riempirebbe il buco
+    expect(await prisma.rosterCell.count({ where: { rosterId: r.id } })).toBe(1)
+  })
+
+  it('dice al modello che sta guardando la tabella intera, non un ritaglio', async () => {
+    const r = await tabella({ requestedAt: new Date('2026-08-26T10:00:00Z') })
+    let promptVisto = ''
+    const provider: VisionProvider = {
+      name: 'finto',
+      async extract(request) {
+        promptVisto = request.prompt
+        return {
+          raw: JSON.stringify({
+            columns: ['RENATA', 'MERY'],
+            cells: [
+              { day: 1, column: 'RENATA', code: 'M', confidence: 0.9, handCorrected: false },
+              { day: 1, column: 'MERY', code: 'P', confidence: 0.9, handCorrected: false },
+            ],
+          }),
+          model: 'm',
+          provider: 'finto',
+        }
+      },
+    }
+
+    await job.runExtractionJob(r.id, {
+      ...deps(provider),
+      cropBands: async (img: Buffer) => bandaIntera(img),
+    })
+
+    expect(promptVisto).not.toMatch(/ritaglio/i)
+    expect(promptVisto).toMatch(/per intero/i)
+  })
+})
+
 describe('processResumableRosters — cosa fa il processo quando riparte', () => {
   it('recupera le estrazioni col battito vecchio e le riprende dalle bande mancanti', async () => {
     const r = await tabella()
