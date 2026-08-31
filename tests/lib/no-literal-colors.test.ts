@@ -14,7 +14,6 @@ const RADICE = path.join(import.meta.dirname, '../../src')
 const DA_CONVERTIRE: readonly string[] = [
   'app/login/page.tsx',
   'app/rosters/[id]/page.tsx',
-  'app/rosters/[id]/review/page.tsx',
   'app/settings/codes/page.tsx',
   'app/settings/users/page.tsx',
 ]

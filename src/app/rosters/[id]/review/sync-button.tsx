@@ -1,6 +1,7 @@
 'use client'
 
 import { useFormStatus } from 'react-dom'
+import { Button } from '@/components/ui/button'
 
 /**
  * Il bottone che manda i turni confermati sul calendario.
@@ -15,17 +16,19 @@ export function SyncButton({ shifts }: { shifts: number }) {
 
   return (
     <>
-      <button
+      <Button
         type="submit"
+        size="touch"
+        variant="outline"
         disabled={pending}
         aria-busy={pending}
-        className="w-full rounded-xl border-2 border-primary bg-background px-4 py-4 text-base font-medium text-primary shadow-lg disabled:opacity-70"
+        className="w-full"
       >
         {pending
           ? 'Sto scrivendo sul calendario…'
           : `Manda sul mio calendario i ${shifts} turni confermati`}
-      </button>
-      <p aria-live="polite" className="text-center text-xs text-muted-foreground">
+      </Button>
+      <p aria-live="polite" className="text-muted-foreground text-center text-xs">
         {pending
           ? 'Un evento per volta: può volerci un minuto. Non chiudere la pagina.'
           : 'Scrive solo sul calendario "Turni" creato dall app, e solo i turni che hai confermato.'}
