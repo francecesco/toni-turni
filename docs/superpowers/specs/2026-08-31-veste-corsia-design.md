@@ -554,9 +554,21 @@ prove, tutte su logica pura o su file su disco:
    | `--destructive-soft-foreground` | `--destructive-soft` |
    | `--sunday-soft-foreground` | `--sunday-soft` |
 
-   Soglia **3:1** per `--border` su `--background` e per `--sunday` su `--background` (è una cifra
-   grande, non testo corrente). Serve a non dover *dichiarare* che i contrasti tengono: li prova la
-   suite, e se qualcuno ritocca un esadecimale se ne accorge subito.
+   Soglia **3:1** per `--input` su `--background` e per `--sunday` su `--background` (è una cifra
+   grande, non testo corrente).
+
+   **`--border` è esente, e la ragione conta.** Il criterio WCAG 1.4.11 chiede 3:1 per l'informazione
+   visiva *necessaria a identificare un componente*, non per ogni separatore. Il confine di un campo
+   di testo è necessario — devi vedere dove toccare — e con `#DFE8EF` su `#F2F6F9` stava a **1,14:1**:
+   quello è un difetto vero, e `--input` diventa `#618EB0` (chiaro) / `#4E6A84` (scuro), 3,22:1 in
+   entrambi i temi. Il bordo di una scheda bianca su fondo azzurro **non** è necessario: la scheda si
+   identifica dal riempimento e dall'ombra, e il filo è decorazione. Imporgli 3:1 disegnerebbe ogni
+   scheda con un contorno blu-grigio ben visibile — un wireframe al posto della veste «Corsia», che
+   è esattamente quello che è successo la prima volta che la prova è girata. Quindi `--border` resta
+   `#DFE8EF` / `#24313D`.
+
+   Serve a non dover *dichiarare* che i contrasti tengono: li prova la suite, e se qualcuno ritocca
+   un esadecimale se ne accorge subito.
 
 Le 897 prove esistenti restano verdi e non si riscrivono. Dopo ogni passo: `npm test` e
 `npm run lint` (che è `eslint` + `tsc --noEmit`, quindi su un checkout pulito serve prima
