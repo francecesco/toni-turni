@@ -72,9 +72,18 @@ const COPPIE_TESTO: ReadonlyArray<readonly [string, string]> = [
   ['sunday-soft-foreground', 'sunday-soft'],
 ]
 
-/** Bordi e cifre grandi: 3:1 basta, non è testo corrente. */
+/**
+ * Bordi di componenti e cifre grandi: 3:1 basta, non è testo corrente.
+ *
+ * `--border` **non** è in elenco, e non è una dimenticanza: WCAG 1.4.11 chiede
+ * 3:1 per l'informazione necessaria a *identificare* un componente. Il confine
+ * di un campo di testo lo è — devi vedere dove toccare — e per questo `--input`
+ * c'è. Il filo di una scheda bianca su fondo azzurro no: la scheda si identifica
+ * dal riempimento e dall'ombra. Imporgli 3:1 disegnerebbe ogni scheda con un
+ * contorno blu-grigio visibile, cioè un wireframe al posto della veste.
+ */
 const COPPIE_NON_TESTO: ReadonlyArray<readonly [string, string]> = [
-  ['border', 'background'],
+  ['input', 'background'],
   ['sunday', 'background'],
 ]
 

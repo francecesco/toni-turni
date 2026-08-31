@@ -86,8 +86,8 @@
   /* testo secondario e bordi */
   --muted: #E7EEF4;
   --muted-foreground: #55697A;
-  --border: #618EB0;
-  --input: #DFE8EF;
+  --border: #DFE8EF;
+  --input: #618EB0;
   --ring: #1A6FD4;
 
   /* semantici: coppia piena + coppia tenue */
@@ -147,8 +147,8 @@
 
     --muted: #1E2C39;
     --muted-foreground: #97AAB9;
-    --border: #4E6A84;
-    --input: #2A3946;
+    --border: #24313D;
+    --input: #4E6A84;
     --ring: #5EA3F0;
 
     --ok: #3ECF98;
