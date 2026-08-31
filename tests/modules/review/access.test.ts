@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canSeeColumn, visibleColumns } from '@/modules/review/access'
+import { canSeeColumn, defaultColumn, visibleColumns } from '@/modules/review/access'
 
 const referente = { id: 'u-ref', role: 'REFERENTE' as const }
 const cristina = { id: 'u-cri', role: 'NURSE' as const }
@@ -81,5 +81,37 @@ describe('visibleColumns — cosa mostrare in elenco', () => {
     // la nozione precedente erano due colonne da mezzo mese ciascuna.
     expect(visibleColumns(sara, ['SARA DP'], aliases)).toEqual(['SARA DP'])
     expect(visibleColumns(sara, ['SARA  DP.'], aliases)).toEqual(['SARA  DP.'])
+  })
+})
+
+describe('defaultColumn — quale colonna aprire per prima', () => {
+  const aliases = [
+    { label: 'CARMEN', userId: 'u-carmen', ignored: false },
+    { label: 'CRISTINA', userId: 'u-cri', ignored: false },
+    { label: 'KHADIJA', userId: 'u-khadija', ignored: false },
+    { label: 'RENATA', userId: 'u-renata', ignored: false },
+  ]
+  const colonne = ['CARMEN', 'CRISTINA', 'KHADIJA', 'RENATA']
+
+  it("la referente atterra sulla propria colonna, non sulla prima in ordine alfabetico", () => {
+    // È il difetto vero: la referente è Renata, ultima in ordine alfabetico, e
+    // prima di questa funzione `visibili[0]` la portava su CARMEN — la colonna
+    // di un'altra persona.
+    const renata = { id: 'u-renata', role: 'REFERENTE' as const }
+    expect(defaultColumn(renata, colonne, aliases)).toBe('RENATA')
+  })
+
+  it("un'infermiera vede solo la propria colonna: la scelta non cambia", () => {
+    const cristina = { id: 'u-cri', role: 'NURSE' as const }
+    expect(defaultColumn(cristina, ['CRISTINA'], aliases)).toBe('CRISTINA')
+  })
+
+  it('senza una colonna propria fra le visibili, prende la prima', () => {
+    const referenteSenzaColonna = { id: 'u-nuova', role: 'REFERENTE' as const }
+    expect(defaultColumn(referenteSenzaColonna, colonne, aliases)).toBe('CARMEN')
+  })
+
+  it('senza colonne visibili, restituisce null', () => {
+    expect(defaultColumn({ id: 'u-renata', role: 'REFERENTE' as const }, [], aliases)).toBeNull()
   })
 })

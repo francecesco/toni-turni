@@ -30,6 +30,7 @@ let session: typeof import('@/modules/auth/session')
 let ReviewPage: typeof import('@/app/rosters/[id]/review/page').default
 let AppHeader: typeof import('@/components/app-header').AppHeader
 let ActionDock: typeof import('@/components/action-dock').ActionDock
+let ColumnSummary: typeof import('@/app/rosters/[id]/review/column-summary').ColumnSummary
 
 let referente: { id: string }
 let infermiera: { id: string }
@@ -47,6 +48,7 @@ beforeAll(async () => {
   ReviewPage = (await import('@/app/rosters/[id]/review/page')).default
   AppHeader = (await import('@/components/app-header')).AppHeader
   ActionDock = (await import('@/components/action-dock')).ActionDock
+  ColumnSummary = (await import('@/app/rosters/[id]/review/column-summary')).ColumnSummary
 })
 
 afterAll(() => db.cleanup())
@@ -195,5 +197,41 @@ describe('un dock senza niente da confermare né da sincronizzare non compare', 
     const pagina = await renderReview(infermiera.id)
     const dock = trovaElemento(pagina, ActionDock)
     expect(dock).toBeUndefined()
+  })
+})
+
+describe('la referente atterra sulla propria colonna, non sulla prima in ordine alfabetico', () => {
+  beforeEach(async () => {
+    await prisma.shiftCode.create({
+      data: { code: 'M', label: 'Mattino', kind: 'work', startTime: '07:00', endTime: '14:00' },
+    })
+    // Colonne apposta in ordine alfabetico diverso da quello di creazione: CARMEN
+    // viene prima di RENATA, e prima di questa correzione `visibili[0]` avrebbe
+    // portato la referente proprio su CARMEN.
+    for (const nome of ['CARMEN', 'CRISTINA', 'RENATA']) {
+      await prisma.rosterCell.create({
+        data: { rosterId, day: 1, columnLabel: nome, rawCode: 'M', code: 'M', confidence: 0.9 },
+      })
+    }
+    await prisma.columnAlias.create({
+      data: { label: 'CARMEN', userId: infermiera.id, ignored: false },
+    })
+    await prisma.columnAlias.create({
+      data: { label: 'RENATA', userId: referente.id, ignored: false },
+    })
+  })
+
+  it('la referente con una colonna sua atterra sulla sua, non su CARMEN', async () => {
+    const pagina = await renderReview(referente.id)
+    const summary = trovaElemento<{ columnLabel?: string; children?: ReactNode }>(pagina, ColumnSummary)
+    expect(summary).toBeDefined()
+    expect(summary?.props.columnLabel).toBe('RENATA')
+  })
+
+  it("un infermiera vede solo la propria e atterra lì comunque", async () => {
+    const pagina = await renderReview(infermiera.id)
+    const summary = trovaElemento<{ columnLabel?: string; children?: ReactNode }>(pagina, ColumnSummary)
+    expect(summary).toBeDefined()
+    expect(summary?.props.columnLabel).toBe('CARMEN')
   })
 })

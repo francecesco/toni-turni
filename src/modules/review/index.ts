@@ -1,5 +1,5 @@
 export type { AliasLike, Viewer } from './access'
-export { canSeeColumn, visibleColumns } from './access'
+export { canSeeColumn, defaultColumn, visibleColumns } from './access'
 export type { ColumnAliasRow } from './aliases'
 export {
   aliasFor,

@@ -51,3 +51,20 @@ export function visibleColumns(
     return canSeeColumn(viewer, alias)
   })
 }
+
+/**
+ * Quale colonna aprire per prima, fra quelle visibili. Un'infermiera ne vede
+ * una sola, quindi qui non cambia niente; la referente le vede tutte e senza
+ * questa preferenza atterrava sulla prima in ordine alfabetico — quasi sempre
+ * la colonna di un'altra persona, con banner e nessuna barra delle azioni. Se
+ * la referente ha una colonna propria fra quelle visibili, è quella che apre.
+ */
+export function defaultColumn(
+  viewer: Viewer,
+  columns: string[],
+  aliases: AliasLike[],
+): string | null {
+  const perChiave = new Map(aliases.map((alias) => [normalizeColumn(alias.label), alias]))
+  const propria = columns.find((column) => perChiave.get(normalizeColumn(column))?.userId === viewer.id)
+  return propria ?? columns[0] ?? null
+}

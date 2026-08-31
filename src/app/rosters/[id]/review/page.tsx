@@ -14,6 +14,7 @@ import {
   buildColumnGrid,
   canSeeColumn,
   columnAssignments,
+  defaultColumn,
   describeUnreadBands,
   gridSummary,
   listColumnAliases,
@@ -70,7 +71,10 @@ export default async function ReviewPage({
   ])
   const visibili = visibleColumns(user, etichette, aliases)
 
-  const scelta = colonna && visibili.includes(colonna) ? colonna : (visibili[0] ?? null)
+  // Fra le colonne visibili, preferisce quella della persona che guarda: senza
+  // questo la referente (che le vede tutte) atterrava sulla prima in ordine
+  // alfabetico, quasi sempre la colonna di un'altra.
+  const scelta = colonna && visibili.includes(colonna) ? colonna : defaultColumn(user, visibili, aliases)
 
   const header = (
     <AppHeader
