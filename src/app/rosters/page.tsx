@@ -57,7 +57,7 @@ export default async function RostersPage() {
           <ul className="mx-auto max-w-2xl flex flex-col gap-3 px-safe pb-10">
             {voci.map((voce) => (
               <li key={voce.id}>
-                <Link href={`/rosters/${voce.id}/review`}>
+                <Link href={`/rosters/${voce.id}/review`} className="block">
                   <div
                     className={[
                       'bg-card border-border flex min-h-16 items-center justify-between gap-3 rounded-2xl border px-4 py-3',

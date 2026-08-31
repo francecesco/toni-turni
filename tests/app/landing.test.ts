@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PrismaClient } from '@prisma/client'
+import { romeYearMonth } from '@/lib/time'
 import { createTestDb } from '../helpers/db'
 
 const cookieStore = new Map<string, string>()
@@ -62,11 +63,12 @@ beforeEach(async () => {
 /**
  * Una tabella per un mese, alla versione data. `imagePath` è obbligatorio nello
  * schema, e `Roster` non ha un campo per chi l'ha caricata: il vincolo di unicità
- * è `[year, month, ward, version]`.
+ * è `[year, month, ward, version]`. Lo stato di default è `extracted`, il caso
+ * più comune nelle prove che non riguardano lo stato stesso.
  */
-async function tabella(year: number, month: number, version = 1): Promise<string> {
+async function tabella(year: number, month: number, version = 1, status = 'extracted'): Promise<string> {
   const roster = await prisma.roster.create({
-    data: { year, month, version, ward: '3°PIANO', imagePath: 'prova.jpg', status: 'extracted' },
+    data: { year, month, version, ward: '3°PIANO', imagePath: 'prova.jpg', status },
   })
   return roster.id
 }
@@ -107,6 +109,34 @@ describe('la home apre sui turni del mese', () => {
     await tabella(2024, 1)
 
     expect(await destinazioneDi(() => homePage.default())).toBe(`/rosters/${vecchia}/review`)
+  })
+
+  it('su una tabella non ancora estratta atterra sull avanzamento, non sulla griglia vuota', async () => {
+    // `extracted`/`partial` vanno su `/review`; ogni altro stato
+    // (`uploaded`, `extracting`, `interrupted`, `failed`) non ha ancora colonne
+    // da confermare, e la griglia direbbe una bugia («nessuna colonna associata»)
+    // dove la verità è che l estrazione sta girando o è da riprovare.
+    const oggi = new Date()
+    const inEstrazione = await tabella(oggi.getFullYear(), oggi.getMonth() + 1, 1, 'extracting')
+
+    expect(await destinazioneDi(() => homePage.default())).toBe(`/rosters/${inEstrazione}`)
+  })
+
+  it('riconosce il mese corrente con romeYearMonth, non con l orario del server', async () => {
+    // Il ramo di ripiego di `landingRoster` (più recente in assoluto) e il ramo di
+    // corrispondenza esatta (mese di oggi) devono **divergere** qui: una tabella
+    // due mesi nel futuro è più recente in ordinamento della tabella del mese
+    // corrente. Se la pagina calcolasse "oggi" in un fuso sbagliato (UTC invece di
+    // Europe/Rome), o ignorasse `romeYearMonth`, atterrerebbe sulla tabella
+    // futura invece che su quella del mese vero.
+    const oggi = romeYearMonth(new Date())
+    const corrente = await tabella(oggi.year, oggi.month)
+
+    const meseFuturo = oggi.month + 2 > 12 ? oggi.month - 10 : oggi.month + 2
+    const annoFuturo = oggi.month + 2 > 12 ? oggi.year + 1 : oggi.year
+    await tabella(annoFuturo, meseFuturo)
+
+    expect(await destinazioneDi(() => homePage.default())).toBe(`/rosters/${corrente}/review`)
   })
 
   it('senza nessuna tabella non reindirizza: rende lo stato vuoto', async () => {

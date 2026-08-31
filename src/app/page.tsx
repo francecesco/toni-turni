@@ -17,7 +17,16 @@ export default async function HomePage() {
   const tabelle = await reviewableRosters(user)
   const scelta = landingRoster(tabelle, romeYearMonth(new Date()))
 
-  if (scelta) redirect(`/rosters/${scelta.id}/review`)
+  if (scelta) {
+    // Solo `extracted`/`partial` hanno colonne da confermare. Sulle altre
+    // (`uploaded`, `extracting`, `interrupted`, `failed`) la griglia di conferma
+    // direbbe una bugia — «nessuna colonna associata a te» — dove la verità è
+    // che l estrazione sta ancora girando o va riprovata: quella pagina la sa
+    // mostrare, `/review` no.
+    const stato = tabelle.find((t) => t.id === scelta.id)?.status
+    const pronta = stato === 'extracted' || stato === 'partial'
+    redirect(pronta ? `/rosters/${scelta.id}/review` : `/rosters/${scelta.id}`)
+  }
 
   const referente = user.role === 'REFERENTE'
 

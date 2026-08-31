@@ -31,6 +31,10 @@ describe('pagina di accesso', () => {
 
   it('senza la variabile non mostra nessun accesso di prova', async () => {
     vi.stubEnv('NODE_ENV', 'development')
+    // La precondizione va stabilita, non sperata: su una macchina di sviluppo
+    // `.env` imposta davvero DEV_LOGIN_EMAILS, e senza questa riga la prova
+    // misura la macchina invece del codice.
+    vi.stubEnv('DEV_LOGIN_EMAILS', undefined)
     const text = await render()
     expect(text).not.toContain('/api/auth/dev-login')
     expect(text).not.toContain('prova')
