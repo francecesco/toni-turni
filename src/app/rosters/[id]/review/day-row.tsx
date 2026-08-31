@@ -135,7 +135,7 @@ export function DayRow({
           potrebbe diventare un evento. */}
       {canCorrect && (
         <details className="mt-2">
-          <summary className="text-muted-foreground cursor-pointer py-2 text-xs underline">
+          <summary className="text-muted-foreground flex min-h-11 cursor-pointer items-center py-3 text-sm underline">
             {row.empty ? 'Scrivi il turno di questo giorno' : 'Correggi questo giorno'}
           </summary>
           <form action={correctCellAction} className="mt-2 flex items-center gap-2">

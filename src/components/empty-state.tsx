@@ -17,7 +17,12 @@ export function EmptyState({
       <h2 className="text-lg font-semibold">{title}</h2>
       {children && <div className="text-muted-foreground text-sm">{children}</div>}
       {action && (
-        <Button size="touch" render={<Link href={action.href} />} className="mt-2 w-full">
+        <Button
+          size="touch"
+          render={<Link href={action.href} />}
+          nativeButton={false}
+          className="mt-2 w-full"
+        >
           {action.label}
         </Button>
       )}

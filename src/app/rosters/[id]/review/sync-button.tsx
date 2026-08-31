@@ -22,7 +22,7 @@ export function SyncButton({ shifts }: { shifts: number }) {
         variant="outline"
         disabled={pending}
         aria-busy={pending}
-        className="w-full"
+        className="w-full whitespace-normal h-auto min-h-12 py-3 leading-tight"
       >
         {pending
           ? 'Sto scrivendo sul calendario…'

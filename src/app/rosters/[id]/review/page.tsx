@@ -171,7 +171,12 @@ export default async function ReviewPage({
               hai confermato restano dove sono; dopo l autorizzazione torna qui e premi di nuovo il
               bottone.
             </p>
-            <Button size="touch" className="mt-2" render={<a href="/api/auth/google/start" />}>
+            <Button
+              size="touch"
+              className="mt-2"
+              render={<a href="/api/auth/google/start" />}
+              nativeButton={false}
+            >
               Autorizza Google
             </Button>
           </Banner>
@@ -211,15 +216,17 @@ export default async function ReviewPage({
         </ul>
       </main>
 
-      {puoConfermare && (
+      {puoConfermare && (riassunto.confirmable > 0 || riassunto.confirmed > 0) && (
         <ActionDock note="Niente finisce sul calendario prima di questa conferma.">
-          <form action={confirmColumnAction}>
-            <input type="hidden" name="rosterId" value={id} />
-            <input type="hidden" name="columnLabel" value={scelta} />
-            <Button type="submit" size="touch" className="w-full">
-              Confermo tutti i {riassunto.confirmable} turni
-            </Button>
-          </form>
+          {riassunto.confirmable > 0 && (
+            <form action={confirmColumnAction}>
+              <input type="hidden" name="rosterId" value={id} />
+              <input type="hidden" name="columnLabel" value={scelta} />
+              <Button type="submit" size="touch" className="w-full">
+                Confermo tutti i {riassunto.confirmable} turni
+              </Button>
+            </form>
+          )}
           {/* Due decisioni, due bottoni. La conferma dice «ho letto e va bene», il sync
               dice «scrivilo sul mio calendario»: il secondo non parte mai da sé dopo il
               primo (regola invariante 1). */}
