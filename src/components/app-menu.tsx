@@ -25,21 +25,25 @@ export function AppMenu({ items }: { items: MenuItem[] }) {
         <EllipsisIcon className="size-5" />
       </Drawer.Trigger>
       <Drawer.Portal>
-        <Drawer.Backdrop className="fixed inset-0 bg-overlay" />
-        <Drawer.Popup className="bg-card fixed inset-x-0 bottom-0 z-50 rounded-t-3xl px-4 pt-3 pb-safe">
-          <div className="bg-border mx-auto mb-4 h-1 w-10 rounded-full" />
-          <nav className="flex flex-col gap-1">
-            {items.map((voce) => (
-              <Drawer.Close
-                key={voce.href}
-                render={<Link href={voce.href} />}
-                className="hover:bg-muted flex h-12 items-center rounded-xl px-3 text-base font-medium"
-              >
-                {voce.label}
-              </Drawer.Close>
-            ))}
-          </nav>
-        </Drawer.Popup>
+        <Drawer.Backdrop className="fixed inset-0 z-50 bg-overlay" />
+        <Drawer.Viewport className="fixed inset-0 z-50 flex items-end justify-center">
+          <Drawer.Popup className="bg-card w-full rounded-t-3xl px-4 pt-3 pb-safe">
+            <div className="bg-border mx-auto mb-4 h-1 w-10 rounded-full" />
+            <Drawer.Title className="sr-only">Altro</Drawer.Title>
+            <nav className="flex flex-col gap-1">
+              {items.map((voce) => (
+                <Drawer.Close
+                  key={voce.href}
+                  render={<Link href={voce.href} />}
+                  nativeButton={false}
+                  className="hover:bg-muted flex h-12 items-center rounded-xl px-3 text-base font-medium"
+                >
+                  {voce.label}
+                </Drawer.Close>
+              ))}
+            </nav>
+          </Drawer.Popup>
+        </Drawer.Viewport>
       </Drawer.Portal>
     </Drawer.Root>
   )
