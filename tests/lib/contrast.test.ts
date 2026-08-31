@@ -84,6 +84,10 @@ const COPPIE_TESTO: ReadonlyArray<readonly [string, string]> = [
  */
 const COPPIE_NON_TESTO: ReadonlyArray<readonly [string, string]> = [
   ['input', 'background'],
+  // Un campo dentro una scheda (`Input` e i `<select>` della legenda, di
+  // `day-row.tsx`, di `columns/page.tsx`) sta su `--card`, non su
+  // `--background`: la coppia provata prima non era la coppia che si vede.
+  ['input', 'card'],
   ['sunday', 'background'],
 ]
 

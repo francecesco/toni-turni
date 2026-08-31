@@ -153,7 +153,10 @@
     --muted: #1E2C39;
     --muted-foreground: #97AAB9;
     --border: #24313D;
-    --input: #4E6A84;
+    /* 3,34:1 su --card e 3,73:1 su --background: misurato dopo che la prova sul
+       contrasto ha aggiunto la coppia input/card, la vera coppia in cui un
+       campo si vede (Input e i <select> stanno dentro schede, non sul fondo). */
+    --input: #57748F;
     --ring: #5EA3F0;
 
     --ok: #3ECF98;
@@ -205,17 +208,26 @@
   .tabular {
     font-variant-numeric: tabular-nums;
   }
-  /* Safe-area. Il `max()` tiene un margine minimo sui telefoni senza notch. */
-  .pt-safe {
-    padding-top: max(0.5rem, env(safe-area-inset-top));
-  }
-  .pb-safe {
-    padding-bottom: max(1rem, env(safe-area-inset-bottom));
-  }
-  .px-safe {
-    padding-left: max(1rem, env(safe-area-inset-left));
-    padding-right: max(1rem, env(safe-area-inset-right));
-  }
+}
+
+/*
+ * Safe-area, come utility vere (`@utility`, Tailwind v4) e non come classi in
+ * `@layer base`: dentro `@layer base` una utility come `p-4` vince sempre, a
+ * prescindere dall ordine nel sorgente — accostare `pb-safe` a `p-4` faceva
+ * sparire la safe-area in silenzio. `@utility` mette queste tre nello stesso
+ * strato delle utility di Tailwind, dove decide la specificità/l ordine come per
+ * qualunque altra coppia di utility in conflitto, non una sconfitta garantita.
+ * Il `max()` tiene un margine minimo sui telefoni senza notch.
+ */
+@utility pt-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+@utility pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+@utility px-safe {
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
 }
 
 /* Transizione fra pagine nativa: zero byte di JavaScript. Dentro la media query
