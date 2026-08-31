@@ -6,7 +6,7 @@ import { EmptyState } from '@/components/empty-state'
 import { monthLabel, romeYearMonth } from '@/lib/time'
 import { menuItemsFor, requireUser } from '@/modules/auth'
 import { ensureExtractionWorker } from '@/modules/roster'
-import { monthPickerEntries, reviewableRosters } from '@/modules/review'
+import { monthPickerEntries, reviewableRosters, rosterHref } from '@/modules/review'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,7 +42,7 @@ export default async function RostersPage() {
       <main className="flex flex-1 flex-col pb-10">
         {voci.length === 0 ? (
           <div className="flex flex-1 items-center px-safe">
-            <EmptyState title="Non c è ancora nessuna tabella">
+            <EmptyState title="Non c’è ancora nessuna tabella">
               {referente ? (
                 <p>Fotografa la tabella appesa in reparto e caricala: la lettura ci mette un paio di minuti.</p>
               ) : (
@@ -57,7 +57,14 @@ export default async function RostersPage() {
           <ul className="mx-auto max-w-2xl flex flex-col gap-3 px-safe pb-10">
             {voci.map((voce) => (
               <li key={voce.id}>
-                <Link href={`/rosters/${voce.id}/review`} className="block">
+                {/* Su una tabella non ancora letta la griglia di conferma direbbe una
+                    bugia — «nessuna colonna associata a te» — che la pagina di stato
+                    non dice: `rosterHref` decide in un posto solo, lo stesso che usa
+                    l atterraggio su `/`. */}
+                <Link
+                  href={rosterHref({ id: voce.id, status: statoPerId.get(voce.id) ?? 'uploaded' })}
+                  className="block"
+                >
                   <div
                     className={[
                       'bg-card border-border flex min-h-16 items-center justify-between gap-3 rounded-2xl border px-4 py-3',

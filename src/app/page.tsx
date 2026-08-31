@@ -3,7 +3,7 @@ import { AppHeader } from '@/components/app-header'
 import { EmptyState } from '@/components/empty-state'
 import { romeYearMonth } from '@/lib/time'
 import { menuItemsFor, requireUser } from '@/modules/auth'
-import { landingRoster, reviewableRosters } from '@/modules/review'
+import { landingRoster, reviewableRosters, rosterHref } from '@/modules/review'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,10 +22,9 @@ export default async function HomePage() {
     // (`uploaded`, `extracting`, `interrupted`, `failed`) la griglia di conferma
     // direbbe una bugia — «nessuna colonna associata a te» — dove la verità è
     // che l estrazione sta ancora girando o va riprovata: quella pagina la sa
-    // mostrare, `/review` no.
-    const stato = tabelle.find((t) => t.id === scelta.id)?.status
-    const pronta = stato === 'extracted' || stato === 'partial'
-    redirect(pronta ? `/rosters/${scelta.id}/review` : `/rosters/${scelta.id}`)
+    // mostrare, `/review` no. La regola vive una volta sola in `rosterHref`.
+    const stato = tabelle.find((t) => t.id === scelta.id)?.status ?? 'uploaded'
+    redirect(rosterHref({ id: scelta.id, status: stato }))
   }
 
   const referente = user.role === 'REFERENTE'
@@ -35,7 +34,7 @@ export default async function HomePage() {
       <AppHeader title="Turni" menuItems={menuItemsFor(user)} />
       <main className="flex flex-1 items-center px-safe pb-10">
         <EmptyState
-          title="Non c è ancora nessuna tabella"
+          title="Non c’è ancora nessuna tabella"
           action={referente ? { href: '/rosters/upload', label: 'Carica la foto del mese' } : undefined}
         >
           {referente ? (

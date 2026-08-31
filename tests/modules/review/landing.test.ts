@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   landingRoster,
   monthPickerEntries,
+  rosterHref,
   type LandingCandidate,
 } from '@/modules/review/landing'
 
@@ -114,5 +115,21 @@ describe('monthPickerEntries', () => {
 
   it('senza tabelle dà un elenco vuoto', () => {
     expect(monthPickerEntries([], OGGI)).toEqual([])
+  })
+})
+
+describe('rosterHref', () => {
+  // Il selettore dei mesi in `/rosters` e l atterraggio in `/` devono portare
+  // nello stesso posto per lo stesso stato: prima di questa funzione la regola
+  // era scritta due volte, e una delle due copie non è mai stata scritta.
+  it('su extracted e partial porta alla griglia di conferma', () => {
+    expect(rosterHref({ id: 'r1', status: 'extracted' })).toBe('/rosters/r1/review')
+    expect(rosterHref({ id: 'r1', status: 'partial' })).toBe('/rosters/r1/review')
+  })
+
+  it('su uploaded, extracting, interrupted, failed porta alla pagina di stato', () => {
+    for (const status of ['uploaded', 'extracting', 'interrupted', 'failed']) {
+      expect(rosterHref({ id: 'r1', status })).toBe('/rosters/r1')
+    }
   })
 })

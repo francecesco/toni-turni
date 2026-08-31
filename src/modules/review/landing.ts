@@ -43,6 +43,19 @@ export function landingRoster(
   return delMese ?? ordinati[0]
 }
 
+/** Gli stati in cui la griglia di conferma ha davvero qualcosa da mostrare. */
+const PRONTA = ['extracted', 'partial']
+
+/**
+ * Dove portare chi apre una tabella. Su una tabella non ancora letta la griglia
+ * di conferma direbbe «non c è ancora una colonna associata a te», che è falso:
+ * la verità è che l estrazione deve ancora girare, e la pagina di stato la sa
+ * mostrare.
+ */
+export function rosterHref(roster: { id: string; status: string }): string {
+  return PRONTA.includes(roster.status) ? `/rosters/${roster.id}/review` : `/rosters/${roster.id}`
+}
+
 /**
  * Una voce per (anno, mese), quella della versione più alta, dal più recente. Le
  * versioni superate non compaiono come voci separate.
