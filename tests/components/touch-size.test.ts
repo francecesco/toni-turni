@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { buttonVariants } from '@/components/ui/button'
 
 const UI = path.join(import.meta.dirname, '../../src/components/ui')
+const COMPONENTI = path.join(import.meta.dirname, '../../src/components')
 
 /**
  * Il valore di queste prove non è dimostrare un design: è la regressione. Questi
@@ -42,5 +43,19 @@ describe('taglie da tocco', () => {
     // un tipo senza la classe fa rendere il trigger all'altezza sbagliata.
     const sorgente = readFileSync(path.join(UI, 'select.tsx'), 'utf8')
     expect(sorgente).toContain('"sm" | "default" | "touch"')
+  })
+
+  it('i link di AppHeader sono alti almeno 44 px', () => {
+    // L'altezza qui non viene da `Button`: sono due `<Link>` nudi, e su un titolo
+    // `text-2xl` l'area toccabile è quella del testo — 32 px, non 44. È il difetto
+    // che questa prova impedisce di riportare.
+    const sorgente = readFileSync(path.join(COMPONENTI, 'app-header.tsx'), 'utf8')
+    const classi = [...sorgente.matchAll(/<Link[^>]*className="([^"]*)"/g)].map((m) => m[1])
+    // Senza questa riga la prova passerebbe a vuoto il giorno che la regex non
+    // combacia più con niente.
+    expect(classi.length).toBeGreaterThanOrEqual(2)
+    for (const stringa of classi) {
+      expect(stringa).toMatch(/\b(?:min-)?h-1[12]\b/)
+    }
   })
 })

@@ -35,7 +35,7 @@ export function AppHeader({
         ) : null}
 
         {!backHref && pickerHref ? (
-          <Link href={pickerHref} className="flex items-center gap-1.5">
+          <Link href={pickerHref} className="flex min-h-11 items-center gap-1.5">
             <h1 className="truncate text-2xl font-extrabold tracking-tight capitalize">{title}</h1>
             <ChevronDownIcon className="text-muted-foreground size-5 shrink-0" />
           </Link>
