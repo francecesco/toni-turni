@@ -1,49 +1,44 @@
-import Link from 'next/link'
-import { requireUser } from '@/modules/auth'
+import { redirect } from 'next/navigation'
+import { AppHeader } from '@/components/app-header'
+import { EmptyState } from '@/components/empty-state'
+import { romeYearMonth } from '@/lib/time'
+import { menuItemsFor, requireUser } from '@/modules/auth'
+import { landingRoster, reviewableRosters } from '@/modules/review'
 
+export const dynamic = 'force-dynamic'
+
+/**
+ * L app si apre sui turni del mese in corso: zero tocchi fra l apertura e il
+ * motivo per cui è stata aperta. Non c è più una home di bottoni — le voci della
+ * referente stanno nel menu ⋯ dell intestazione.
+ */
 export default async function HomePage() {
   const user = await requireUser()
+  const tabelle = await reviewableRosters(user)
+  const scelta = landingRoster(tabelle, romeYearMonth(new Date()))
+
+  if (scelta) redirect(`/rosters/${scelta.id}/review`)
+
+  const referente = user.role === 'REFERENTE'
 
   return (
-    <main className="mx-auto max-w-2xl space-y-6 p-6">
-      <h1 className="text-2xl font-semibold">Ciao {user.displayName}</h1>
-
-      <nav className="grid gap-3">
-        <Link
-          href="/rosters"
-          className="rounded-xl bg-primary px-4 py-4 text-center text-base font-medium text-primary-foreground"
+    <>
+      <AppHeader title="Turni" menuItems={menuItemsFor(user)} />
+      <main className="flex flex-1 items-center px-safe pb-10">
+        <EmptyState
+          title="Non c è ancora nessuna tabella"
+          action={referente ? { href: '/rosters/upload', label: 'Carica la foto del mese' } : undefined}
         >
-          Tabelle turni
-        </Link>
-        {user.role === 'REFERENTE' && (
-          <>
-            <Link
-              href="/rosters/upload"
-              className="rounded-xl border px-4 py-4 text-center text-base font-medium"
-            >
-              Carica la foto di un mese
-            </Link>
-            <Link
-              href="/settings/codes"
-              className="rounded-xl border px-4 py-4 text-center text-base font-medium"
-            >
-              Codici turno
-            </Link>
-            <Link
-              href="/settings/users"
-              className="rounded-xl border px-4 py-4 text-center text-base font-medium"
-            >
-              Utenti
-            </Link>
-          </>
-        )}
-      </nav>
-
-      <form action="/api/auth/logout" method="post">
-        <button type="submit" className="text-sm text-muted-foreground underline">
-          Esci
-        </button>
-      </form>
-    </main>
+          {referente ? (
+            <p>Fotografa la tabella appesa in reparto e caricala: la lettura ci mette un paio di minuti.</p>
+          ) : (
+            <p>
+              Quando la referente carica la tabella del mese, i tuoi turni compaiono qui e ti basterà
+              confermarli.
+            </p>
+          )}
+        </EmptyState>
+      </main>
+    </>
   )
 }
