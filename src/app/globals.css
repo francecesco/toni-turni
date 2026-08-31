@@ -57,6 +57,7 @@
   --color-sunday: var(--sunday);
   --color-sunday-soft: var(--sunday-soft);
   --color-sunday-soft-foreground: var(--sunday-soft-foreground);
+  --color-overlay: var(--overlay);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -74,6 +75,8 @@
   --card-foreground: #0F1B24;
   --popover: #FFFFFF;
   --popover-foreground: #0F1B24;
+  /* il navy del testo, non nero puro: sul chiaro il nero puro sporca */
+  --overlay: rgb(15 27 36 / 0.45);
 
   /* azione */
   --primary: #1A6FD4;
@@ -137,6 +140,8 @@
     --card-foreground: #E6EDF3;
     --popover: #16212C;
     --popover-foreground: #E6EDF3;
+    /* più cupo e più opaco: su un fondo già scuro il 40% non stacca */
+    --overlay: rgb(2 6 12 / 0.66);
 
     --primary: #5EA3F0;
     --primary-foreground: #06182B;
