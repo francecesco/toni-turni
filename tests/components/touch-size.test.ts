@@ -35,4 +35,12 @@ describe('taglie da tocco', () => {
     const sorgente = readFileSync(path.join(UI, 'select.tsx'), 'utf8')
     expect(sorgente).toContain('data-[size=touch]:h-11')
   })
+
+  it('il tipo di size sul trigger di Select ammette "touch", non solo la classe CSS', () => {
+    // Le due metà devono viaggiare insieme: una classe CSS che nessuna chiamata può
+    // raggiungere è codice morto (il tipo blocca size="touch" prima di tsc --noEmit),
+    // un tipo senza la classe fa rendere il trigger all'altezza sbagliata.
+    const sorgente = readFileSync(path.join(UI, 'select.tsx'), 'utf8')
+    expect(sorgente).toContain('"sm" | "default" | "touch"')
+  })
 })
