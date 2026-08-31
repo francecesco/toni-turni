@@ -1,10 +1,12 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { AppHeader } from '@/components/app-header'
+import { Banner } from '@/components/banner'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { prisma } from '@/lib/db'
 import { monthLabel } from '@/lib/time'
-import { requireReferente } from '@/modules/auth'
+import { menuItemsFor, requireReferente } from '@/modules/auth'
 import { extractionStrategyFromEnv, normalizeColumn } from '@/modules/extract'
 import { rosterImageExists } from '@/modules/ingest'
 import { rosterProgress } from '@/modules/roster'
@@ -20,7 +22,7 @@ export default async function RosterPage({
   params: Promise<{ id: string }>
   searchParams: Promise<{ error?: string }>
 }) {
-  await requireReferente()
+  const user = await requireReferente()
   const { id } = await params
   const { error } = await searchParams
   // Quanto durera la lettura dipende dalla strategia, e dire "una decina di
@@ -71,49 +73,29 @@ export default async function RosterPage({
   const colonneIncomplete = colonnePersone.filter((c) => c.missingDays.length > 0)
 
   return (
-    <main className="mx-auto max-w-3xl space-y-6 p-4 pb-24">
-      <header className="space-y-1">
-        <p className="text-sm text-muted-foreground">
-          <Link href="/rosters" className="underline">
-            Tabelle turni
-          </Link>
-        </p>
-        <h1 className="text-2xl font-semibold capitalize">
-          {monthLabel(roster.year, roster.month)}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {roster.ward}
-          {roster.version > 1 && ` · versione ${roster.version}`}
-          {roster.provider && ` · letta con ${roster.provider}`}
-        </p>
-      </header>
+    <>
+      <AppHeader
+        title={monthLabel(roster.year, roster.month)}
+        backHref="/rosters"
+        subtitle={`${roster.ward}${roster.version > 1 ? ` · versione ${roster.version}` : ''}${roster.provider ? ` · letta con ${roster.provider}` : ''}`}
+        menuItems={menuItemsFor(user)}
+      />
+      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4 px-safe pb-10">
+        {error && <Banner variant="error">{error}</Banner>}
 
-      {error && (
-        <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-          {error}
-        </p>
-      )}
+        {roster.error && <Banner variant="error">{roster.error}</Banner>}
 
-      {roster.error && (
-        <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-          {roster.error}
-        </p>
-      )}
+        {!fotoDisponibile && (
+          <Banner variant="info">
+            La foto non è più sul server: è stata cancellata dalla conservazione automatica. I
+            turni già letti restano, ma non è più possibile rileggere la tabella.
+          </Banner>
+        )}
 
-      {!fotoDisponibile && (
-        <p className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
-          La foto non è più sul server: è stata cancellata dalla conservazione automatica. I turni
-          già letti restano, ma non è più possibile rileggere la tabella.
-        </p>
-      )}
-
-      {daEstrarre && fotoDisponibile && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Controlla i tagli, poi manda a leggere</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
+        {daEstrarre && fotoDisponibile && (
+          <section className="bg-card space-y-4 rounded-2xl px-4 py-4 shadow-sm">
+            <h2 className="text-base font-bold">Controlla i tagli, poi manda a leggere</h2>
+            <p className="text-muted-foreground text-sm">
               La foto qui sotto è già raddrizzata: sopra ci sono disegnati i tagli che verranno
               usati per leggerla. Le righe rosse sono i confini fra una colonna e l altra, la riga
               blu la fine del blocco dei giorni, la fascia verde tratteggiata la cucitura fra la
@@ -124,34 +106,27 @@ export default async function RosterPage({
             <img
               src={`/api/rosters/${id}/preview`}
               alt="Anteprima dei tagli sulla foto della tabella"
-              className="w-full rounded-lg border"
+              className="w-full rounded-2xl border border-border"
             />
-            <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+            <Banner variant="warn">
               La foto contiene i turni di tutte le colleghe. Premendo il bottone la mandi al
               servizio di lettura automatica.{' '}
               {strategia === 'whole'
                 ? 'È una lettura sola e ci vuole meno di un minuto.'
                 : 'Una porzione alla volta: una decina di letture da un minuto ciascuna.'}{' '}
               Puoi chiudere la pagina e tornare dopo.
-            </div>
+            </Banner>
             <form action={`/api/rosters/${id}/extract`} method="post">
-              <button
-                type="submit"
-                className="w-full rounded-xl bg-primary px-4 py-4 text-base font-medium text-primary-foreground"
-              >
+              <Button type="submit" size="touch" className="w-full">
                 Manda a leggere e comincia
-              </button>
+              </Button>
             </form>
-          </CardContent>
-        </Card>
-      )}
+          </section>
+        )}
 
-      {inCorso && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Lettura in corso</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        {inCorso && (
+          <section className="bg-card space-y-4 rounded-2xl px-4 py-4 shadow-sm">
+            <h2 className="text-base font-bold">Lettura in corso</h2>
             <ExtractionProgress
               rosterId={id}
               initial={{
@@ -164,29 +139,22 @@ export default async function RosterPage({
             />
             {roster.status === 'interrupted' && (
               <form action={`/api/rosters/${id}/extract`} method="post">
-                <button
-                  type="submit"
-                  className="w-full rounded-xl border px-4 py-3 text-sm font-medium"
-                >
+                <Button type="submit" size="touch" variant="outline" className="w-full">
                   Riprendi adesso
-                </button>
+                </Button>
               </form>
             )}
-          </CardContent>
-        </Card>
-      )}
+          </section>
+        )}
 
-      {conclusa && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex flex-wrap items-center gap-2">
-              Risultato della lettura
+        {conclusa && (
+          <section className="bg-card space-y-4 rounded-2xl px-4 py-4 shadow-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-bold">Risultato della lettura</h2>
               {roster.status === 'extracted' && <Badge>completa</Badge>}
               {roster.status === 'partial' && <Badge variant="destructive">incompleta</Badge>}
               {roster.status === 'failed' && <Badge variant="destructive">non riuscita</Badge>}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+            </div>
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <div>
                 <dt className="text-muted-foreground">Turni letti</dt>
@@ -212,7 +180,7 @@ export default async function RosterPage({
               </div>
             </dl>
             {progresso.handCorrected > 0 && (
-              <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+              <Banner variant="warn">
                 <strong>
                   {progresso.handCorrected}{' '}
                   {progresso.handCorrected === 1 ? 'cella corretta' : 'celle corrette'} a penna
@@ -220,10 +188,10 @@ export default async function RosterPage({
                 : sono quelle da rileggere sulla foto. È l unico punto in cui il lettore
                 automatico sbaglia davvero, e le trova tutte. Sono già evidenziate nella griglia
                 di conferma di ogni colonna.
-              </p>
+              </Banner>
             )}
             {progresso.unknownCodes > 0 && (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-muted-foreground text-sm">
                 I codici che la legenda non conosce restano da risolvere: aggiungili in{' '}
                 <Link href="/settings/codes" className="underline">
                   Codici turno
@@ -233,73 +201,62 @@ export default async function RosterPage({
             )}
             {(roster.status === 'partial' || roster.status === 'failed') && fotoDisponibile && (
               <form action={`/api/rosters/${id}/extract`} method="post">
-                <button
-                  type="submit"
-                  className="w-full rounded-xl border px-4 py-3 text-sm font-medium"
-                >
+                <Button type="submit" size="touch" variant="outline" className="w-full">
                   Riprova le letture che mancano
-                </button>
+                </Button>
               </form>
             )}
-          </CardContent>
-        </Card>
-      )}
+          </section>
+        )}
 
-      {bandeNonLette.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex flex-wrap items-center gap-2">
-              Parti non lette
+        {bandeNonLette.length > 0 && (
+          <section className="bg-card space-y-3 rounded-2xl px-4 py-4 shadow-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-bold">Parti non lette</h2>
               {buchiDaPersone.length > 0 ? (
                 <Badge variant="destructive">{buchiDaPersone.length} da controllare</Badge>
               ) : (
                 <Badge variant="outline">solo colonne di servizio</Badge>
               )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <ul className="space-y-2">
+            </div>
+            <ul className="space-y-2 text-sm">
               {bandeNonLette.map((banda) => (
                 <li
                   key={banda.index}
                   className={
                     banda.serviceOnly
-                      ? 'rounded-lg bg-muted p-3 text-muted-foreground'
-                      : 'rounded-lg bg-destructive/10 p-3'
+                      ? 'bg-muted text-muted-foreground rounded-lg p-3'
+                      : 'bg-destructive/10 rounded-lg p-3'
                   }
                 >
                   <p>{banda.description}</p>
                   {banda.error && (
-                    <p className="mt-1 text-xs text-muted-foreground">Motivo: {banda.error}</p>
+                    <p className="text-muted-foreground mt-1 text-xs">Motivo: {banda.error}</p>
                   )}
                   {banda.status === 'pending' && (
-                    <p className="mt-1 text-xs text-muted-foreground">
+                    <p className="text-muted-foreground mt-1 text-xs">
                       Questa lettura non è ancora stata fatta.
                     </p>
                   )}
                 </li>
               ))}
             </ul>
-          </CardContent>
-        </Card>
-      )}
+          </section>
+        )}
 
-      {copertura.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex flex-wrap items-center gap-2">
-              Colonne lette
+        {copertura.length > 0 && (
+          <section className="bg-card space-y-3 rounded-2xl px-4 py-4 shadow-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-bold">Colonne lette</h2>
               {colonneIncomplete.length > 0 && (
                 <Badge variant="destructive">{colonneIncomplete.length} incomplete</Badge>
               )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">
+            </div>
+            <p className="text-muted-foreground text-sm">
               Un giorno mancante è un turno che non è stato letto. Le colonne di servizio non sono
               turni di nessuno e non contano.
             </p>
-            <ul className="divide-y text-sm">
+            <ul className="divide-border divide-y text-sm">
               {copertura.map((colonna) => {
                 const alias = aliases.find(
                   (a) => normalizeColumn(a.label) === normalizeColumn(colonna.columnLabel),
@@ -310,9 +267,7 @@ export default async function RosterPage({
                     {colonna.ignored ? (
                       <Badge variant="outline">colonna di servizio</Badge>
                     ) : colonna.missingDays.length === 0 ? (
-                      <Badge variant="secondary">
-                        {colonna.daysRead} giorni, completa
-                      </Badge>
+                      <Badge variant="secondary">{colonna.daysRead} giorni, completa</Badge>
                     ) : (
                       <Badge variant="destructive">
                         mancano i giorni {colonna.missingDays.join(', ')}
@@ -325,32 +280,41 @@ export default async function RosterPage({
                 )
               })}
             </ul>
-          </CardContent>
-        </Card>
-      )}
-
-      <nav className="grid gap-3">
-        <Link
-          href={`/rosters/${id}/columns`}
-          className="rounded-xl border px-4 py-4 text-center text-base font-medium"
-        >
-          Colonne e persone
-        </Link>
-        <Link
-          href={`/rosters/${id}/review`}
-          className="rounded-xl border px-4 py-4 text-center text-base font-medium"
-        >
-          Conferma i turni
-        </Link>
-        {fotoDisponibile && (
-          <a
-            href={`/api/rosters/${id}/image`}
-            className="rounded-xl border px-4 py-4 text-center text-base font-medium"
-          >
-            Guarda la foto originale
-          </a>
+          </section>
         )}
-      </nav>
-    </main>
+
+        <nav className="grid gap-3">
+          <Button
+            size="touch"
+            variant="outline"
+            className="w-full"
+            render={<Link href={`/rosters/${id}/columns`} />}
+            nativeButton={false}
+          >
+            Colonne e persone
+          </Button>
+          <Button
+            size="touch"
+            variant="outline"
+            className="w-full"
+            render={<Link href={`/rosters/${id}/review`} />}
+            nativeButton={false}
+          >
+            Conferma i turni
+          </Button>
+          {fotoDisponibile && (
+            <Button
+              size="touch"
+              variant="outline"
+              className="w-full"
+              render={<a href={`/api/rosters/${id}/image`} />}
+              nativeButton={false}
+            >
+              Guarda la foto originale
+            </Button>
+          )}
+        </nav>
+      </main>
+    </>
   )
 }

@@ -4,20 +4,6 @@ import { describe, expect, it } from 'vitest'
 
 const RADICE = path.join(import.meta.dirname, '../../src')
 
-/**
- * Le pagine non ancora convertite alla veste «Corsia».
- *
- * **Questo elenco si accorcia.** Ogni task che riveste una pagina la toglie da
- * qui prima di toccarla, così la prova diventa rossa e guida il lavoro. Quando è
- * vuoto, si cancella l elenco insieme a questo commento e alla prova che lo usa.
- */
-const DA_CONVERTIRE: readonly string[] = [
-  'app/login/page.tsx',
-  'app/rosters/[id]/page.tsx',
-  'app/settings/codes/page.tsx',
-  'app/settings/users/page.tsx',
-]
-
 const FAMIGLIE =
   'slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose'
 const UTILITY =
@@ -49,16 +35,7 @@ const TUTTI = [
 ].map((file) => path.relative(RADICE, file))
 
 describe('nessuna pagina nomina un colore', () => {
-  const convertiti = TUTTI.filter((file) => !DA_CONVERTIRE.includes(file))
-
-  it.each(convertiti)('%s usa solo token', (relativo) => {
+  it.each(TUTTI)('%s usa solo token', (relativo) => {
     expect(coloriLetterali(path.join(RADICE, relativo))).toEqual([])
-  })
-
-  // Senza questa, una pagina convertita e dimenticata nell elenco smetterebbe di
-  // essere protetta in silenzio: l elenco resterebbe lungo e nessuno lo saprebbe.
-  it.each(DA_CONVERTIRE)('%s è ancora nell elenco a ragione', (relativo) => {
-    expect(TUTTI).toContain(relativo)
-    expect(coloriLetterali(path.join(RADICE, relativo)).length).toBeGreaterThan(0)
   })
 })

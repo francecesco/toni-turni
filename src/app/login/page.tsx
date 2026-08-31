@@ -1,3 +1,5 @@
+import { Banner } from '@/components/banner'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { devLoginEmails } from '@/modules/auth'
 
 export default async function LoginPage({
@@ -22,48 +24,48 @@ export default async function LoginPage({
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 p-6">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-safe">
       <h1 className="text-2xl font-semibold">Turni</h1>
-      <p className="text-sm text-gray-600">
+      <p className="text-muted-foreground text-sm">
         Accedi con l&apos;account Google su cui vuoi ricevere i turni.
       </p>
 
-      {error && (
-        <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-          {messages[error] ?? 'Accesso non riuscito.'}
-        </p>
-      )}
+      {error && <Banner variant="error">{messages[error] ?? 'Accesso non riuscito.'}</Banner>}
 
-      <a
-        href="/api/auth/google/start"
-        className="rounded-md bg-black px-4 py-2 text-center text-white"
-      >
+      {/* Un ancora vera, non `Button render={<a/>}`: qui il testo del collegamento
+          deve restare leggibile nell albero JSX così com è (vedi
+          `tests/app/login-page.test.ts`), e `buttonVariants` dà la stessa veste
+          senza indirezione. */}
+      <a href="/api/auth/google/start" className={buttonVariants({ size: 'touch', className: 'w-full' })}>
         Accedi con Google
       </a>
 
       {devEmails.length > 0 && (
-        <section className="rounded-md border border-dashed border-amber-500 bg-amber-50 p-3">
-          <p className="text-sm font-medium text-amber-900">
-            Accesso di prova, attivo solo in sviluppo
-          </p>
-          <p className="mt-1 text-xs text-amber-800">
-            Entra senza Google come uno degli account qui sotto. Il collegamento con Google
-            resta da autorizzare: il sync lo chiederà.
+        <Banner
+          variant="warn"
+          title="Accesso di prova, attivo solo in sviluppo"
+          className="border border-dashed"
+        >
+          <p>
+            Entra senza Google come uno degli account qui sotto. Il collegamento con Google resta
+            da autorizzare: il sync lo chiederà.
           </p>
           <div className="mt-3 grid gap-2">
             {devEmails.map((email) => (
               <form key={email} action="/api/auth/dev-login" method="post">
                 <input type="hidden" name="email" value={email} />
-                <button
+                <Button
                   type="submit"
-                  className="w-full rounded-md border border-amber-600 bg-white px-3 py-2 text-sm text-amber-900"
+                  size="touch"
+                  variant="outline"
+                  className="h-auto min-h-12 w-full py-3 leading-tight whitespace-normal"
                 >
                   Entra come {email}
-                </button>
+                </Button>
               </form>
             ))}
           </div>
-        </section>
+        </Banner>
       )}
     </main>
   )

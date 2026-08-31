@@ -72,9 +72,9 @@ export function ExtractionProgress({
         </span>
         <span className="text-muted-foreground">{percentuale}%</span>
       </div>
-      <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
+      <div className="bg-muted h-1.5 overflow-hidden rounded-full">
         <div
-          className="h-full rounded-full bg-primary transition-all"
+          className="bg-primary h-full rounded-full transition-all"
           style={{ width: `${percentuale}%` }}
         />
       </div>
