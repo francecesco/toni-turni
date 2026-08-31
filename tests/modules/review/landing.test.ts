@@ -64,6 +64,19 @@ describe('landingRoster', () => {
     expect(scelta?.id).toBe('lug-v2')
   })
 
+  it('nel ripiego il mese conta più della versione', () => {
+    // Il difetto che questa prova impedisce: `piuRecentePrima` confronta tre
+    // chiavi in fila e le altre prove non ne incrociano mai due discordanti,
+    // quindi scambiare mese e versione in quella riga passerebbe in silenzio.
+    // Qui luglio ha tre versioni e agosto una sola: se vincesse la versione,
+    // l'infermiera atterrerebbe su un mese più vecchio credendolo il più recente.
+    const scelta = landingRoster(
+      [tabella('lug-v3', 2026, 7, 3), tabella('ago-v1', 2026, 8, 1)],
+      { year: 2026, month: 9 },
+    )
+    expect(scelta?.id).toBe('ago-v1')
+  })
+
   it('senza tabelle restituisce null, non solleva', () => {
     expect(landingRoster([], OGGI)).toBeNull()
   })
