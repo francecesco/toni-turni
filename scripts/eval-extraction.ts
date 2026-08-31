@@ -182,9 +182,9 @@ function verificaChiavi(provider: VisionProvider, fallback: VisionProvider | nul
       `Manca la variabile d'ambiente ${chiave}, richiesta dal provider "${candidato.name}".`,
     )
     console.error(
-      'Questa misura chiama il provider reale: senza chiave ogni banda fallirebbe dopo la sua',
+      'Questa misura chiama il provider reale: senza chiave ogni immagine fallirebbe una per una,',
     )
-    console.error('attesa di pacing, cioè ~17 minuti per non misurare niente.')
+    console.error('con lo stesso messaggio ripetuto invece di questo.')
     console.error("Metti la chiave in .env (non nel repository) oppure esportala nell'ambiente.")
     process.exit(1)
   }
