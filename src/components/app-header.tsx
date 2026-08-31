@@ -16,6 +16,10 @@ export function AppHeader({
   subtitle,
   pickerHref,
   backHref,
+  // `columns`, `upload`, `settings/codes`, `settings/users` non passano
+  // `menuItems`: **di proposito**, non per dimenticanza. Sono sotto-pagine con
+  // `backHref` (la freccia indietro), non schermate di primo livello con un
+  // menu ⋯.
   menuItems = [],
 }: {
   title: string

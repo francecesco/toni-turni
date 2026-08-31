@@ -33,6 +33,9 @@ function sorgenti(cartella: string): string[] {
   for (const voce of readdirSync(cartella)) {
     const completo = path.join(cartella, voce)
     if (statSync(completo).isDirectory()) trovati.push(...sorgenti(completo))
+    // Solo `.tsx`: un colore scritto in un `.ts` sotto `app/` o `components/`
+    // (`src/app/manifest.ts` ne porta già due) non passa da questa guardia — lì
+    // il controllo è manuale, nelle prove dedicate su manifest e layout.
     else if (voce.endsWith('.tsx')) trovati.push(completo)
   }
   return trovati
