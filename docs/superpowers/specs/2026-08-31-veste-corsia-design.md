@@ -269,7 +269,8 @@ disegnare una riga.
 ### 5.2 · Icone
 
 Un quadrato ad angoli tondi (raggio 22% del lato) su `#1A6FD4`, con una griglia di caselle bianche
-4 colonne × 5 righe: le caselle al 40% di opacità, **una** sola (riga 2, colonna 3) piena al 100%.
+4 colonne × 5 righe (passo orizzontale e verticale calcolati a parte, casella quadrata sul più
+piccolo dei due): le caselle al 40% di opacità, **una** sola (riga 2, colonna 3) piena al 100%.
 È la tabella turni con un turno confermato — si legge a 60 px sulla schermata Home.
 
 Generate **una volta** da `scripts/generate-icons.ts` (SVG in stringa → `sharp` → PNG) e
@@ -357,6 +358,17 @@ due righe `Roster` per lo stesso mese sono un caso reale: atterrare sulla versio
 la 2 mostrerebbe turni superati senza dirlo. È il tipo di guasto che nessuno nota fino al giorno
 sbagliato.
 
+Il `today` non si prende da `new Date().getMonth()`: quello è il mese **UTC**, e alle 00:30 del
+primo settembre a Roma l'UTC dice ancora agosto. Serve un aiuto nuovo in `src/lib/time.ts`:
+
+```ts
+/** Anno e mese (1-based) di un istante, letti sul calendario di Roma. */
+export function romeYearMonth(instant: Date): { year: number; month: number }
+```
+
+È lo stesso motivo per cui `zoneOffsetMinutes` e `wallClockToUtc` esistono già in quel file: qui i
+fusi non si calcolano a mano.
+
 I candidati arrivano da `reviewableRosters(user)`, che esiste già in `src/modules/review/confirm.ts`
 e restituisce `{ id, year, month, ward, version, status, createdAt }` già ordinati — l'ordine però
 **non si assume**: la funzione pura ordina da sé, così una prova può passarle un elenco disordinato.
@@ -408,7 +420,7 @@ export function menuItemsFor(user: { role: string }): MenuItem[]
 
 - `REFERENTE` → `/rosters/upload` «Carica la tabella», `/settings/codes` «Codici turno»,
   `/settings/users` «Utenti».
-- ogni altro ruolo → `[]`, e allora **il bottone ⋯ non si disegna affatto**.
+- `NURSE` → `[]`, e allora **il bottone ⋯ non si disegna affatto**.
 
 L'uscita (`POST /api/auth/logout`) sta **in un posto solo**: in fondo al selettore dei mesi, che
 tutti raggiungono dal chevron. Non anche nel foglio: due strade per uscire sono due strade da
@@ -504,8 +516,9 @@ prove, tutte su logica pura o su file su disco:
    `null`; un solo mese con tre versioni → la 3.
 2. **`monthPickerEntries`** — una voce per (anno, mese) anche con tre versioni; ordine dal più
    recente; `current` sul mese di oggi; `current` falso su tutte se il mese di oggi non c'è.
-3. **`menuItemsFor`** — `REFERENTE` ottiene le tre voci con gli href esatti; `INFERMIERA` ottiene
-   l'elenco vuoto. È la regola invariante 7 resa verificabile.
+3. **`menuItemsFor`** — `REFERENTE` ottiene le tre voci con gli href esatti; **`NURSE`** ottiene
+   l'elenco vuoto. (I due ruoli sono `REFERENTE` e `NURSE`: sono i valori dell'`enum Role` in
+   `prisma/schema.prisma`, non nomi italiani.) È la regola invariante 7 resa verificabile.
 4. **`manifest()`** — `display === 'standalone'`, `start_url === '/'`, `theme_color` uguale a
    `--background` chiaro, e **ognuna delle icone dichiarate esiste su disco** con il lato dichiarato
    (letto con `sharp`). Un manifest che promette un'icona assente è un'installazione senza icona.
@@ -515,7 +528,11 @@ prove, tutte su logica pura o su file su disco:
    `(bg|text|border|fill|stroke|divide|ring)-(white|black)\b` — `bg-white` non ha cifre e sfuggirebbe
    al primo. **Non** vieta `dark:`: i dieci usi in `components/ui/` sono legittimi e su token (§4.3). È il solo
    modo per cui la regola di §4.1 resta vera il mese prossimo invece di essere una buona intenzione.
-6. **Contrasto** — legge i token da `globals.css` e calcola il rapporto WCAG per i **due** temi.
+6. **`romeYearMonth`** — `2026-08-31T23:30:00Z` → `{ 2026, 9 }` (a Roma è già il primo settembre),
+   `2026-01-31T23:30:00Z` → `{ 2026, 2 }` (vale anche in ora solare, dove l'offset è +01:00),
+   `2026-08-31T20:00:00Z` → `{ 2026, 8 }`. Senza questa prova il mese d'atterraggio sbaglia per
+   un'ora al mese, che è il tipo di guasto che nessuno riproduce.
+7. **Contrasto** — legge i token da `globals.css` e calcola il rapporto WCAG per i **due** temi.
    L'elenco delle coppie è esplicito, non dedotto da un modello sui nomi: `--sunday` per esempio
    **non** ha un `--sunday-foreground`, perché non ci si scrive sopra — colora una cifra e un fondo
    tenue. Soglia **4,5:1**:
