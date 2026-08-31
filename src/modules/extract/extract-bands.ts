@@ -48,30 +48,62 @@ export interface BandsOutcome {
  * Attesa fra una banda e l altra.
  *
  * Il secondo argomento e il `retry-after` che il provider ha indicato
- * sull errore, quando c era; il terzo dice che si trattava di un **rate limit**
- * anche se non ha indicato nulla, perche non tutti i provider mandano
- * quell header e riprovare subito prenderebbe un altro rifiuto.
+ * sull errore, quando c era; il terzo dice che si sta per **ritentare** dopo un
+ * guasto transitorio anche se il provider non ha indicato nulla — cosa che fa
+ * quasi sempre su un 503 — perche riprovare nello stesso istante prende lo
+ * stesso rifiuto.
  */
 export type BandPacer = (
   index: number,
   retryAfterSeconds?: number,
-  options?: { rateLimited?: boolean },
+  options?: { retry?: boolean },
 ) => Promise<void>
 
 /**
- * Quanto attendere davanti a un rate limit che non dice quanto attendere.
- * Serve solo a non riprovare nello stesso istante: se il provider indica un
- * tempo, vince il suo.
+ * Quanto attendere davanti a un guasto che non dice quanto attendere. Serve solo
+ * a non riprovare nello stesso istante: se il provider indica un tempo, vince il
+ * suo.
  */
 const DEFAULT_BACKOFF_SECONDS = 10
+
+/**
+ * Cosa vale la pena ritentare. Tutto **misurato**, non dedotto:
+ *
+ * - **429** e **5xx**: quota momentanea e guasti del servizio. La prima lettura
+ *   di una tabella intera ha preso un `503 UNAVAILABLE — high demand` su
+ *   entrambe le foto.
+ * - **nessuno stato**: un guasto di rete. La lettura di agosto e rimasta appesa
+ *   **301 secondi** e poi e caduta senza stato — il `headersTimeout` di Node e
+ *   300 s. Un gate sul solo stato HTTP non la ritentava.
+ *
+ * Con dieci bande un guasto costava una banda; con la tabella intera in una
+ * chiamata costa **tutta la tabella**, quindi il ritentativo non e un lusso ma la
+ * differenza fra una lettura e un buco.
+ *
+ * Gli **altri stati no**, e il verso conta: 401 (chiave sbagliata), 404 (modello
+ * che non esiste), 400 (richiesta malformata) non migliorano riprovando, spendono
+ * quota e nascondono un errore di configurazione dietro un ritardo.
+ *
+ * Il prezzo di trattare "nessuno stato" come transitorio e una chiamata sprecata
+ * nei casi in cui il provider fallisce prima della rete (chiave assente: zero
+ * chiamate, quindi zero costo) o dopo (risposta bloccata dai filtri: una
+ * chiamata). E un prezzo che si paga volentieri per non perdere una tabella
+ * intera per una connessione andata male.
+ */
+function ritentabile(error: unknown): boolean {
+  if (!(error instanceof VisionProviderError)) return false
+  if (error.retryAfterSeconds !== undefined) return true
+  if (error.status === undefined) return true
+  return error.status === 429 || (error.status >= 500 && error.status < 600)
+}
 
 function attendi(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /**
- * Pacer di produzione: **non distanzia** le chiamate, attende soltanto quando il
- * provider ha risposto con un rate limit.
+ * Pacer di produzione: **non distanzia** le chiamate, attende soltanto prima di
+ * ritentare dopo un guasto transitorio.
  *
  * Prima qui c era un pacer a token: il piano gratuito di Groq aveva un tetto di
  * 8000 token al minuto e contava anche i token di output *prenotati*, quindi fra
@@ -90,12 +122,12 @@ export function createRetryAfterPacer(options?: {
   const backoff = options?.defaultBackoffSeconds ?? DEFAULT_BACKOFF_SECONDS
   const sleep = options?.sleep ?? attendi
 
-  return async (_index: number, retryAfterSeconds?: number, opzioni?: { rateLimited?: boolean }) => {
+  return async (_index: number, retryAfterSeconds?: number, opzioni?: { retry?: boolean }) => {
     if (retryAfterSeconds !== undefined) {
       await sleep(retryAfterSeconds * 1000)
       return
     }
-    if (opzioni?.rateLimited === true) await sleep(backoff * 1000)
+    if (opzioni?.retry === true) await sleep(backoff * 1000)
   }
 }
 
@@ -110,8 +142,9 @@ interface BandAttempt {
 /**
  * Una banda, un provider. Due possibilità in tutto:
  *
- * - un **rate limit** (stato 429, o un errore che indica `retry-after`) vale un
- *   solo ritentativo, dopo aver passato l attesa al pacer;
+ * - un guasto **transitorio** (vedi `ritentabile`: 429, 5xx, guasto di rete, o un
+ *   errore che indica `retry-after`) vale un solo ritentativo, dopo aver passato
+ *   l attesa al pacer;
  * - un output che non passa la validazione vale una sola richiesta di
  *   riparazione, con l errore in mano.
  *
@@ -129,7 +162,7 @@ async function tryBand(
   let attempts = 0
   let lastRaw = ''
   let lastError = 'Estrazione della banda non riuscita'
-  let rateLimitRitentato = false
+  let ritentato = false
   let riparazioneChiesta = false
 
   for (;;) {
@@ -148,19 +181,11 @@ async function tryBand(
       const message = error instanceof Error ? error.message : String(error)
       if (error instanceof VisionTruncatedError) return { ok: false, raws, attempts, error: message }
 
-      // Un rate limit si riconosce dallo stato 429 **o** dal `retry-after`:
-      // gate sul solo header significava non ritentare i provider che non lo
-      // mandano, cioe perdere la banda al primo rifiuto per quota. Gli altri
-      // errori del provider (chiave sbagliata, modello inesistente) non
-      // migliorano riprovando.
       const retryAfterSeconds =
         error instanceof VisionProviderError ? error.retryAfterSeconds : undefined
-      const rateLimited =
-        error instanceof VisionProviderError &&
-        (error.status === 429 || retryAfterSeconds !== undefined)
-      if (rateLimited && !rateLimitRitentato) {
-        rateLimitRitentato = true
-        await pace(index, retryAfterSeconds, { rateLimited: true })
+      if (ritentabile(error) && !ritentato) {
+        ritentato = true
+        await pace(index, retryAfterSeconds, { retry: true })
         continue
       }
 

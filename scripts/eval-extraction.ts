@@ -411,14 +411,37 @@ async function main(): Promise<void> {
         `${reportSeconda.correct}/${reportSeconda.total} (${percentuale(reportSeconda.correct, reportSeconda.total)})`,
     )
 
+    const pct = (value: number | null) => (value === null ? 'n/d' : `${(value * 100).toFixed(0)}%`)
+
     if (report.handCorrectedAccuracy) {
       const { truePositives, falsePositives, falseNegatives, precision, recall } = report.handCorrectedAccuracy
-      const pct = (value: number | null) => (value === null ? 'n/d' : `${(value * 100).toFixed(0)}%`)
       console.log(
         `correzioni a mano riconosciute: precisione ${pct(precision)}, recall ${pct(recall)} ` +
           `(veri positivi ${truePositives}, falsi positivi ${falsePositives}, falsi negativi ${falseNegatives})`,
       )
-    } else {
+    }
+
+    // La misura **larga**: le celle che una persona deve rileggere sono le
+    // riscritture a mano piu le annotazioni d orario a penna, che il prompt chiede
+    // esplicitamente di marcare. Contarle come falsi positivi misurerebbe il
+    // contrario di quello che si e chiesto — ma la misura stretta resta sopra,
+    // perche e la sua recall che non deve scendere.
+    if (report.toReviewAccuracy) {
+      const { truePositives, falsePositives, falseNegatives, precision, recall } = report.toReviewAccuracy
+      console.log(
+        `celle da rileggere (correzioni + annotazioni): precisione ${pct(precision)}, recall ${pct(recall)} ` +
+          `(veri positivi ${truePositives}, falsi positivi ${falsePositives}, falsi negativi ${falseNegatives})`,
+      )
+      const inspiegate = report.unexplainedHandCorrected ?? []
+      if (inspiegate.length > 0) {
+        console.log(
+          `    marcate senza che la fixture le elenchi (${inspiegate.length}): ` +
+            inspiegate.map((c) => `${c.day} ${c.column}`).join(', '),
+        )
+      }
+    }
+
+    if (!report.handCorrectedAccuracy) {
       // Un limite dichiarato invece di un limite invisibile: senza la chiave
       // `handCorrected` nella fixture, `compareExtraction` salta il blocco e
       // metà delle celle prodotte non viene mai controllata per falsi positivi.

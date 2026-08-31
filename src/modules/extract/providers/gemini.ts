@@ -4,27 +4,107 @@ import { VisionProviderError, VisionTruncatedError, type VisionProvider, type Vi
 const BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 
 /**
- * Il modello di default è quello che privilegia la lettura corretta, non il
- * prezzo: la tabella si legge **una volta al mese** in una sola chiamata, quindi
- * la differenza di costo fra il modello più capace e il più economico è di
- * frazioni di centesimo al mese, mentre la differenza fra una cella giusta e una
- * sbagliata è un turno sbagliato addosso a una persona.
+ * Il modello di default, **scelto su una prova vera** contro l API il 2026-08-31,
+ * non su una preferenza:
  *
- * L'elenco dei modelli disponibili per una chiave si verifica con
- * `GET https://generativelanguage.googleapis.com/v1beta/models`; `GEMINI_MODEL`
- * lo sovrascrive senza toccare il codice.
+ * | modello | esito |
+ * |---|---|
+ * | `gemini-2.5-pro`, `gemini-2.5-flash` | **404** «no longer available to new users» |
+ * | `gemini-3.1-pro-preview` (e i Pro in genere) | **429 RESOURCE_EXHAUSTED**, «check your plan and billing details»: quota zero senza fatturazione attiva |
+ * | `gemini-3.7-flash`, `gemini-flash-latest` | **503 UNAVAILABLE**, «experiencing high demand», su una tabella intera |
+ * | `gemini-3-flash-preview` | 200, ma brucia **31455 token di ragionamento** e non produce JSON |
+ * | `gemini-3.6-flash`, `gemini-3.5-flash` | **200**, tabella intera letta: 360 celle su 360 |
+ *
+ * Quindi il default e un Flash, e non per risparmiare: e l unica famiglia che
+ * risponde con una chiave di AI Studio senza fatturazione. Ed e il **3.6** e non
+ * il 3.7, che e piu nuovo: sulla tabella intera il 3.7 risponde 503 in modo
+ * ripetibile, mentre il 3.6 legge tutto in ~110 s. Un modello che non risponde
+ * non e un modello piu avanzato.
+ *
+ * E **pinnato**, non l alias `gemini-flash-latest`: un alias cambia sotto i piedi
+ * (e oggi punta proprio al 3.7 che risponde 503), e le percentuali di accuratezza
+ * di questo progetto valgono per un modello preciso. Quando si vuole cambiare,
+ * `GEMINI_MODEL` lo fa senza toccare il codice — e con la fatturazione attiva vale
+ * la pena misurare un Pro, che su una tabella corretta a penna e il candidato
+ * naturale.
+ *
+ * L elenco dei modelli disponibili per una chiave si verifica con
+ * `GET https://generativelanguage.googleapis.com/v1beta/models`.
  */
-export const GEMINI_DEFAULT_MODEL = 'gemini-2.5-pro'
+export const GEMINI_DEFAULT_MODEL = 'gemini-3.6-flash'
 
 /**
- * Tetto di token in uscita. Va largo di proposito: la tabella intera sono ~250
- * celle di JSON (~6000 token) **più** i token di ragionamento, che su questi
- * modelli contano nello stesso budget. Gemini fattura i token **usati** e non
+ * Tetto di token in uscita. Va largo, ed e **misurato**: la lettura della tabella
+ * intera di settembre (360 celle) produce **14163 token** di uscita piu 1727 di
+ * ragionamento, che contano nello stesso budget. Con un tetto a 12000 la risposta
+ * si tronca e il JSON diventa invalido — provato. Gemini fattura i token **usati** e non
  * quelli prenotati, quindi chiederne molti non costa nulla se non si usano —
  * mentre un tetto stretto tronca la tabella a metà, che è il guasto peggiore per
  * una strategia a chiamata singola.
  */
 const DEFAULT_MAX_OUTPUT_TOKENS = 32768
+
+/**
+ * Lunghezza massima del messaggio d errore che si riporta.
+ *
+ * Il messaggio di Google e testo per esseri umani e dice cose che servono
+ * («quota esaurita, controlla il piano», «questo modello non esiste piu»), ma un
+ * 400 puo citare il valore del campo rifiutato — e il campo piu grosso della
+ * richiesta e l immagine in base64. Si taglia: la diagnosi sta nelle prime righe,
+ * la foto dei turni non deve finire nei log.
+ */
+const MAX_ERROR_MESSAGE = 300
+
+/**
+ * Limite di tempo di una richiesta.
+ *
+ * **Misurato**, e il numero e cresciuto strada facendo: le prime letture riuscite
+ * della tabella intera prendevano 87-97 s, quelle della misura finale — prompt
+ * piu lungo, ~17-20 mila token di uscita — **150-165 s**. Una lettura invece e
+ * rimasta appesa **301 secondi** ed e caduta sul `headersTimeout` di Node (300 s)
+ * con un «fetch failed» che non dice niente a nessuno.
+ *
+ * 270 s stanno a 1,64x dalla lettura piu lenta riuscita e sotto il limite di Node:
+ * cosi una richiesta appesa muore per un limite **nostro**, con un messaggio che
+ * la nomina, e viene ritentata come il guasto transitorio che e. Se un giorno le
+ * letture si allungassero ancora, questo e il numero da guardare — e non si alza
+ * sopra i 300 s di Node, perche oltre quelli il limite torna a essere il suo.
+ */
+const REQUEST_TIMEOUT_MS = 270_000
+
+interface GeminiErrorBody {
+  error?: { code?: number; status?: string; message?: string }
+}
+
+/**
+ * Lo stato strutturato dell errore, se il corpo e quello di Google.
+ *
+ * Senza questo il messaggio diceva soltanto «ha risposto con stato 429», che non
+ * distingue una quota finita da un picco momentaneo: sono due azioni diverse
+ * (attivare la fatturazione, oppure riprovare) e chi legge il messaggio deve
+ * poterle distinguere.
+ */
+function dettaglioErrore(corpo: string): string {
+  let payload: GeminiErrorBody
+  try {
+    payload = JSON.parse(corpo) as GeminiErrorBody
+  } catch {
+    // Corpo che non e JSON di Google (tipico di un proxy che intercetta): non si
+    // riporta niente, lo stato HTTP resta l unica cosa affidabile.
+    return ''
+  }
+
+  const errore = payload.error
+  if (errore === undefined) return ''
+
+  const pezzi = [errore.status, errore.message?.trim()].filter(
+    (pezzo): pezzo is string => typeof pezzo === 'string' && pezzo !== '',
+  )
+  if (pezzi.length === 0) return ''
+
+  const testo = pezzi.join(' — ')
+  return testo.length > MAX_ERROR_MESSAGE ? `${testo.slice(0, MAX_ERROR_MESSAGE)}…` : testo
+}
 
 interface GeminiResponse {
   candidates?: Array<{
@@ -77,6 +157,7 @@ export function createGeminiProvider(fetchImpl: typeof fetch = fetch): VisionPro
       try {
         response = await fetchImpl(`${BASE}/${model}:generateContent`, {
           method: 'POST',
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           headers: {
             // La chiave sta in un header e non nella query string: nell URL
             // finirebbe nei log di ogni proxy attraversato.
@@ -93,7 +174,17 @@ export function createGeminiProvider(fetchImpl: typeof fetch = fetch): VisionPro
           }),
         })
       } catch (cause) {
-        throw new VisionProviderError('Chiamata di rete a Gemini non riuscita', { cause })
+        // Un limite scaduto va detto per nome: «chiamata di rete non riuscita» su
+        // una richiesta durata quattro minuti manda a cercare la rete quando il
+        // problema e il tempo. Nessuno dei due porta uno stato HTTP, quindi
+        // entrambi restano guasti **transitori** e vengono ritentati.
+        const abortita = cause instanceof Error && cause.name === 'AbortError'
+        throw new VisionProviderError(
+          abortita
+            ? `Gemini non ha risposto entro il tempo massimo di attesa (${REQUEST_TIMEOUT_MS / 1000}s)`
+            : 'Chiamata di rete a Gemini non riuscita',
+          { cause },
+        )
       }
 
       if (!response.ok) {
@@ -102,11 +193,16 @@ export function createGeminiProvider(fetchImpl: typeof fetch = fetch): VisionPro
           retryAfterHeader !== null && !Number.isNaN(Number(retryAfterHeader))
             ? Number(retryAfterHeader)
             : undefined
-        // Il corpo dell errore non viene incluso: può contenere l eco della richiesta.
-        throw new VisionProviderError(`Gemini ha risposto con stato ${response.status}`, {
-          status: response.status,
-          retryAfterSeconds,
-        })
+
+        // Del corpo si prendono **solo** i campi strutturati dell errore, tagliati:
+        // mai il corpo intero, che in un 400 puo contenere l eco della richiesta.
+        const dettaglio = dettaglioErrore(await response.text().catch(() => ''))
+        throw new VisionProviderError(
+          dettaglio === ''
+            ? `Gemini ha risposto con stato ${response.status}`
+            : `Gemini ha risposto con stato ${response.status}: ${dettaglio}`,
+          { status: response.status, retryAfterSeconds },
+        )
       }
 
       let payload: GeminiResponse

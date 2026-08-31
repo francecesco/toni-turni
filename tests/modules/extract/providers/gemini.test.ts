@@ -167,6 +167,92 @@ describe('createGeminiProvider', () => {
     expect((caught as VisionProviderError).retryAfterSeconds).toBe(30)
   })
 
+  it('riporta lo stato strutturato dell errore, che dice cosa fare', async () => {
+    // "ha risposto con stato 429" non dice a nessuno se la quota e finita, se il
+    // piano non copre quel modello o se e un picco momentaneo. Lo stato di Google
+    // lo dice, ed e la differenza fra un messaggio e una diagnosi: senza questo
+    // ci sono volute tre prove a mano per capire che i modelli Pro hanno quota
+    // zero senza fatturazione attiva.
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 429,
+            status: 'RESOURCE_EXHAUSTED',
+            message: 'You exceeded your current quota, please check your plan and billing details.',
+          },
+        }),
+        { status: 429, headers: { 'content-type': 'application/json' } },
+      ),
+    )
+
+    let caught: unknown
+    try {
+      await createGeminiProvider(fetchMock).extract({ image: IMAGE, prompt: 'x' })
+    } catch (e) {
+      caught = e
+    }
+
+    expect((caught as Error).message).toContain('429')
+    expect((caught as Error).message).toContain('RESOURCE_EXHAUSTED')
+    expect((caught as Error).message).toContain('billing')
+  })
+
+  it('riporta il modello inesistente, che e un errore di configurazione', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 404,
+            status: 'NOT_FOUND',
+            message: 'This model models/gemini-vecchio is no longer available to new users.',
+          },
+        }),
+        { status: 404 },
+      ),
+    )
+
+    await expect(
+      createGeminiProvider(fetchMock).extract({ image: IMAGE, prompt: 'x' }),
+    ).rejects.toThrow(/NOT_FOUND[\s\S]*no longer available/)
+  })
+
+  it('accorcia un messaggio d errore lunghissimo invece di riversarlo', async () => {
+    // Il messaggio d errore di un 400 puo citare il valore del campo rifiutato, e
+    // il campo piu grosso della richiesta e l immagine in base64: un corpo
+    // riversato per intero finirebbe nei log con dentro la foto dei turni.
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: { code: 400, status: 'INVALID_ARGUMENT', message: 'A'.repeat(5000) },
+        }),
+        { status: 400 },
+      ),
+    )
+
+    let caught: unknown
+    try {
+      await createGeminiProvider(fetchMock).extract({ image: IMAGE, prompt: 'x' })
+    } catch (e) {
+      caught = e
+    }
+
+    expect((caught as Error).message).toContain('INVALID_ARGUMENT')
+    expect((caught as Error).message.length).toBeLessThan(600)
+  })
+
+  it('regge un corpo d errore che non e il JSON di Google', async () => {
+    // Un proxy che intercetta risponde HTML: il messaggio deve restare quello
+    // dello stato, non diventare un SyntaxError.
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('<html>502 Bad Gateway</html>', { status: 502 }),
+    )
+
+    await expect(
+      createGeminiProvider(fetchMock).extract({ image: IMAGE, prompt: 'x' }),
+    ).rejects.toThrow(/502/)
+  })
+
   it('non mette la chiave nel messaggio di errore', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response('errore con AIza-di-test', { status: 500 }),
@@ -243,6 +329,38 @@ describe('createGeminiProvider', () => {
     await expect(
       createGeminiProvider(fetchMock).extract({ image: IMAGE, prompt: 'x' }),
     ).rejects.toThrow(VisionProviderError)
+  })
+
+  it('mette un limite di tempo alla richiesta, con un margine sul tempo misurato', async () => {
+    // Misurato: la lettura di agosto e rimasta appesa **301 secondi** e poi e
+    // caduta sul `headersTimeout` di Node (300 s) con un errore che non dice
+    // niente. Un limite nostro fallisce prima e con un nome. Il margine e sul
+    // dato: la lettura piu lenta riuscita ha preso 141 s.
+    const fetchMock = vi.fn().mockResolvedValue(risposta('{}'))
+
+    await createGeminiProvider(fetchMock).extract({ image: IMAGE, prompt: 'x' })
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('un limite di tempo scaduto e un guasto transitorio, non un errore di formato', async () => {
+    // Senza stato HTTP: e cosi che `extractRosterByBands` lo riconosce come
+    // ritentabile invece di perdere tutta la tabella.
+    const fetchMock = vi.fn().mockRejectedValue(
+      Object.assign(new Error('This operation was aborted'), { name: 'AbortError' }),
+    )
+
+    let caught: unknown
+    try {
+      await createGeminiProvider(fetchMock).extract({ image: IMAGE, prompt: 'x' })
+    } catch (e) {
+      caught = e
+    }
+
+    expect(caught).toBeInstanceOf(VisionProviderError)
+    expect((caught as VisionProviderError).status).toBeUndefined()
+    expect((caught as Error).message).toMatch(/tempo|attes/i)
   })
 
   it('traduce un errore di rete del fetch in VisionProviderError', async () => {

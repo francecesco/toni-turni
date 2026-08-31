@@ -112,10 +112,68 @@ export function parseBandExtraction(
     return { ok: false, error: `JSON non valido: ${(error as Error).message}` }
   }
 
-  const result = bandExtractionSchema.safeParse(parsed)
+  const ripulito = scartaColonneSenzaNome(parsed)
+  if (!ripulito.ok) return ripulito
+
+  const result = bandExtractionSchema.safeParse(ripulito.value)
   if (!result.success) return { ok: false, error: formatIssues(result.error) }
 
   return { ok: true, value: result.data }
+}
+
+/**
+ * Butta via le colonne **senza nome** e le celle che le citano, prima della
+ * validazione.
+ *
+ * Misurato su Gemini, sulla tabella intera: la prima casella dell intestazione —
+ * quella sopra la striscia dei giorni — sul foglio e vuota, e il modello la
+ * elenca come tale (`"columns": ["3°PIANO", "", "RENATA", ...]`). Con lo schema
+ * che pretende nomi non vuoti, quel `""` faceva **rifiutare l intera lettura**:
+ * 240 celle buone buttate per una casella senza nome. Con le bande da due
+ * colonne non capitava, perche l intestazione della striscia dei giorni non
+ * entrava mai nel conto.
+ *
+ * Le celle attribuite a una colonna senza nome si scartano e **non** si contano
+ * fra le lette: non sono assegnabili a nessuna persona, e tenerle creerebbe una
+ * colonna fantasma in fase di fusione. Se il modello ci ha messo dentro turni
+ * veri, la colonna vera risulta corta e il buco si dichiara: la rete di
+ * sicurezza resta quella, non questa tolleranza.
+ *
+ * Tollerare il nome vuoto non diventa "va bene tutto": se le colonne c erano e
+ * **nessuna** aveva un nome leggibile, non c e niente da attribuire, e la
+ * lettura e fallita — cosi `tryBand` chiede una riparazione invece di accettare
+ * una tabella vuota.
+ */
+function scartaColonneSenzaNome(
+  parsed: unknown,
+): { ok: true; value: unknown } | { ok: false; error: string } {
+  if (typeof parsed !== 'object' || parsed === null) return { ok: true, value: parsed }
+
+  const payload = parsed as { columns?: unknown; cells?: unknown }
+  const haNome = (value: unknown) => typeof value === 'string' && value.trim() !== ''
+
+  if (!Array.isArray(payload.columns)) return { ok: true, value: parsed }
+
+  const tenute = payload.columns.filter(haNome)
+  if (tenute.length === payload.columns.length) return { ok: true, value: parsed }
+
+  if (tenute.length === 0) {
+    return {
+      ok: false,
+      error: 'Nessuna colonna con un nome leggibile: la lettura non e attribuibile a nessuno',
+    }
+  }
+
+  const celle = Array.isArray(payload.cells)
+    ? payload.cells.filter(
+        (cella) =>
+          typeof cella !== 'object' ||
+          cella === null ||
+          haNome((cella as { column?: unknown }).column),
+      )
+    : payload.cells
+
+  return { ok: true, value: { ...payload, columns: tenute, cells: celle } }
 }
 
 /**
@@ -175,9 +233,33 @@ export function parseBandExtraction(
  *   del foglio, quindi non prova che non ci fosse niente da leggere. Una banda
  *   che nomina soltanto `3°PIANO` — o che non nomina niente — è una lettura
  *   fallita, e resta un buco dichiarato.
+ *
+ * ## Sulla tabella intera il pavimento geometrico non si applica
+ *
+ * Misurato: Gemini ha letto la tabella intera di settembre **perfettamente**, 240
+ * celle su 240, e il conto ha dichiarato «240 celle su 270 attese». Il pavimento
+ * sottraeva alle **13 colonne geometriche** i **4 nomi di servizio** letti,
+ * ottenendo 9 colonne attese invece di 8 — due grandezze che sulla tabella intera
+ * non misurano la stessa cosa, per due ragioni entrambe misurate:
+ *
+ * 1. il foglio stampa **14** colonne di contenuto e la geometria ne rileva **13**,
+ *    perché `pruneColumnBoundaries` fonde `TOT M` e `TOT P`;
+ * 2. il modello **collassa i nomi doppi**: `AIUTO MATT.` è stampato due volte e
+ *    nominato una.
+ *
+ * Su una banda da due colonne nessuna delle due morde, e il pavimento resta: senza,
+ * una banda che salta una collega si dichiarerebbe completa.
+ *
+ * Quello che sulla tabella intera **continua** a dichiarare il buco è il modo in cui
+ * una lettura lunga sbaglia davvero: fermarsi per strada, o leggere una colonna a
+ * metà. L'unico caso che smette di essere dichiarato è la collega **mai nominata**,
+ * e non sparisce in silenzio: a valle lei legge «Non c'è ancora una colonna
+ * associata a te su questa tabella» e la referente vede che la colonna manca.
+ * Un avviso che grida al lupo su ogni tabella, invece, insegna a ignorarlo — e
+ * allora non protegge più nessuno.
  */
 export function countBandCells(
-  spec: Pick<BandSpec, 'columns' | 'dayFrom' | 'dayTo'>,
+  spec: Pick<BandSpec, 'columns' | 'dayFrom' | 'dayTo' | 'whole'>,
   extraction: BandExtraction,
   ward: string,
 ): { read: number; expected: number; columns: number } {
@@ -213,9 +295,13 @@ export function countBandCells(
   // tutto quello che la banda ha nominato è di servizio: non ha colonne da
   // leggere, quante ne mostri la geometria non conta
   const soloDiServizio = servizioDistinte.size > 0 && diPersona.size === 0
+
+  // Sulla **tabella intera** il pavimento geometrico non si applica: vedi il
+  // paragrafo «Sulla tabella intera» nella documentazione qui sopra.
+  const pavimento = spec.whole === true ? 0 : geometriche - scartate
   const attese = soloDiServizio
     ? 0
-    : Math.min(geometriche, Math.max(diPersona.size, geometriche - scartate))
+    : Math.min(geometriche, Math.max(diPersona.size, pavimento))
 
   return {
     read: viste.size,

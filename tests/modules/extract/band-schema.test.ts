@@ -10,7 +10,12 @@ import {
 const HEADER = { year: 2026, month: 8, ward: '3°PIANO' }
 
 /** Una banda finta: contano solo `columns` (indici) e l intervallo di giorni. */
-function spec(columns: number[], dayFrom: number, dayTo: number): BandSpec {
+function spec(
+  columns: number[],
+  dayFrom: number,
+  dayTo: number,
+  whole = false,
+): BandSpec {
   return {
     columns,
     dayFrom,
@@ -18,6 +23,7 @@ function spec(columns: number[], dayFrom: number, dayTo: number): BandSpec {
     days: { left: 0, width: 0.1 },
     crop: { left: 0.1, top: 0, width: 0.2, height: 0.5 },
     header: null,
+    whole,
   }
 }
 
@@ -91,6 +97,57 @@ describe('parseBandExtraction', () => {
     )
 
     expect(result.ok).toBe(true)
+  })
+
+  /**
+   * **Misurato su Gemini, sulla tabella intera.** Il modello elenca le colonne
+   * come le vede, e la prima cella dell intestazione — quella sopra la striscia
+   * dei giorni — sul foglio e vuota: la risposta vera era
+   * `"columns": ["3°PIANO", "", "RENATA", ...]`.
+   *
+   * Con lo schema che pretendeva nomi non vuoti, quel `""` faceva **rifiutare
+   * l intera lettura**: 240 celle buone buttate per una casella senza nome. Con
+   * le bande da due colonne non capitava, perche l intestazione della striscia dei
+   * giorni non entrava mai nel conto.
+   */
+  it('tollera un nome di colonna vuoto invece di buttare tutta la tabella', () => {
+    const result = parseBandExtraction(
+      JSON.stringify({
+        columns: ['3°PIANO', '', 'RENATA'],
+        cells: [cell(1, 'RENATA', 'M')],
+      }),
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // la colonna senza nome non sopravvive: non e attribuibile a nessuno
+    expect(result.value.columns).toEqual(['3°PIANO', 'RENATA'])
+  })
+
+  it('scarta le celle attribuite a una colonna senza nome', () => {
+    // Una cella senza colonna non e assegnabile a nessuna persona: tenerla
+    // creerebbe una colonna fantasma in fase di fusione. Se il modello ci ha
+    // messo dentro turni veri, la colonna vera risulta corta e il buco si
+    // dichiara — la rete di sicurezza resta quella.
+    const result = parseBandExtraction(
+      JSON.stringify({
+        columns: ['RENATA', ''],
+        cells: [cell(1, 'RENATA', 'M'), cell(1, '', 'P'), cell(2, '   ', 'M')],
+      }),
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.cells).toHaveLength(1)
+    expect(result.value.cells[0].column).toBe('RENATA')
+  })
+
+  it('una banda che nomina soltanto colonne vuote resta una lettura fallita', () => {
+    // Tollerare il nome vuoto non deve diventare "va bene tutto": senza nemmeno
+    // una colonna leggibile non c e niente da attribuire, e va detto.
+    const result = parseBandExtraction(JSON.stringify({ columns: ['', '  '], cells: [] }))
+
+    expect(result.ok).toBe(false)
   })
 
   it('rifiuta una banda senza columns', () => {
@@ -699,6 +756,66 @@ describe('countBandCells su una tabella intera', () => {
     )
   }
 
+  /**
+   * **Il buco falso, misurato sul serio.** Gemini ha letto la tabella intera di
+   * settembre perfettamente — 240 celle su 240, 100% — e il conto ha dichiarato
+   * «240 celle su 270 attese»: un allarme su una lettura senza un errore.
+   *
+   * Perche: il conto sottraeva alle **13 colonne geometriche** i **4 nomi di
+   * servizio** che il modello ha nominato, ottenendo 9 colonne attese invece di 8.
+   * Sono due grandezze che sulla tabella intera non misurano la stessa cosa, e per
+   * due ragioni entrambe misurate:
+   *
+   * 1. il foglio stampa **14** colonne di contenuto e la geometria ne rileva
+   *    **13**, perche `pruneColumnBoundaries` fonde `TOT M` e `TOT P` (troppo
+   *    vicine per essere due colonne del modulo);
+   * 2. il modello **collassa i nomi doppi**: `AIUTO MATT.` e stampato due volte e
+   *    nominato una, ed e comportamento gia documentato.
+   *
+   * Quindi sulla tabella intera le attese si contano sulle colonne di **persona**
+   * lette. Non e un rilassamento gratuito: quello che ancora dichiara il buco e
+   * proprio il modo in cui una lettura lunga sbaglia davvero — fermarsi per strada,
+   * o leggere una colonna a meta (vedi i test sotto). L unico caso che smette di
+   * essere dichiarato e la collega **mai nominata**, e quello non sparisce in
+   * silenzio: a valle lei legge «Non c e ancora una colonna associata a te su
+   * questa tabella» e la referente vede che la colonna manca.
+   *
+   * Su una **banda** vera il pavimento geometrico resta: due colonne per banda,
+   * nessun artefatto di potatura in mezzo, e senza pavimento una banda che ne
+   * salta una si dichiarerebbe completa.
+   */
+  it('non dichiara un buco su una lettura perfetta della tabella intera', () => {
+    const infermiere = [
+      'RENATA', 'KHADIJA', 'MERY', 'SARA DP.', 'ALEX', 'CRISTINA', 'COSTANZA', 'CARMEN',
+    ]
+    // i 4 nomi che il modello ha davvero prodotto: i doppioni collassati
+    const servizioNominate = ['AIUTO MATT.', 'AIUTO POM.', 'TOT M', 'TOT P']
+
+    const conto = countBandCells(
+      spec(Array.from({ length: 13 }, (_, i) => i + 1), 1, 30, true),
+      band([...infermiere, ...servizioNominate], celle(infermiere, 30)),
+      '3°PIANO',
+    )
+
+    expect(conto.columns).toBe(8)
+    expect(conto.expected).toBe(240)
+    expect(conto.read).toBe(240)
+  })
+
+  it('su una banda vera il pavimento geometrico resta', () => {
+    // Due colonne di banda, il modello ne nomina una: senza pavimento la banda si
+    // dichiarerebbe completa e mezzo mese di una collega sparirebbe.
+    const conto = countBandCells(
+      spec([1, 2], 1, 15),
+      band(['RENATA'], celle(['RENATA'], 15)),
+      '3°PIANO',
+    )
+
+    expect(conto.columns).toBe(2)
+    expect(conto.expected).toBe(30)
+    expect(conto.read).toBe(15)
+  })
+
   it('settembre: 8 colonne di persona su 13 geometriche fanno 240 celle attese, non 390', () => {
     const infermiere = [
       'RENATA', 'KHADIJA', 'MERY', 'SARA DP.', 'ALEX', 'CRISTINA', 'COSTANZA', 'CARMEN',
@@ -706,7 +823,7 @@ describe('countBandCells su una tabella intera', () => {
     const servizio = ['AIUTO MATT.', 'AIUTO MATT.', 'AIUTO POM.', 'AIUTO POM.', 'TOT M', 'TOT P']
 
     const conto = countBandCells(
-      spec(Array.from({ length: 13 }, (_, i) => i + 1), 1, 30),
+      spec(Array.from({ length: 13 }, (_, i) => i + 1), 1, 30, true),
       band([...infermiere, ...servizio], celle(infermiere, 30)),
       '3°PIANO',
     )
@@ -724,7 +841,7 @@ describe('countBandCells su una tabella intera', () => {
     ]
 
     const conto = countBandCells(
-      spec(Array.from({ length: 10 }, (_, i) => i + 1), 1, 31),
+      spec(Array.from({ length: 10 }, (_, i) => i + 1), 1, 31, true),
       band([...infermiere, 'AIUTO MATT.', 'AIUTO MATT.'], celle(infermiere, 31)),
       '3°PIANO',
     )
@@ -744,7 +861,7 @@ describe('countBandCells su una tabella intera', () => {
     const lette = infermiere.slice(0, 7)
 
     const conto = countBandCells(
-      spec(Array.from({ length: 13 }, (_, i) => i + 1), 1, 30),
+      spec(Array.from({ length: 13 }, (_, i) => i + 1), 1, 30, true),
       band([...infermiere, ...servizio], celle(lette, 30)),
       '3°PIANO',
     )
@@ -763,7 +880,7 @@ describe('countBandCells su una tabella intera', () => {
     const servizio = ['AIUTO MATT.', 'AIUTO MATT.', 'AIUTO POM.', 'AIUTO POM.', 'TOT M', 'TOT P']
 
     const conto = countBandCells(
-      spec(Array.from({ length: 13 }, (_, i) => i + 1), 1, 30),
+      spec(Array.from({ length: 13 }, (_, i) => i + 1), 1, 30, true),
       band([...infermiere, ...servizio], celle(infermiere, 20)),
       '3°PIANO',
     )
@@ -772,39 +889,4 @@ describe('countBandCells su una tabella intera', () => {
     expect(conto.read).toBe(160)
   })
 
-  /**
-   * **Un avviso in eccesso, dichiarato.** Se il modello nomina *meno* colonne di
-   * servizio di quante ne stampi il foglio, il conto non sa distinguere le
-   * colonne mancanti fra "colonne di servizio che non ha nominato" e "colleghe
-   * che ha saltato", e sceglie il verso prudente: dichiara il buco.
-   *
-   * Non e ipotetico: due colonne intitolate allo stesso modo il modello le nomina
-   * spesso una volta sola (`AIUTO MATT.` due volte di fila sul foglio), e sulla
-   * tabella intera la differenza si accumula su tutte le colonne di servizio
-   * invece di restare dentro una banda da due.
-   *
-   * Prudente e giusto — una cella che sparisce in silenzio e peggio di un avviso
-   * di troppo — ma un avviso inaffidabile insegna a ignorarlo, e questo test sta
-   * qui per rendere visibile il prezzo. **Se `npm run eval` mostra questo caso
-   * sulle foto vere, e da risolvere con il dato in mano, non indovinando adesso.**
-   */
-  it('nomina meno colonne di servizio del foglio: dichiara un buco che non c e', () => {
-    const infermiere = [
-      'RENATA', 'KHADIJA', 'MERY', 'SARA DP.', 'ALEX', 'CRISTINA', 'COSTANZA', 'CARMEN',
-    ]
-    // il foglio ne stampa 6, il modello ne nomina 4: i doppioni collassano
-    const servizioNominate = ['AIUTO MATT.', 'AIUTO POM.', 'TOT M', 'TOT P']
-
-    const conto = countBandCells(
-      spec(Array.from({ length: 13 }, (_, i) => i + 1), 1, 30),
-      band([...infermiere, ...servizioNominate], celle(infermiere, 30)),
-      '3°PIANO',
-    )
-
-    // tutte e otto le colonne di persona lette per intero...
-    expect(conto.read).toBe(240)
-    // ...ma le attese salgono a 9 colonne, perche la nona non si sa cosa sia
-    expect(conto.columns).toBe(9)
-    expect(conto.expected).toBe(270)
-  })
 })

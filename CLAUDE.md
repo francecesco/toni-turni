@@ -20,18 +20,32 @@ Istruzioni per Claude Code su questo repository.
 > propria colonna, la referente su qualsiasi colonna. Correggere annulla la conferma di quel giorno:
 > si corregge, si conferma, si sincronizza.
 >
-> ## Provider e strategia: Gemini, una chiamata sola
+> ## Provider e strategia: Gemini, una chiamata sola — **misurata**
 >
 > **Groq non c'è più.** Il provider è **Gemini** (`AI_PROVIDER=gemini`, chiamate HTTP diritte su
 > `generativelanguage.googleapis.com`, nessun SDK: vedi `src/modules/extract/providers/gemini.ts`), e
 > la strategia di default è **la tabella intera in una sola chiamata** (`AI_STRATEGY=whole`).
 >
+> **Il risultato, misurato sulle due foto reali con `npm run eval`: 488/488 celle (100,0%)** —
+> agosto 248/248, settembre 240/240. Zero celle mancanti, zero sbagliate, zero in eccesso, zero
+> buchi dichiarati, **una chiamata per foto**. **Riprodotto in due esecuzioni indipendenti**, che è
+> la ragione per cui il numero si può scrivere: una sola esecuzione al 100% è anche fortuna. Tempo:
+> 103-165 s per foto, contro i 9-11 minuti per foto della strategia a bande. Token: ~20 mila per
+> foto (2,2 mila di input, il resto di uscita).
+>
+> Sul segnale che guida la rilettura umana: le celle **riscritte a mano** sono trovate tutte
+> (richiamo 100%, 10 su 10), e le celle **da rileggere** — riscritture più annotazioni d'orario —
+> anche (15 su 15), con precisione 79%. Le quattro segnalazioni che la fixture non spiega
+> (`24 KHADIJA`, `26 KHADIJA`, `27 CARMEN`, `31 KHADIJA`) sono da guardare sulla foto: potrebbero
+> essere segni a penna che la trascrizione non ha registrato, e in quel caso la precisione vera è più
+> alta.
+>
 > Il motivo del cambio non era l'accuratezza, era la **latenza**, e non stava nel codice: nella
-> misura reale l'estrazione durava 461 s su agosto **di cui 417 di sola attesa** e 657 su settembre
+> misura su Groq l'estrazione durava 461 s su agosto **di cui 417 di sola attesa** e 657 su settembre
 > **di cui 603 di attesa**. Il modello lavorava ~4 s per banda; il 92% del tempo era il pacer che
-> rispettava il tetto di 8000 token al minuto del piano gratuito di Groq, che contava anche i token
+> rispettava il tetto di 8000 token al minuto del piano gratuito, che contava anche i token
 > *prenotati*. Togliendo quel tetto è caduta anche la ragione di distanziare le chiamate:
-> `createRetryAfterPacer` attende **solo** davanti a un rate limit.
+> `createRetryAfterPacer` attende **solo** prima di ritentare.
 >
 > **La tabella intera è una banda sola**, non un secondo percorso: `planWholeTable` produce una
 > `BandSpec` che tiene tutte le colonne e tutti i giorni, e `cropRosterWhole` la materializza. Tutto
@@ -39,19 +53,77 @@ Istruzioni per Claude Code su questo repository.
 > buchi dichiarati per colonna e giorni, persistenza che non sovrascrive una cella corretta a mano,
 > conferma, sync. Un percorso separato avrebbe dovuto riguadagnarsi quelle proprietà una per una.
 >
-> **Attenzione, e non è un dettaglio: la chiamata singola NON è ancora misurata.** L'unico numero
-> che questa strategia ha è il **18,5% (46/248 celle)** della Fase 2A, e quella misura mandava al
-> modello la **foto**: tabella in prospettiva, annegata nello sfondo, riga di un giorno alta ~32 px,
-> su un altro modello. Oggi l'immagine è raddrizzata sull'omografia del riquadro, ritagliata sulla
-> griglia stampata e ricampionata ai pixel per riga della configurazione che ha misurato il 100%
-> (agosto 2762x2574 = **78,0 px per riga**, settembre 3000x2087 = **65,2**, contro le ~77 del
-> ritaglio letto al 100%). Sono differenze vere, non è la stessa prova — ma finché `npm run eval`
-> non parla, **il 18,5% è l'unico dato che esiste**. Se non regge, `AI_STRATEGY=bands` riporta al
-> percorso misurato al 99,8% senza toccare il codice.
+> Quello che ha fatto la differenza rispetto al 18,5% della Fase 2A (che mandava al modello la
+> **foto**: prospettiva, sfondo, riga alta ~32 px, altro modello):
 >
-> ## La misura che esiste (strategia `bands`)
+> 1. la tabella arriva **raddrizzata** sull'omografia del riquadro e **ritagliata** sulla griglia
+>    stampata, non annegata nella foto;
+> 2. è **ricampionata** ai pixel per riga della configurazione misurata al 100% (agosto 2762x2574 =
+>    78,0 px per riga; settembre 3000x2087 = 65,2, dove il tetto sul lato lungo morde prima del
+>    bersaglio — è geometria, non una scelta);
+> 3. il prompt dichiara un **ordine di scansione** (giorno per giorno) e ricorda che il giorno si
+>    legge dalla striscia di sinistra: su 31 righe il modo in cui questa lettura sbaglia è perdere il
+>    passo fra le righe;
+> 4. il prompt porta la **regola del reparto sull'orario a penna** (vedi sotto), che da sola valeva
+>    5 celle su 488.
 >
-> **487/488 celle corrette (99,8%)**: agosto 247/248, settembre 240/240. Zero celle mancanti (erano
+> Se un giorno non reggesse, `AI_STRATEGY=bands` riporta al percorso misurato al 99,8% senza toccare
+> il codice.
+>
+> ### Il modello si sceglie su una prova, non su un numero di versione
+>
+> Provato contro l'API il 2026-08-31 con una chiave di AI Studio senza fatturazione:
+>
+> | modello | esito |
+> |---|---|
+> | `gemini-2.5-pro`, `gemini-2.5-flash` | **404** «no longer available to new users» |
+> | `gemini-3.1-pro-preview` (e i Pro in genere) | **429 RESOURCE_EXHAUSTED**, «check your plan and billing details»: quota zero senza fatturazione |
+> | `gemini-3.7-flash`, `gemini-flash-latest` | **503 UNAVAILABLE**, «high demand», ripetibile sulla tabella intera |
+> | `gemini-3-flash-preview` | 200, ma brucia **31455 token di ragionamento** e non produce JSON |
+> | **`gemini-3.6-flash`** (il default), `gemini-3.5-flash` | **200**, tabella intera letta per intero |
+>
+> Il default è quindi il **3.6** e non il 3.7, che è più nuovo: un modello che risponde 503 non è un
+> modello più avanzato. È **pinnato** e non l'alias `gemini-flash-latest` — che oggi punta proprio al
+> 3.7 — perché le percentuali qui sopra valgono per un modello preciso. Con la fatturazione attiva
+> vale la pena misurare un Pro: su una tabella corretta a penna è il candidato naturale.
+>
+> ### Le tre cose che hanno rotto, e come sono state chiuse
+>
+> Nessuna era prevedibile a tavolino, tutte e tre sono uscite dalla misura:
+>
+> 1. **`503 UNAVAILABLE` e richieste appese.** Una lettura è rimasta appesa **301 secondi** e poi è
+>    caduta sul `headersTimeout` di Node (300 s) con un «fetch failed» che non dice niente. Ora il
+>    provider ha un limite **suo** (`REQUEST_TIMEOUT_MS`, 270 s) che nomina il guasto, e `ritentabile`
+>    ritenta 429, 5xx **e i guasti di rete** — che non hanno stato HTTP, e con il gate sul solo stato
+>    non venivano ritentati. Con dieci bande un guasto costava una banda; con una chiamata sola costa
+>    **tutta la tabella**.
+> 2. **Colonne senza nome.** Il modello elenca l'intestazione come la vede, e la casella sopra la
+>    striscia dei giorni sul foglio è vuota: la risposta vera era `["3°PIANO", "", "RENATA", ...]`, e
+>    quel `""` faceva **rifiutare l'intera lettura** — 240 celle buone buttate. Ora
+>    `parseBandExtraction` scarta le colonne senza nome e le celle che le citano; se **nessuna**
+>    colonna ha un nome leggibile, resta una lettura fallita.
+> 3. **Il tetto di 12 colonne.** `bandExtractionSchema` limitava le colonne a 12 e la tabella intera
+>    di settembre ne ha 13: l'intera lettura veniva rifiutata per un limite scritto quando una banda
+>    ne portava due.
+>
+> ### L'orario scritto a penna non fa parte del codice
+>
+> È una **regola del reparto**, ed è la differenza fra 483/488 e 488/488. Sul foglio di agosto ci sono
+> celle come `P h13:30`, `M 7`, `P 13`: il codice del turno resta `P` o `M`, e l'orario a penna dice
+> che quel turno comincia a un'ora diversa dal solito. Gemini, senza istruzioni, lo incorporava nel
+> codice (`P h1330`, `M730`), producendo cinque codici sconosciuti. Il prompt ora dice la regola e
+> chiede di marcare quelle celle `handCorrected`, perché una persona le deve rivedere: il codice non
+> porta l'ora, quindi l'evento andrebbe in calendario all'ora sbagliata.
+>
+> Da questo viene una **seconda misura** in `scripts/accuracy.ts`, e sono due e non una di proposito:
+> `handCorrectedAccuracy` misura le celle **riscritte a mano** (è la sua recall che non deve
+> scendere: 10 su 10), `toReviewAccuracy` misura le celle che **una persona deve rileggere**, cioè
+> riscritture **più** annotazioni d'orario. Sostituire la prima con la seconda nasconderebbe un
+> peggioramento della prima dietro un miglioramento della seconda.
+>
+> ## L'altra misura: la strategia `bands`
+>
+> **487/488 celle corrette (99,8%)** su Groq: agosto 247/248, settembre 240/240. Zero celle mancanti (erano
 > 199), zero celle in eccesso, zero bande fallite su 24, zero conflitti di fusione. Il rapporto è in
 > `.superpowers/sdd/2026-08-26-fase-2a-bis-ritagli/correzioni-finali-report.md`.
 >
@@ -74,9 +146,10 @@ Istruzioni per Claude Code su questo repository.
 > 1. il flusso OAuth non è mai stato eseguito con credenziali Google reali — in tutti i test
 >    `exchangeGoogleCode` è mockata; la checklist è in
 >    [docs/verifica-manuale-oauth.md](docs/verifica-manuale-oauth.md);
-> 2. il percorso foto → anteprima → estrazione non è mai stato percorso **dall'interfaccia** su una
->    foto vera con Gemini: l'anteprima dei tagli esiste proprio per rendere visibile un rilevamento
->    sbagliato prima di spendere una chiamata;
+> 2. il percorso foto → anteprima → estrazione è stato percorso dall'interfaccia su Groq, **non su
+>    Gemini**: la misura passa dallo stesso codice di ritaglio ed estrazione, ma non dalle route HTTP
+>    né dal job. L'anteprima dei tagli esiste proprio per rendere visibile un rilevamento sbagliato
+>    prima di spendere una chiamata;
 > 3. le trascrizioni di riferimento in `fixtures/` portano ancora `"verified": false`: le percentuali
 >    qui sopra valgono quanto la trascrizione, che nessuno che conosce il reparto ha ancora guardato.
 
@@ -231,30 +304,39 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
   da solo la creazione risponde 403. Chi aveva già dato il consenso prima della Fase 4 deve
   rifarlo (revoca da myaccount.google.com/permissions).
 - **`npm run eval` chiama il provider reale e consuma token.** Non eseguirlo in CI né in loop.
-- **La chiamata singola non è misurata, e il solo numero che ha è 18,5%.** La tabella intera in una
-  chiamata, misurata nella Fase 2A **sulla foto** (prospettiva, sfondo, ~32 px per riga, altro
-  modello), diede 46/248 celle. Oggi l'immagine è raddrizzata, ritagliata sulla griglia e
-  ricampionata a 78 px per riga (agosto) — è una prova diversa, non la stessa. Ma **non ripetere il
-  99,8% parlando della strategia `whole`**: quel numero è di `bands`. Prima di dichiarare qualsiasi
-  cosa, `npm run eval`.
-- **Il tetto di token in uscita di Gemini va largo, non stretto.** ~250 celle di JSON sono ~6000
-  token, e i token di **ragionamento** contano nello stesso budget: `GEMINI_MAX_OUTPUT_TOKENS` di
-  default è 32768. Gemini fattura gli usati e non i prenotati, quindi chiederne molti non costa
-  nulla — mentre un tetto stretto tronca la tabella a metà, e una risposta troncata **non si
-  ritenta** (rimandare la stessa immagine la tronca di nuovo).
+- **Il 18,5% della Fase 2A non dice niente sulla strategia di oggi, e viceversa.** Quella misura
+  mandava al modello la **foto** (prospettiva, sfondo, ~32 px per riga, altro modello) e diede 46/248
+  celle; la tabella intera raddrizzata, ritagliata e ricampionata dà **488/488** su Gemini 3.6 Flash.
+  Sono tre differenze nell'immagine più il prompt, non la stessa prova. Il verso che conta: **non
+  attribuire a una configurazione il numero di un'altra** — né il 18,5% a `whole`, né il 99,8% di
+  `bands` (che è su Groq). Ogni cambio all'immagine, al prompt o al modello si rimisura.
+- **Il tetto di token in uscita di Gemini va largo, non stretto — misurato.** La tabella intera
+  produce **16-20 mila token** di uscita più il ragionamento, che conta nello stesso budget:
+  `GEMINI_MAX_OUTPUT_TOKENS` di default è 32768. Con un tetto a 12000 la risposta si tronca e il JSON
+  diventa invalido, provato. Gemini fattura gli usati e non i prenotati, quindi chiederne molti non
+  costa nulla — mentre una risposta troncata **non si ritenta** (rimandare la stessa immagine la
+  tronca di nuovo).
+- **Una lettura della tabella intera prende 150-165 s, e il limite è 270.** Il margine è 1,64x, e il
+  numero è cresciuto strada facendo: le prime letture riuscite stavano a 87-97 s, quelle col prompt
+  finale a 150-165. Se si allunga ancora, `REQUEST_TIMEOUT_MS` in `providers/gemini.ts` è il numero
+  da guardare — e non si alza sopra i 300 s, perché oltre quelli il limite torna a essere il
+  `headersTimeout` di Node, che fallisce senza dire perché.
 - **`bandExtractionSchema` limita le colonne a 40, non a 12.** Il vecchio tetto di 12 era scritto
   quando una banda portava due colonne: con la tabella intera settembre ne ha 13, e quel tetto
   faceva **rifiutare l'intera lettura** per un limite che non riguardava più niente. Se aggiungi un
   vincolo a quello schema, chiediti prima come si comporta su una banda che è tutta la tabella.
-- **Il conto delle celle attese può dichiarare un buco che non c'è, e sulla tabella intera il
-  rischio è più grande.** Se il modello nomina *meno* colonne di servizio di quante ne stampi il
-  foglio — e con `AIUTO MATT.` due volte di fila lo fa spesso, nominandola una volta —
-  `countBandCells` non sa se le colonne mancanti siano di servizio o colleghe saltate, e sceglie il
-  verso prudente. Su settembre: 4 nomi di servizio invece di 6 fanno salire le attese da 240 a 270,
-  e una lettura perfetta si dichiara incompleta. Prudente è giusto (una cella che sparisce in
-  silenzio è peggio di un avviso di troppo), ma un avviso inaffidabile insegna a ignorarlo. Il caso
-  è coperto da un test che lo **documenta** invece di asserire il numero che si vorrebbe:
-  `npm run eval` dirà se capita sulle foto vere, e allora si risolve col dato in mano.
+- **Sulla tabella intera il pavimento geometrico del conto delle celle attese non si applica.** È
+  successo per davvero: lettura **perfetta** di settembre, 240 celle su 240, e il conto dichiarava
+  «240 su 270 attese». Il pavimento sottraeva alle 13 colonne *geometriche* i 4 nomi di servizio
+  *letti* — due grandezze che sulla tabella intera non misurano la stessa cosa, perché il foglio
+  stampa 14 colonne e la geometria ne rileva 13 (`pruneColumnBoundaries` fonde `TOT M` e `TOT P`) e
+  perché il modello collassa i nomi doppi (`AIUTO MATT.` stampato due volte, nominato una). Su una
+  banda da due colonne nessuna delle due morde, e il pavimento **resta**. Quello che sulla tabella
+  intera continua a dichiarare il buco è il modo in cui una lettura lunga sbaglia davvero: fermarsi
+  per strada o leggere una colonna a metà. L'unico caso che smette di essere dichiarato è la collega
+  **mai nominata**, e non sparisce in silenzio: lei legge «Non c'è ancora una colonna associata a te
+  su questa tabella» e la referente vede che la colonna manca. Un avviso che grida al lupo su ogni
+  tabella insegna a ignorarlo, e allora non protegge più nessuno.
 - **Due colonne possono avere lo stesso nome, e in una chiamata sola finiscono nella stessa
   risposta.** Sul foglio di settembre `AIUTO MATT.` compare due volte di fila. `bandExtractionSchema`
   **non** pretende coppie giorno/colonna distinte, al contrario di `extractionSchema`: pretenderlo

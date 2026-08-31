@@ -213,3 +213,82 @@ describe('validateExpectedRoster', () => {
     if (!result.ok) expect(result.error).toMatch(/cells\[0\]/)
   })
 })
+
+/**
+ * Due domande diverse sullo stesso segnale, e tenerle separate e il punto.
+ *
+ * `handCorrectedAccuracy` misura se il modello trova le celle **riscritte a
+ * mano**: e il segnale su cui si regge la griglia di conferma, e la sua recall e
+ * quello che non deve scendere.
+ *
+ * `toReviewAccuracy` misura se trova le celle che **una persona deve rileggere**,
+ * che sono le riscritture *piu* le annotazioni d orario a penna (`M 7`, `P 13`):
+ * quelle non cambiano il codice ma cambiano l ora di inizio, quindi finiscono in
+ * calendario sbagliate se nessuno le guarda. Il prompt chiede al modello di
+ * marcarle, quindi contarle come falsi positivi misurerebbe il contrario di
+ * quello che si e chiesto.
+ *
+ * Restano due numeri e non uno perche rispondono a due domande: sostituire il
+ * primo col secondo nasconderebbe un peggioramento del primo dietro un
+ * miglioramento del secondo.
+ */
+describe('compareExtraction, celle da rileggere', () => {
+  const base = {
+    year: 2026,
+    month: 8,
+    ward: '3°PIANO',
+    cells: [
+      { day: 1, column: 'RENATA', code: 'M' },
+      { day: 2, column: 'RENATA', code: 'P' },
+      { day: 3, column: 'RENATA', code: 'M' },
+    ],
+    handCorrected: [{ day: 1, column: 'RENATA' }],
+    penAnnotations: [{ day: 2, column: 'RENATA' }],
+  }
+
+  function letta(marcate: number[]) {
+    return {
+      year: 2026,
+      month: 8,
+      ward: '3°PIANO',
+      columns: ['RENATA'],
+      cells: base.cells.map((c) => ({
+        ...c,
+        confidence: 0.9,
+        handCorrected: marcate.includes(c.day),
+      })),
+    }
+  }
+
+  it('una annotazione a penna marcata non e un falso positivo fra le celle da rileggere', () => {
+    const report = compareExtraction(base, letta([1, 2]))
+
+    // la misura stretta la conta come falso positivo, e resta cosi
+    expect(report.handCorrectedAccuracy).toEqual(
+      expect.objectContaining({ truePositives: 1, falsePositives: 1, falseNegatives: 0 }),
+    )
+    // la misura larga la conta per quello che e: una cella da rileggere, trovata
+    expect(report.toReviewAccuracy).toEqual(
+      expect.objectContaining({ truePositives: 2, falsePositives: 0, falseNegatives: 0 }),
+    )
+  })
+
+  it('una cella marcata che non e ne riscritta ne annotata resta un falso positivo', () => {
+    const report = compareExtraction(base, letta([1, 2, 3]))
+
+    expect(report.toReviewAccuracy?.falsePositives).toBe(1)
+  })
+
+  it('elenca le celle marcate che non risultano ne riscritte ne annotate', () => {
+    // Senza l elenco, "10 falsi positivi" non si sa dove guardare.
+    const report = compareExtraction(base, letta([3]))
+
+    expect(report.unexplainedHandCorrected).toEqual([{ day: 3, column: 'RENATA' }])
+  })
+
+  it('non riporta la misura larga se la fixture non dichiara nessuna delle due liste', () => {
+    const senzaListe = { ...base, handCorrected: undefined, penAnnotations: undefined }
+
+    expect(compareExtraction(senzaListe, letta([1])).toReviewAccuracy).toBeUndefined()
+  })
+})

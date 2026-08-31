@@ -83,10 +83,15 @@ Procedi in **ordine**, una riga di giorno alla volta: prima tutte le colonne del
 Codici turno che il reparto usa: ${elencoCodici}. Se leggi qualcosa che non è in questo elenco, riportalo comunque come lo vedi: **non sostituirlo** con il codice più somigliante. Un codice che non conosco non è un problema, lo risolvo dopo.
 
 Regole importanti:
-1. In "columns" elenca i nomi delle colonne **come sono scritti nell intestazione** ${diOggetto}, nell ordine da sinistra a destra, senza la striscia dei giorni. Ogni valore di "column" dentro "cells" deve essere uno di quei nomi, scritto allo stesso modo.
+1. In "columns" elenca i nomi delle colonne **come sono scritti nell intestazione** ${diOggetto}, nell ordine da sinistra a destra, senza la striscia dei giorni. Ogni valore di "column" dentro "cells" deve essere uno di quei nomi, scritto allo stesso modo.${
+    intera
+      ? ' La casella d intestazione **sopra la striscia dei giorni** è vuota o porta il nome del reparto: non è una colonna, non elencarla.'
+      : ''
+  }
 2. Restituisci una cella per **ogni** incrocio giorno/colonna ${diOggetto}, comprese **anche** le righe **vuote**: se una cella è vuota metti "code": "". Una cella vuota dichiarata mi serve; una cella che manca mi lascia nel dubbio se il foglio fosse vuoto o se tu non l abbia letta. Mi aspetto ${giorni} × ${context.columnCount} = **${celle}** celle.
 3. Se una cella è stata corretta a **penna**, coperta con il correttore e riscritta, o comunque modificata a mano, metti "handCorrected": true. È l informazione più preziosa che puoi darmi: quelle celle verranno rilette da una persona.
-4. La "confidence" è quanto sei sicuro di quella cella, da 0 a 1. Usa **valori bassi quando non sei sicuro**: è molto meglio una confidenza bassa che un codice inventato. Non inventare mai il contenuto di una cella illeggibile — riportala con "code": "" e confidenza bassa.
+4. Se accanto al codice c è un **orario** scritto a penna — per esempio "M 7", "P 13", "h 13:30" — quell orario è un annotazione e **non fa parte del codice**: in "code" metti solo il codice del turno ("M", "P"), e metti "handCorrected": true. Nel reparto un orario a penna vuol dire che quel turno comincia a un orario diverso dal solito, e chi legge la tabella deve poterlo rivedere: il codice sbagliato lo manderebbe sul calendario come se fosse un turno nuovo.
+5. La "confidence" è quanto sei sicuro di quella cella, da 0 a 1. Usa **valori bassi quando non sei sicuro**: è molto meglio una confidenza bassa che un codice inventato. Non inventare mai il contenuto di una cella illeggibile — riportala con "code": "" e confidenza bassa.
 
 Formato JSON richiesto:
 {

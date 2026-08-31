@@ -86,6 +86,25 @@ export interface AccuracyReport {
   byColumn: Record<string, { total: number; correct: number }>
   /** presente solo se la fixture porta `handCorrected`. */
   handCorrectedAccuracy?: HandCorrectedAccuracy
+  /**
+   * Come sopra, ma sul segnale **largo**: le celle che una persona deve
+   * rileggere, cioè le riscritture a mano **più** le annotazioni d orario a penna
+   * (`M 7`, `P 13`). Quelle non cambiano il codice ma cambiano l ora d inizio,
+   * quindi finiscono in calendario sbagliate se nessuno le guarda — e il prompt
+   * chiede al modello di marcarle. Contarle come falsi positivi misurerebbe il
+   * contrario di quello che si è chiesto.
+   *
+   * Sono **due** numeri e non uno perché rispondono a due domande: sostituire il
+   * primo col secondo nasconderebbe un peggioramento del primo dietro un
+   * miglioramento del secondo.
+   */
+  toReviewAccuracy?: HandCorrectedAccuracy
+  /**
+   * Celle che il modello ha marcato e che la fixture non elenca né fra le
+   * riscritture né fra le annotazioni: è dove guardare quando i falsi positivi
+   * salgono. Senza l elenco, «10 falsi positivi» non dice dove.
+   */
+  unexplainedHandCorrected?: Array<{ day: number; column: string }>
   byConfidenceBucket: Record<ConfidenceBucket, { total: number; correct: number }>
 }
 
@@ -153,17 +172,17 @@ export function compareExtraction(expected: ExpectedRoster, actual: Extraction):
     }
   }
 
-  if (expected.handCorrected) {
-    const attese = new Set(expected.handCorrected.map((h) => key(h.day, h.column)))
-    const marcate = new Set(
-      actual.cells.filter((c) => c.handCorrected).map((c) => key(c.day, c.column)),
-    )
+  const marcate = new Set(
+    actual.cells.filter((c) => c.handCorrected).map((c) => key(c.day, c.column)),
+  )
 
+  /** Precisione e richiamo di `marcate` contro un insieme atteso. */
+  function confronta(attese: Set<string>): HandCorrectedAccuracy {
     let truePositives = 0
     let falsePositives = 0
     for (const k of marcate) {
       if (attese.has(k)) truePositives += 1
-      else falsePositives += 1 // include le penAnnotations marcate per errore come correzioni
+      else falsePositives += 1
     }
 
     let falseNegatives = 0
@@ -171,13 +190,39 @@ export function compareExtraction(expected: ExpectedRoster, actual: Extraction):
       if (!marcate.has(k)) falseNegatives += 1
     }
 
-    report.handCorrectedAccuracy = {
+    return {
       truePositives,
       falsePositives,
       falseNegatives,
-      precision: truePositives + falsePositives === 0 ? null : truePositives / (truePositives + falsePositives),
-      recall: truePositives + falseNegatives === 0 ? null : truePositives / (truePositives + falseNegatives),
+      precision:
+        truePositives + falsePositives === 0 ? null : truePositives / (truePositives + falsePositives),
+      recall:
+        truePositives + falseNegatives === 0 ? null : truePositives / (truePositives + falseNegatives),
     }
+  }
+
+  if (expected.handCorrected) {
+    // Misura **stretta**: solo le celle riscritte a mano. Una annotazione a penna
+    // marcata resta un falso positivo qui, di proposito: e la recall di questo
+    // numero che non deve scendere, perche e il segnale su cui si regge la griglia
+    // di conferma.
+    report.handCorrectedAccuracy = confronta(
+      new Set(expected.handCorrected.map((h) => key(h.day, h.column))),
+    )
+  }
+
+  if (expected.handCorrected || expected.penAnnotations) {
+    const daRileggere = new Set([
+      ...(expected.handCorrected ?? []).map((h) => key(h.day, h.column)),
+      ...(expected.penAnnotations ?? []).map((h) => key(h.day, h.column)),
+    ])
+    report.toReviewAccuracy = confronta(daRileggere)
+    report.unexplainedHandCorrected = [...marcate]
+      .filter((k) => !daRileggere.has(k))
+      .map((k) => {
+        const [day, column] = k.split(':')
+        return { day: Number(day), column }
+      })
   }
 
   return report

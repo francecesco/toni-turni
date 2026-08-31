@@ -58,13 +58,13 @@ function provider(name: string, ...risposte: Array<string | Error>): VisionProvi
 
 /** Un pacer che non attende: nessun test deve dormire. */
 function pacerFinto() {
-  const chiamate: Array<{ index: number; retryAfterSeconds?: number; rateLimited?: boolean }> = []
+  const chiamate: Array<{ index: number; retryAfterSeconds?: number; retry?: boolean }> = []
   const pace = async (
     index: number,
     retryAfterSeconds?: number,
-    options?: { rateLimited?: boolean },
+    options?: { retry?: boolean },
   ) => {
-    chiamate.push({ index, retryAfterSeconds, rateLimited: options?.rateLimited })
+    chiamate.push({ index, retryAfterSeconds, retry: options?.retry })
   }
   return { pace, chiamate }
 }
@@ -102,7 +102,7 @@ describe('extractRosterByBands', () => {
     const p = provider(
       'gemini',
       risposta([[1, 'RENATA', 'M']]),
-      new VisionProviderError('quota esaurita'),
+      new VisionProviderError('chiave rifiutata', { status: 403 }),
       risposta([[1, 'ALEX', 'P']]),
     )
     const bande = [band(1, [1], 1, 1), band(2, [2], 1, 1), band(3, [3], 1, 1)]
@@ -118,7 +118,7 @@ describe('extractRosterByBands', () => {
 
     expect(outcome.failures).toHaveLength(1)
     expect(outcome.failures[0].spec).toBe(bande[1].spec)
-    expect(outcome.failures[0].error).toContain('quota esaurita')
+    expect(outcome.failures[0].error).toContain('chiave rifiutata')
     expect(outcome.extraction.cells.map((c) => c.column)).toEqual(['RENATA', 'ALEX'])
   })
 
@@ -182,7 +182,7 @@ describe('extractRosterByBands', () => {
       pace,
     })
 
-    expect(chiamate).toEqual([{ index: 0, retryAfterSeconds: 12, rateLimited: true }])
+    expect(chiamate).toEqual([{ index: 0, retryAfterSeconds: 12, retry: true }])
     expect(p.extract).toHaveBeenCalledTimes(2)
     expect(outcome.failures).toEqual([])
     expect(outcome.extraction.cells).toHaveLength(1)
@@ -228,9 +228,83 @@ describe('extractRosterByBands', () => {
     })
 
     expect(p.extract).toHaveBeenCalledTimes(2)
-    expect(chiamate).toEqual([{ index: 0, retryAfterSeconds: undefined, rateLimited: true }])
+    expect(chiamate).toEqual([{ index: 0, retryAfterSeconds: undefined, retry: true }])
     expect(outcome.failures).toEqual([])
     expect(outcome.extraction.cells).toHaveLength(1)
+  })
+
+  it.each([500, 502, 503, 504])('ritenta un %i, che e transitorio', async (status) => {
+    // Misurato sul serio: la prima chiamata su agosto ha preso un **503 dopo 40
+    // secondi**. Con dieci bande un 503 perdeva una banda; con la tabella intera
+    // in una chiamata perde **tutta la tabella**, quindi ritentare non e un lusso.
+    const p = provider(
+      'gemini',
+      new VisionProviderError('servizio non disponibile', { status }),
+      risposta([[1, 'RENATA', 'M']]),
+    )
+    const { pace, chiamate } = pacerFinto()
+
+    const outcome = await extractRosterByBands({
+      bands: [band(1, [1], 1, 1)],
+      knownCodes: [],
+      header: HEADER,
+      provider: p,
+      pace,
+    })
+
+    expect(p.extract).toHaveBeenCalledTimes(2)
+    expect(chiamate).toEqual([{ index: 0, retryAfterSeconds: undefined, retry: true }])
+    expect(outcome.failures).toEqual([])
+  })
+
+  it.each([400, 401, 403, 404])(
+    'non ritenta un %i, che e un errore di configurazione',
+    async (status) => {
+      // Chiave sbagliata, modello inesistente, richiesta malformata: riprovare
+      // spende quota e produce lo stesso rifiuto.
+      const p = provider(
+        'gemini',
+        new VisionProviderError('rifiutata', { status }),
+        risposta([[1, 'RENATA', 'M']]),
+      )
+      const { pace } = pacerFinto()
+
+      const outcome = await extractRosterByBands({
+        bands: [band(1, [1], 1, 1)],
+        knownCodes: [],
+        header: HEADER,
+        provider: p,
+        pace,
+      })
+
+      expect(p.extract).toHaveBeenCalledTimes(1)
+      expect(outcome.failures).toHaveLength(1)
+    },
+  )
+
+  it('ritenta un guasto di rete, che non ha nessuno stato HTTP', async () => {
+    // Misurato: la lettura di agosto e rimasta appesa **301 secondi** e poi e
+    // caduta senza stato (il `headersTimeout` di Node e 300 s). Con il gate sullo
+    // stato HTTP non veniva ritentata, e con una chiamata sola quello e tutta la
+    // tabella persa per una connessione andata male.
+    const p = provider(
+      'gemini',
+      new VisionProviderError('Chiamata di rete a Gemini non riuscita'),
+      risposta([[1, 'RENATA', 'M']]),
+    )
+    const { pace, chiamate } = pacerFinto()
+
+    const outcome = await extractRosterByBands({
+      bands: [band(1, [1], 1, 1)],
+      knownCodes: [],
+      header: HEADER,
+      provider: p,
+      pace,
+    })
+
+    expect(p.extract).toHaveBeenCalledTimes(2)
+    expect(chiamate).toEqual([{ index: 0, retryAfterSeconds: undefined, retry: true }])
+    expect(outcome.failures).toEqual([])
   })
 
   it('non ritenta un errore del provider che non e un rate limit', async () => {
@@ -290,7 +364,7 @@ describe('extractRosterByBands', () => {
   })
 
   it('passa alla riserva la banda che il provider principale non riesce a leggere', async () => {
-    const primario = provider('gemini', new VisionProviderError('quota esaurita'))
+    const primario = provider('gemini', new VisionProviderError('chiave rifiutata', { status: 403 }))
     const riserva = provider('anthropic', risposta([[1, 'RENATA', 'M']]))
     const { pace } = pacerFinto()
 
@@ -312,7 +386,7 @@ describe('extractRosterByBands', () => {
     // il numero di bande dipende da quante colonne ha la foto (10 su agosto,
     // 14 su settembre): il test non lo fissa
     const bande = Array.from({ length: 11 }, (_, i) => band(i, [i + 1], 1, 16))
-    const p = provider('gemini', ...bande.map(() => new VisionProviderError('quota esaurita')))
+    const p = provider('gemini', ...bande.map(() => new VisionProviderError('chiave rifiutata', { status: 403 })))
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({
@@ -444,12 +518,13 @@ describe('createRetryAfterPacer', () => {
   })
 
   it('attende un ritardo di riserva quando il provider non lo indica', async () => {
-    // Un rate limit senza `retry-after` c e: riprovare subito prende un altro
-    // rate limit e brucia il solo ritentativo che una banda ha.
+    // Un 429 senza `retry-after` c e, e un 503 non lo manda quasi mai: riprovare
+    // nello stesso istante prende lo stesso rifiuto e brucia il solo ritentativo
+    // che una banda ha.
     const o = orologio()
     const pace = createRetryAfterPacer({ sleep: o.sleep })
 
-    await pace(1, undefined, { rateLimited: true })
+    await pace(1, undefined, { retry: true })
 
     expect(o.attese).toHaveLength(1)
     expect(o.attese[0]).toBeGreaterThanOrEqual(5_000)
@@ -459,7 +534,7 @@ describe('createRetryAfterPacer', () => {
     const o = orologio()
     const pace = createRetryAfterPacer({ sleep: o.sleep, defaultBackoffSeconds: 3 })
 
-    await pace(1, undefined, { rateLimited: true })
+    await pace(1, undefined, { retry: true })
 
     expect(o.attese).toEqual([3_000])
   })
@@ -677,7 +752,7 @@ describe('extractRosterByBands, bande lette solo in parte', () => {
 
   /** Una banda non letta per niente resta un buco senza conteggio di celle. */
   it('distingue la banda non letta da quella letta a metà', async () => {
-    const p = provider('gemini', new VisionProviderError('quota esaurita'))
+    const p = provider('gemini', new VisionProviderError('chiave rifiutata', { status: 403 }))
     const { pace } = pacerFinto()
 
     const outcome = await extractRosterByBands({

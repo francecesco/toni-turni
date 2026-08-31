@@ -21,6 +21,16 @@ describe('buildBandPrompt', () => {
     expect(prompt).toMatch(/colonn/i)
   })
 
+  it('dice che un orario scritto a penna accanto al codice non fa parte del codice', () => {
+    // Regola del reparto, scritta nelle fixture: `M 7`, `P 13`, `h 13:30` sono
+    // annotazioni d orario aggiunte a penna sopra un codice stampato, e il codice
+    // resta `M` / `P`. Senza dirlo, il modello le incorpora — misurato: cinque
+    // celle su agosto lette come "M7", "P1330", "M730".
+    expect(prompt).toMatch(/orario/i)
+    expect(prompt).toMatch(/non fa parte del codice|non e parte del codice/i)
+    expect(prompt).toMatch(/handCorrected/)
+  })
+
   it('chiede esplicitamente di riportare anche le righe vuote', () => {
     expect(prompt).toMatch(/vuot/i)
     expect(prompt).toMatch(/anche[^\n]*vuot/i)
@@ -96,6 +106,14 @@ describe('buildBandPrompt, tabella intera', () => {
     // lettura.
     expect(prompt).toMatch(/mese/i)
     expect(prompt).toMatch(/non (e |è )?(una )?(riga di )?colonn/i)
+  })
+
+  it('avverte che la casella sopra la striscia dei giorni non e una colonna', () => {
+    // Misurato: il modello elenca `["3°PIANO", "", "RENATA", ...]`. Il codice lo
+    // tollera, ma conviene che non lo produca: la casella in cima alla striscia
+    // dei giorni sul foglio e vuota o porta il nome del reparto.
+    expect(prompt).toMatch(/sopra la striscia dei giorni/i)
+    expect(prompt).toMatch(/non elencarla|non e una colonna|non è una colonna/i)
   })
 
   it('chiede un ordine di scansione: giorno per giorno, dal primo all ultimo', () => {
