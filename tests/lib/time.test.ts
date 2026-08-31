@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   addDays,
+  elencoGiorni,
   hoursBetween,
   monthLabel,
   ROME_TZ,
@@ -103,5 +104,23 @@ describe('wallClockToUtc', () => {
     expect(wallClockToUtc('2026-03-29T02:30', ROME_TZ).toISOString()).toBe(
       '2026-03-29T01:30:00.000Z',
     )
+  })
+})
+
+describe('elencoGiorni', () => {
+  it('elenca tutti i giorni fino a otto', () => {
+    expect(elencoGiorni([1, 2, 3])).toBe('1, 2, 3')
+    expect(elencoGiorni([1, 2, 3, 4, 5, 6, 7, 8])).toBe('1, 2, 3, 4, 5, 6, 7, 8')
+  })
+
+  it('oltre otto giorni tronca e riassume il resto', () => {
+    // È il difetto vero: 14 giorni per esteso rendono una pastiglia più larga
+    // della scheda che la contiene, e la pagina scorre in orizzontale.
+    const quattordici = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+    expect(elencoGiorni(quattordici)).toBe('1, 2, 3, 4, 5, 6, 7, 8 e altri 6')
+  })
+
+  it('un elenco vuoto dà una stringa vuota', () => {
+    expect(elencoGiorni([])).toBe('')
   })
 })

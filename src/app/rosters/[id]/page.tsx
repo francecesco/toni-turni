@@ -5,7 +5,7 @@ import { Banner } from '@/components/banner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { prisma } from '@/lib/db'
-import { monthLabel } from '@/lib/time'
+import { elencoGiorni, monthLabel } from '@/lib/time'
 import { menuItemsFor, requireReferente } from '@/modules/auth'
 import { extractionStrategyFromEnv, normalizeColumn } from '@/modules/extract'
 import { rosterImageExists } from '@/modules/ingest'
@@ -93,7 +93,7 @@ export default async function RosterPage({
         )}
 
         {daEstrarre && fotoDisponibile && (
-          <section className="bg-card space-y-4 rounded-2xl px-4 py-4 shadow-sm">
+          <section className="bg-card border-border space-y-4 rounded-2xl border px-4 py-4 shadow-sm">
             <h2 className="text-base font-bold">Controlla i tagli, poi manda a leggere</h2>
             <p className="text-muted-foreground text-sm">
               La foto qui sotto è già raddrizzata: sopra ci sono disegnati i tagli che verranno
@@ -125,7 +125,7 @@ export default async function RosterPage({
         )}
 
         {inCorso && (
-          <section className="bg-card space-y-4 rounded-2xl px-4 py-4 shadow-sm">
+          <section className="bg-card border-border space-y-4 rounded-2xl border px-4 py-4 shadow-sm">
             <h2 className="text-base font-bold">Lettura in corso</h2>
             <ExtractionProgress
               rosterId={id}
@@ -148,7 +148,7 @@ export default async function RosterPage({
         )}
 
         {conclusa && (
-          <section className="bg-card space-y-4 rounded-2xl px-4 py-4 shadow-sm">
+          <section className="bg-card border-border space-y-4 rounded-2xl border px-4 py-4 shadow-sm">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-base font-bold">Risultato della lettura</h2>
               {roster.status === 'extracted' && <Badge>completa</Badge>}
@@ -215,7 +215,7 @@ export default async function RosterPage({
         )}
 
         {bandeNonLette.length > 0 && (
-          <section className="bg-card space-y-3 rounded-2xl px-4 py-4 shadow-sm">
+          <section className="bg-card border-border space-y-3 rounded-2xl border px-4 py-4 shadow-sm">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-base font-bold">Parti non lette</h2>
               {buchiDaPersone.length > 0 ? (
@@ -250,7 +250,7 @@ export default async function RosterPage({
         )}
 
         {copertura.length > 0 && (
-          <section className="bg-card space-y-3 rounded-2xl px-4 py-4 shadow-sm">
+          <section className="bg-card border-border space-y-3 rounded-2xl border px-4 py-4 shadow-sm">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-base font-bold">Colonne lette</h2>
               {colonneIncomplete.length > 0 && (
@@ -275,7 +275,7 @@ export default async function RosterPage({
                       <Badge variant="secondary">{colonna.daysRead} giorni, completa</Badge>
                     ) : (
                       <Badge variant="destructive">
-                        mancano i giorni {colonna.missingDays.join(', ')}
+                        mancano i giorni {elencoGiorni(colonna.missingDays)}
                       </Badge>
                     )}
                     {!colonna.ignored && !alias?.userId && (

@@ -56,7 +56,7 @@ export default async function RosterColumnsPage({
         {error && <Banner variant="error">{error}</Banner>}
 
         {etichette.length === 0 ? (
-          <div className="bg-card text-muted-foreground rounded-2xl px-4 py-3 text-sm shadow-sm">
+          <div className="bg-card border-border text-muted-foreground rounded-2xl border px-4 py-3 text-sm shadow-sm">
             Nessuna colonna letta finora: la lettura della tabella non è ancora arrivata a nessuna
             intestazione.
           </div>
@@ -68,7 +68,7 @@ export default async function RosterColumnsPage({
               const suggerita = alias === undefined && isColonnaDiServizio(label)
 
               return (
-                <li key={label} className="bg-card rounded-2xl px-4 py-3 shadow-sm">
+                <li key={label} className="bg-card border-border rounded-2xl border px-4 py-3 shadow-sm">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono">{label}</span>
                     {alias?.ignored && <Badge variant="outline">colonna di servizio</Badge>}

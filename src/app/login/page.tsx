@@ -24,7 +24,7 @@ export default async function LoginPage({
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-safe pt-safe pb-10">
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 px-safe pt-safe pb-10">
       <h1 className="text-2xl font-semibold">Turni</h1>
       <p className="text-muted-foreground text-sm">
         Accedi con l&apos;account Google su cui vuoi ricevere i turni.

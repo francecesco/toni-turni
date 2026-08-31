@@ -90,7 +90,7 @@ export default async function ReviewPage({
       <>
         {header}
         <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-safe pb-6">
-          <EmptyState title="Non c è ancora una colonna associata a te">
+          <EmptyState title="Non c’è ancora una colonna associata a te">
             Chiedi alla referente di associare il tuo nome alla colonna giusta: si fa una volta e
             vale anche per i mesi successivi.
           </EmptyState>

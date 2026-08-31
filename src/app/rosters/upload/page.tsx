@@ -4,16 +4,21 @@ import { Banner } from '@/components/banner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { prisma } from '@/lib/db'
+import { romeYearMonth } from '@/lib/time'
 import { requireReferente } from '@/modules/auth'
 
 export const dynamic = 'force-dynamic'
 
-/** Il mese che si sta per pianificare è normalmente il prossimo. */
+/**
+ * Il mese che si sta per pianificare è normalmente il prossimo. Il mese di
+ * partenza si legge col fuso di Roma (`romeYearMonth`), non con quello del
+ * processo: in un container UTC, alle 00:30 del 1° settembre a Roma il valore
+ * precompilato sarebbe altrimenti settembre invece di ottobre.
+ */
 function prossimoMese(oggi: Date): { year: number; month: number } {
-  const mese = oggi.getMonth() + 2
-  return mese > 12
-    ? { year: oggi.getFullYear() + 1, month: mese - 12 }
-    : { year: oggi.getFullYear(), month: mese }
+  const { year, month } = romeYearMonth(oggi)
+  const prossimo = month + 1
+  return prossimo > 12 ? { year: year + 1, month: prossimo - 12 } : { year, month: prossimo }
 }
 
 export default async function UploadRosterPage({
@@ -46,28 +51,34 @@ export default async function UploadRosterPage({
 
         <form action="/api/rosters" method="post" encType="multipart/form-data" className="space-y-5">
           <div className="space-y-2">
-            <div className="border-border bg-card flex min-h-32 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-4 py-6 text-center">
+            {/* Tutto il riquadro è il bersaglio, non solo la scritta: la label avvolge
+                l intero blocco tratteggiato, così il tocco apre il rullino da qualunque
+                punto ci si posi — non solo sulle due righe di testo. */}
+            <label
+              htmlFor="photo"
+              className="border-border bg-card flex min-h-32 flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed px-4 py-6 text-center"
+            >
               <CameraIcon className="text-muted-foreground size-8" />
               <div>
-                <label htmlFor="photo" className="font-semibold">
-                  Scegli la foto della tabella
-                </label>
+                <p className="font-semibold">Scegli la foto della tabella</p>
                 <p className="text-muted-foreground text-sm">
                   Inquadra tutto il riquadro stampato, il più in piano possibile.
                 </p>
               </div>
               {/* Input vero e visibile, non `sr-only`: il nome del file scelto lo mostra il
                   browser da sé, e il messaggio di `required` (se si annulla la scelta) si
-                  ancora a un elemento che si vede, non a un pixel clippato fuori schermo. */}
+                  ancora a un elemento che si vede, non a un pixel clippato fuori schermo.
+                  Il bottone nativo torna a un altezza da tocco (44px, non i 24px di
+                  `file:h-6`), anche se ormai basta appoggiare il dito ovunque nel riquadro. */}
               <Input
                 id="photo"
                 name="photo"
                 type="file"
                 accept="image/*"
                 required
-                className="h-auto w-auto border-0 bg-transparent p-0 text-sm"
+                className="h-11 w-auto border-0 bg-transparent p-0 text-sm file:h-11"
               />
-            </div>
+            </label>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

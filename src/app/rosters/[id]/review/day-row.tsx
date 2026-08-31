@@ -34,7 +34,7 @@ export function DayRow({
   return (
     <li
       className={[
-        'bg-card rounded-2xl px-3 py-3 shadow-sm',
+        'bg-card border-border rounded-2xl border px-3 py-3 shadow-sm',
         row.attention ? 'ring-warn/40 ring-2' : '',
         row.confirmed && !row.attention ? 'ring-ok/30 ring-1' : '',
         row.empty ? 'opacity-70' : '',

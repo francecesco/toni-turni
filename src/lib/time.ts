@@ -94,3 +94,15 @@ export function romeYearMonth(instant: Date): { year: number; month: number } {
 
   return { year: Number(parti.year), month: Number(parti.month) }
 }
+
+/**
+ * Un elenco di giorni del mese, troncato: oltre l ottavo elemento riassume «e
+ * altri N» invece di continuare a elencarli. Usata sia in `column-summary.tsx`
+ * (i giorni senza turno letto di una colonna) sia in `[id]/page.tsx` (i giorni
+ * mancanti per colonna): con 14 giorni scritti per esteso una pastiglia diventa
+ * più larga della scheda che la contiene e fa scorrere la pagina in orizzontale.
+ */
+export function elencoGiorni(giorni: number[]): string {
+  if (giorni.length <= 8) return giorni.join(', ')
+  return `${giorni.slice(0, 8).join(', ')} e altri ${giorni.length - 8}`
+}

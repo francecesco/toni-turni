@@ -32,7 +32,7 @@ export default async function UsersPage({
             {users.map((user) => (
               <li
                 key={user.id}
-                className="bg-card flex items-center justify-between gap-3 rounded-2xl px-4 py-3 shadow-sm"
+                className="bg-card border-border flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 shadow-sm"
               >
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{user.displayName}</p>
@@ -52,7 +52,7 @@ export default async function UsersPage({
             {invites.map((invite) => (
               <li
                 key={invite.email}
-                className="bg-card flex items-center justify-between gap-3 rounded-2xl px-4 py-3 shadow-sm"
+                className="bg-card border-border flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 shadow-sm"
               >
                 <span className="truncate text-sm">{invite.email}</span>
                 <form action={revokeInvite}>

@@ -1,11 +1,7 @@
 import { Banner } from '@/components/banner'
 import { Badge } from '@/components/ui/badge'
+import { elencoGiorni } from '@/lib/time'
 import type { GridSummary } from '@/modules/review'
-
-function elencoGiorni(giorni: number[]): string {
-  if (giorni.length <= 8) return giorni.join(', ')
-  return `${giorni.slice(0, 8).join(', ')} e altri ${giorni.length - 8}`
-}
 
 /** La testa della colonna: quanto è confermato, e cosa va guardato prima. */
 export function ColumnSummary({
@@ -28,7 +24,7 @@ export function ColumnSummary({
 
   return (
     <section className="flex flex-col gap-3">
-      <div className="bg-card rounded-2xl px-4 py-4 shadow-sm">
+      <div className="bg-card border-border rounded-2xl border px-4 py-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-base font-bold">{columnLabel}</span>
           {summary.attention > 0 && (
@@ -46,7 +42,7 @@ export function ColumnSummary({
 
       {!canConfirm && (
         <Banner variant="info">
-          Stai guardando la colonna di un altra persona: puoi leggerla, ma confermarla spetta solo a
+          Stai guardando la colonna di un’altra persona: puoi leggerla, ma confermarla spetta solo a
           lei. Un turno finisce sul calendario di qualcuno unicamente con la sua conferma.
         </Banner>
       )}

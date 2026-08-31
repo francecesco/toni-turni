@@ -1,6 +1,7 @@
 import { AppHeader } from '@/components/app-header'
 import { Banner } from '@/components/banner'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { listShiftCodes } from '@/modules/codes'
 import { requireReferente } from '@/modules/auth'
@@ -28,7 +29,7 @@ export default async function ShiftCodesPage({
 
         <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {codes.map((def) => (
-            <li key={def.code} className="bg-card rounded-2xl px-4 py-3 shadow-sm">
+            <li key={def.code} className="bg-card border-border rounded-2xl border px-4 py-3 shadow-sm">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-base font-bold">{def.code}</span>
                 {def.needsReview && <Badge variant="destructive">da chiarire</Badge>}
@@ -64,7 +65,7 @@ export default async function ShiftCodesPage({
           ))}
         </ul>
 
-        <section className="bg-card space-y-3 rounded-2xl px-4 py-4 shadow-sm">
+        <section className="bg-card border-border space-y-3 rounded-2xl border px-4 py-4 shadow-sm">
           <h2 className="font-medium">Aggiungi o modifica un codice</h2>
           <form
             action={async (formData: FormData) => {
@@ -96,12 +97,9 @@ export default async function ShiftCodesPage({
               pattern="#[0-9a-fA-F]{6}"
               title="Un colore esadecimale, es. #f59e0b"
             />
-            <button
-              type="submit"
-              className="bg-primary text-primary-foreground col-span-2 h-12 rounded-xl px-4 text-base font-medium sm:col-span-3"
-            >
+            <Button type="submit" size="touch" className="col-span-2 sm:col-span-3">
               Salva
-            </button>
+            </Button>
           </form>
         </section>
       </main>
