@@ -140,6 +140,30 @@ describe('la griglia di conferma ridà alla referente la strada per le colonne',
     const voci = await menuVoci(infermiera.id)
     expect(voci.some((voce) => voce.label === 'Colonne e persone')).toBe(false)
   })
+
+  it('alla referente mostra «Cosa è cambiato» solo da una seconda versione in su', async () => {
+    const prime = await menuVoci(referente.id)
+    expect(prime.some((v) => v.label === 'Cosa è cambiato')).toBe(false)
+
+    const v2 = await prisma.roster.create({
+      data: { year: 2026, month: 8, ward: '3°PIANO', version: 2, imagePath: 'v2.jpg', status: 'extracted' },
+    })
+    await session.openSessionCookie(referente.id)
+    const pagina = await ReviewPage({ params: Promise.resolve({ id: v2.id }), searchParams: Promise.resolve({}) })
+    const header = trovaElemento<{ menuItems?: { href: string; label: string }[]; children?: ReactNode }>(pagina, AppHeader)
+    expect(header?.props.menuItems).toContainEqual({ href: `/rosters/${v2.id}/diff`, label: 'Cosa è cambiato' })
+  })
+
+  it('a un infermiera non la mostra mai', async () => {
+    const v2 = await prisma.roster.create({
+      data: { year: 2026, month: 8, ward: '3°PIANO', version: 2, imagePath: 'v2.jpg', status: 'extracted' },
+    })
+    await session.openSessionCookie(infermiera.id)
+    const pagina = await ReviewPage({ params: Promise.resolve({ id: v2.id }), searchParams: Promise.resolve({}) })
+    const header = trovaElemento<{ menuItems?: { href: string; label: string }[]; children?: ReactNode }>(pagina, AppHeader)
+    expect(header).toBeDefined()
+    expect((header?.props.menuItems ?? []).some((v) => v.label === 'Cosa è cambiato')).toBe(false)
+  })
 })
 
 describe('solo chi possiede la colonna vede il dock di conferma', () => {

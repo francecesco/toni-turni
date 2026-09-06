@@ -67,7 +67,12 @@ export default async function ReviewPage({
   // (`requireReferente`).
   const menuItems =
     user.role === 'REFERENTE'
-      ? [...menuItemsFor(user), { href: `/rosters/${roster.id}/columns`, label: 'Colonne e persone' }]
+      ? [
+          ...menuItemsFor(user),
+          { href: `/rosters/${roster.id}/columns`, label: 'Colonne e persone' },
+          // Solo da una seconda versione: sulla prima non c è niente con cui confrontare.
+          ...(roster.version > 1 ? [{ href: `/rosters/${roster.id}/diff`, label: 'Cosa è cambiato' }] : []),
+        ]
       : menuItemsFor(user)
 
   const [etichette, aliases, codes] = await Promise.all([
