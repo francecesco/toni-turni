@@ -1,5 +1,6 @@
 import type { ShiftCodeDef, ShiftKind } from '@/modules/codes/types'
 import { normalizeColumn } from '@/modules/extract'
+import type { ChangeKind, VersionChange } from './diff'
 
 /**
  * La griglia di conferma di **una** colonna: una riga per ogni giorno del mese,
@@ -80,6 +81,12 @@ export interface GridRow {
   confirmable: boolean
   attention: boolean
   attentionReasons: string[]
+  /** Rispetto alla versione precedente della tabella: `null` se uguale o se è la prima versione. */
+  changed: ChangeKind | null
+  /** Il codice effettivo della versione precedente, solo quando `changed` non è null. */
+  previousCode: string | null
+  /** Riga vuota che porta ancora un assegnazione: il foglio nuovo non ha più questo turno. */
+  orphanAssignment: boolean
 }
 
 const WEEKDAYS = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'] as const
@@ -106,6 +113,7 @@ export function buildColumnGrid(input: {
   cells: ReviewCell[]
   codes: ShiftCodeDef[]
   assignments: ReviewAssignment[]
+  changes?: VersionChange[]
 }): GridRow[] {
   const giorniNelMese = new Date(input.year, input.month, 0).getDate()
   const chiaveColonna = normalizeColumn(input.columnLabel)
@@ -117,6 +125,11 @@ export function buildColumnGrid(input: {
 
   const legenda = new Map(input.codes.map((def) => [def.code, def]))
   const conferme = new Map(input.assignments.map((a) => [a.day, a]))
+  const cambi = new Map(
+    (input.changes ?? [])
+      .filter((c) => c.columnKey === chiaveColonna)
+      .map((c) => [c.day, c]),
+  )
 
   const righe: GridRow[] = []
   for (let day = 1; day <= giorniNelMese; day += 1) {
@@ -134,6 +147,8 @@ export function buildColumnGrid(input: {
     const unknownCode = cell !== null && !corretta && cell.code === null
     const changedSinceConfirm =
       confermata && assegnazione !== null && !empty && assegnazione.code !== codiceEffettivo
+    const cambio = cambi.get(day) ?? null
+    const orphanAssignment = empty && assegnazione !== null
 
     const attentionReasons: string[] = []
     // Su una cella corretta a mano i motivi che vengono dalla lettura del modello sono
@@ -150,6 +165,9 @@ export function buildColumnGrid(input: {
     if (changedSinceConfirm) {
       attentionReasons.push(`cambiato dopo la conferma: era ${assegnazione?.code}`)
     }
+    if (cambio?.kind === 'changed') attentionReasons.push(`cambiato rispetto alla foto precedente: era ${cambio.before}`)
+    if (cambio?.kind === 'added') attentionReasons.push('nuovo rispetto alla foto precedente')
+    if (orphanAssignment) attentionReasons.push('il foglio nuovo non ha più questo turno')
 
     righe.push({
       day,
@@ -181,6 +199,9 @@ export function buildColumnGrid(input: {
       confirmable: codiceEffettivo !== null,
       attention: attentionReasons.length > 0,
       attentionReasons,
+      changed: cambio?.kind ?? null,
+      previousCode: cambio ? cambio.before : null,
+      orphanAssignment,
     })
   }
 
@@ -198,6 +219,8 @@ export interface GridSummary {
   attention: number
   unknownCodes: number
   confirmable: number
+  /** Righe cambiate rispetto alla versione precedente della tabella (`changed !== null`). */
+  changed: number
   /**
    * Giorni della **propria** colonna senza turno letto. È così che si dichiara un
    * buco a chi lo riguarda: per colonna e per giorni, non come "n celle su m non
@@ -216,6 +239,7 @@ export function gridSummary(rows: GridRow[]): GridSummary {
     attention: rows.filter((r) => r.attention).length,
     unknownCodes: rows.filter((r) => r.unknownCode).length,
     confirmable: rows.filter((r) => r.confirmable).length,
+    changed: rows.filter((r) => r.changed !== null).length,
     // Solo i buchi **veri**: una cella dichiarata vuota da una persona non è un giorno
     // non letto, e farla suonare come tale insegnerebbe a ignorare l allarme.
     emptyDays: rows.filter((r) => r.empty && !r.declaredEmpty).map((r) => r.day),

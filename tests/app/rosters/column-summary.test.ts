@@ -15,6 +15,7 @@ function riassunto(over: Partial<GridSummary> = {}): GridSummary {
     attention: 0,
     unknownCodes: 0,
     confirmable: 20,
+    changed: 0,
     emptyDays: [],
     ...over,
   }

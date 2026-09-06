@@ -63,7 +63,11 @@ function cella(day: number, overrides: Partial<ReviewCell> = {}): ReviewCell {
   }
 }
 
-function griglia(cells: ReviewCell[], assignments: Parameters<typeof buildColumnGrid>[0]['assignments'] = []) {
+function griglia(
+  cells: ReviewCell[],
+  assignments: Parameters<typeof buildColumnGrid>[0]['assignments'] = [],
+  changes: Parameters<typeof buildColumnGrid>[0]['changes'] = [],
+) {
   return buildColumnGrid({
     year: 2026,
     month: 8,
@@ -71,6 +75,7 @@ function griglia(cells: ReviewCell[], assignments: Parameters<typeof buildColumn
     cells,
     codes: legenda,
     assignments,
+    changes,
   })
 }
 
@@ -342,6 +347,7 @@ describe('gridSummary — il riassunto in testa alla griglia', () => {
       attention: 3,
       unknownCodes: 1,
       confirmable: 3,
+      changed: 0,
       emptyDays: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31],
     })
   })
@@ -367,5 +373,63 @@ describe('gridSummary — il riassunto in testa alla griglia', () => {
 
     // Il buco si dichiara per giorni della propria colonna, non per indice di banda.
     expect(gridSummary(righe).emptyDays.slice(0, 3)).toEqual([2, 4, 5])
+  })
+})
+
+describe('buildColumnGrid — cosa è cambiato rispetto alla foto precedente', () => {
+  // Nota: `griglia` fissa la colonna a 'CRISTINA' (vedi l helper in cima al file), quindi
+  // il cambio di riferimento usa la stessa colonna — non 'RENATA' come nella bozza del
+  // task, che altrimenti non avrebbe mai trovato corrispondenza col filtro per colonna.
+  const cambio = (day: number, kind: 'changed' | 'added' | 'removed', before: string | null, after: string | null) => ({
+    columnLabel: 'CRISTINA',
+    columnKey: 'CRISTINA',
+    day,
+    kind,
+    before,
+    after,
+  })
+
+  it('senza diff nessuna riga è cambiata e il riassunto conta zero', () => {
+    const righe = griglia([cella(1)])
+    expect(righe[0].changed).toBeNull()
+    expect(righe[0].previousCode).toBeNull()
+    expect(gridSummary(righe).changed).toBe(0)
+  })
+
+  it('una riga del diff porta il tipo di cambiamento e il codice di prima', () => {
+    const righe = griglia([cella(5, { rawCode: 'P', code: 'P' })], [], [cambio(5, 'changed', 'M', 'P')])
+    expect(righe[4].changed).toBe('changed')
+    expect(righe[4].previousCode).toBe('M')
+    expect(righe[4].attention).toBe(true)
+    expect(righe[4].attentionReasons).toContain('cambiato rispetto alla foto precedente: era M')
+    expect(gridSummary(righe).changed).toBe(1)
+  })
+
+  it('un giorno nuovo lo dice', () => {
+    const righe = griglia([cella(12)], [], [cambio(12, 'added', null, 'M')])
+    expect(righe[11].changed).toBe('added')
+    expect(righe[11].attentionReasons).toContain('nuovo rispetto alla foto precedente')
+  })
+
+  it('un giorno tolto con un assegnazione ancora viva è orfano: il foglio nuovo non ha più il turno', () => {
+    const righe = griglia(
+      [],
+      [{ day: 20, code: 'M', confirmedAt: new Date(), syncState: 'synced' }],
+      [cambio(20, 'removed', 'M', null)],
+    )
+    expect(righe[19].empty).toBe(true)
+    expect(righe[19].orphanAssignment).toBe(true)
+    expect(righe[19].changed).toBe('removed')
+    expect(righe[19].attentionReasons).toContain('il foglio nuovo non ha più questo turno')
+  })
+
+  it('un assegnazione su una riga vuota è orfana anche senza diff (prima versione, cella svuotata)', () => {
+    const righe = griglia([], [{ day: 20, code: 'M', confirmedAt: new Date(), syncState: 'synced' }])
+    expect(righe[19].orphanAssignment).toBe(true)
+  })
+
+  it('ignora i cambiamenti di altre colonne', () => {
+    const righe = griglia([cella(5)], [], [{ ...cambio(5, 'changed', 'M', 'P'), columnLabel: 'MERY', columnKey: 'MERY' }])
+    expect(righe[4].changed).toBeNull()
   })
 })
