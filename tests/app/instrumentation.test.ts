@@ -20,6 +20,9 @@ describe('register (instrumentation)', () => {
 
   it('non dice niente quando il bypass è spento', async () => {
     vi.stubEnv('NODE_ENV', 'development')
+    // A vuoto di proposito, non solo assente: una shell con `DEV_LOGIN_EMAILS` esportata
+    // (succede, il `.env` di sviluppo la porta) farebbe fallire il test per l'ambiente.
+    vi.stubEnv('DEV_LOGIN_EMAILS', '')
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     await register()
