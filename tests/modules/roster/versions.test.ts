@@ -63,6 +63,16 @@ describe('previousVersionOf', () => {
   it('con un id inesistente risponde null, non lancia', async () => {
     expect(await versions.previousVersionOf('non-esiste')).toBeNull()
   })
+
+  it('salta una versione fallita: non ha celle, non è una base di confronto', async () => {
+    const v1 = await tabella(1, { status: 'extracted' })
+    await tabella(2, { status: 'failed' })
+    const v3 = await tabella(3, { status: 'extracted' })
+
+    const prima = await versions.previousVersionOf(v3.id)
+
+    expect(prima?.id).toBe(v1.id)
+  })
 })
 
 describe('cellsForDiff', () => {
@@ -227,6 +237,21 @@ describe('carryOverAssignments — le conferme seguono la versione nuova', () =>
     expect(g1).toMatchObject({ correctedCode: 'P', correctedAt: quando, correctedBy: 'anna' })
     const g2 = await prisma.rosterCell.findFirstOrThrow({ where: { rosterId: v2.id, day: 2 } })
     expect(g2.correctedAt).toBeNull()
+  })
+
+  it('una versione caricata e mai letta non è la base: si riporta dalla precedente letta', async () => {
+    const v1 = await tabella(1)
+    await tabella(2, { status: 'uploaded' })
+    const v3 = await tabella(3)
+    await cella(v1.id, 'CRISTINA', 1, 'M')
+    await cella(v3.id, 'CRISTINA', 1, 'M')
+    await assegnazione(v1.id, cristina.id, 1)
+
+    const esito = await versions.carryOverAssignments(v3.id)
+
+    expect(esito.movedAssignments).toBe(1)
+    const riga = await prisma.assignment.findFirstOrThrow({ where: { userId: cristina.id } })
+    expect(riga.rosterId).toBe(v3.id)
   })
 
   it('è idempotente: senza niente da riportare non tocca nulla', async () => {

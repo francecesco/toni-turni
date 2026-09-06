@@ -14,6 +14,12 @@ export interface RosterVersionRef {
   version: number
 }
 
+/**
+ * La versione precedente **letta** (`extracted` o `partial`) dello stesso
+ * `(year, month, ward)`. Una versione caricata e mai letta (`uploaded`), fallita
+ * (`failed`) o interrotta (`interrupted`) non ha celle: non è una base di
+ * confronto valida né per il diff né per il riporto delle conferme.
+ */
 export async function previousVersionOf(rosterId: string): Promise<RosterVersionRef | null> {
   const corrente = await prisma.roster.findUnique({
     where: { id: rosterId },
@@ -27,6 +33,7 @@ export async function previousVersionOf(rosterId: string): Promise<RosterVersion
       month: corrente.month,
       ward: corrente.ward,
       version: { lt: corrente.version },
+      status: { in: ['extracted', 'partial'] },
     },
     orderBy: { version: 'desc' },
     select: { id: true, year: true, month: true, ward: true, version: true },

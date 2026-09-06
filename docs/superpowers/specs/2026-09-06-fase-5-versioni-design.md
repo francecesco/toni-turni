@@ -82,8 +82,9 @@ Una cella con `correctedCode` null **e** `correctedAt` valorizzato è «il fogli
 vuota. Celle uguali non compaiono. Le colonne di servizio (`isColonnaDiServizio`) non compaiono.
 Il diff si calcola **al volo** leggendo le due versioni dal database: nessuna tabella nuova.
 
-`previousVersionOf(roster)` restituisce la versione precedente dello stesso `(year, month, ward)`,
-o `null` per la prima versione.
+`previousVersionOf(roster)` restituisce la versione precedente **letta** (`extracted` o `partial`)
+dello stesso `(year, month, ward)`: una versione caricata e mai letta, fallita o interrotta non ha
+celle e non è una base di confronto, o `null` per la prima versione.
 
 ## 6. Quello che vede l'infermiera
 
