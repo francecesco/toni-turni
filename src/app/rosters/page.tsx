@@ -6,7 +6,14 @@ import { EmptyState } from '@/components/empty-state'
 import { monthLabel, romeYearMonth } from '@/lib/time'
 import { menuItemsFor, requireUser } from '@/modules/auth'
 import { ensureExtractionWorker } from '@/modules/roster'
-import { monthPickerEntries, reviewableRosters, rosterHref } from '@/modules/review'
+import {
+  calendarBadge,
+  calendarCounts,
+  confirmedAssignmentsByRoster,
+  monthPickerEntries,
+  reviewableRosters,
+  rosterHref,
+} from '@/modules/review'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,6 +42,14 @@ export default async function RostersPage() {
   const voci = monthPickerEntries(tabelle, romeYearMonth(new Date()))
   const statoPerId = new Map(tabelle.map((t) => [t.id, t.status]))
   const referente = user.role === 'REFERENTE'
+  // «Sul calendario» riguarda i turni **propri**: anche la referente vede il badge
+  // solo per la sua colonna, perché il calendario è della persona.
+  const calendarioPerId = calendarCounts(
+    await confirmedAssignmentsByRoster(
+      user.id,
+      voci.map((v) => v.id),
+    ),
+  )
 
   return (
     <>
@@ -77,9 +92,15 @@ export default async function RostersPage() {
                       </p>
                       {voce.current && <p className="text-primary text-xs font-medium">mese in corso</p>}
                     </div>
-                    <Badge variant={ETICHETTE_STATO[statoPerId.get(voce.id) ?? '']?.variante ?? 'outline'}>
-                      {ETICHETTE_STATO[statoPerId.get(voce.id) ?? '']?.testo ?? 'sconosciuto'}
-                    </Badge>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <Badge variant={ETICHETTE_STATO[statoPerId.get(voce.id) ?? '']?.variante ?? 'outline'}>
+                        {ETICHETTE_STATO[statoPerId.get(voce.id) ?? '']?.testo ?? 'sconosciuto'}
+                      </Badge>
+                      {(() => {
+                        const badge = calendarBadge(calendarioPerId.get(voce.id))
+                        return badge ? <Badge variant={badge.variant}>{badge.text}</Badge> : null
+                      })()}
+                    </div>
                   </div>
                 </Link>
               </li>

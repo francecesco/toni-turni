@@ -26,6 +26,9 @@ let db: ReturnType<typeof createTestDb>
 let prisma: PrismaClient
 let session: typeof import('@/modules/auth/session')
 let RostersPage: typeof import('@/app/rosters/page').default
+// Importato **dopo** `vi.resetModules()`, come la pagina: un import statico sarebbe
+// un altra istanza del modulo e la ricerca per identita non troverebbe niente.
+let Badge: typeof import('@/components/ui/badge').Badge
 
 let referente: { id: string }
 
@@ -39,6 +42,7 @@ beforeAll(async () => {
 
   session = await import('@/modules/auth/session')
   RostersPage = (await import('@/app/rosters/page')).default
+  Badge = (await import('@/components/ui/badge')).Badge
 })
 
 afterAll(() => db.cleanup())
@@ -108,5 +112,61 @@ describe('il selettore dei mesi porta dove sta davvero la tabella', () => {
       (el) => el.props.href === `/rosters/${roster.id}/review`,
     )
     expect(link).toBeDefined()
+  })
+})
+
+describe('l elenco dei mesi dice se i turni sono gia sul calendario', () => {
+  let cristina: { id: string }
+
+  beforeEach(async () => {
+    await prisma.assignment.deleteMany()
+    await prisma.columnAlias.deleteMany()
+    cristina = await prisma.user.create({
+      data: { email: 'cri@esempio.it', displayName: 'Cristina', role: 'NURSE' },
+    })
+    await prisma.columnAlias.create({ data: { label: 'CRISTINA', userId: cristina.id, ignored: false } })
+  })
+
+  async function tabellaCon(syncStates: string[]) {
+    const roster = await prisma.roster.create({
+      data: { year: 2026, month: 9, ward: '3°PIANO', imagePath: 's.jpg', status: 'extracted' },
+    })
+    await prisma.rosterCell.create({
+      data: { rosterId: roster.id, day: 1, columnLabel: 'CRISTINA', rawCode: 'M', code: 'M', confidence: 0.9 },
+    })
+    await prisma.assignment.createMany({
+      data: syncStates.map((syncState, i) => ({
+        userId: cristina.id,
+        rosterId: roster.id,
+        day: i + 1,
+        code: 'M',
+        confirmedAt: new Date(),
+        syncState,
+      })),
+    })
+    return roster
+  }
+
+  function testiBadge(pagina: ReactNode): string[] {
+    return trovaTutti<{ children?: ReactNode }>(pagina, Badge).map((b) => String(b.props.children))
+  }
+
+  it('con tutti i turni confermati inviati mostra «sul calendario»', async () => {
+    await tabellaCon(['synced', 'synced'])
+    const pagina = await renderRosters(cristina.id)
+    expect(testiBadge(pagina)).toContain('sul calendario')
+  })
+
+  it('con invii mancanti dice quanti sono da mandare', async () => {
+    await tabellaCon(['synced', 'confirmed', 'confirmed'])
+    const pagina = await renderRosters(cristina.id)
+    expect(testiBadge(pagina)).toContain('2 da mandare')
+  })
+
+  it('senza conferme non aggiunge nessun badge del calendario', async () => {
+    await tabellaCon([])
+    const pagina = await renderRosters(cristina.id)
+    const testi = testiBadge(pagina)
+    expect(testi.some((t) => /calendario|da mandare/.test(t))).toBe(false)
   })
 })

@@ -217,6 +217,28 @@ describe('buildColumnGrid — lo stato della conferma', () => {
 
     expect(righe[0].synced).toBe(true)
   })
+
+  it('dichiara quando l ultimo invio di un turno non e riuscito', () => {
+    const righe = griglia(
+      [cella(1)],
+      [{ day: 1, code: 'M', confirmedAt: new Date(), syncState: 'failed' }],
+    )
+
+    expect(righe[0].syncFailed).toBe(true)
+    expect(righe[0].synced).toBe(false)
+  })
+
+  it('un turno riconfermato dopo l invio non risulta piu sul calendario: va rimandato', () => {
+    // La riconferma riporta syncState a "confirmed" (vedi confirm.ts): l evento su
+    // Google c e ancora, ma puo non corrispondere piu. Dire «gia sul calendario»
+    // qui sarebbe una bugia rassicurante.
+    const righe = griglia(
+      [cella(1)],
+      [{ day: 1, code: 'M', confirmedAt: new Date(), syncState: 'confirmed' }],
+    )
+
+    expect(righe[0].synced).toBe(false)
+  })
 })
 
 describe('buildColumnGrid — la correzione a mano, distinta dalla lettura dell AI', () => {
@@ -315,11 +337,29 @@ describe('gridSummary — il riassunto in testa alla griglia', () => {
       days: 31,
       shifts: 4,
       confirmed: 1,
+      synced: 0,
+      syncFailed: 0,
       attention: 3,
       unknownCodes: 1,
       confirmable: 3,
       emptyDays: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31],
     })
+  })
+
+  it('conta quanti turni confermati sono sul calendario e quanti invii sono falliti', () => {
+    const righe = griglia(
+      [cella(1), cella(2), cella(3)],
+      [
+        { day: 1, code: 'M', confirmedAt: new Date(), syncState: 'synced' },
+        { day: 2, code: 'M', confirmedAt: new Date(), syncState: 'confirmed' },
+        { day: 3, code: 'M', confirmedAt: new Date(), syncState: 'failed' },
+      ],
+    )
+
+    const riassunto = gridSummary(righe)
+    expect(riassunto.confirmed).toBe(3)
+    expect(riassunto.synced).toBe(1)
+    expect(riassunto.syncFailed).toBe(1)
   })
 
   it('elenca per giorno i buchi della colonna: è così che un turno mancante si vede', () => {

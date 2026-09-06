@@ -256,7 +256,7 @@ export default async function ReviewPage({
             <form action={syncColumnAction}>
               <input type="hidden" name="rosterId" value={id} />
               <input type="hidden" name="columnLabel" value={scelta} />
-              <SyncButton shifts={riassunto.confirmed} />
+              <SyncButton shifts={riassunto.confirmed} synced={riassunto.synced} />
             </form>
           )}
         </ActionDock>

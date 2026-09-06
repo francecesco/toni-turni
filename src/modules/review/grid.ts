@@ -72,7 +72,10 @@ export interface GridRow {
   confirmed: boolean
   confirmedCode: string | null
   changedSinceConfirm: boolean
+  /** L ultimo invio è riuscito e nessuna riconferma l ha superato: è sul calendario così com è. */
   synced: boolean
+  /** L ultimo invio di questo turno non è riuscito: `syncError` sull assegnazione dice perché. */
+  syncFailed: boolean
   /** Si può confermare solo un turno con un codice che la legenda conosce. */
   confirmable: boolean
   attention: boolean
@@ -174,6 +177,7 @@ export function buildColumnGrid(input: {
       confirmedCode: confermata ? (assegnazione?.code ?? null) : null,
       changedSinceConfirm,
       synced: assegnazione?.syncState === 'synced',
+      syncFailed: assegnazione?.syncState === 'failed',
       confirmable: codiceEffettivo !== null,
       attention: attentionReasons.length > 0,
       attentionReasons,
@@ -187,6 +191,10 @@ export interface GridSummary {
   days: number
   shifts: number
   confirmed: number
+  /** Turni confermati e già sul calendario. */
+  synced: number
+  /** Turni il cui ultimo invio non è riuscito. */
+  syncFailed: number
   attention: number
   unknownCodes: number
   confirmable: number
@@ -203,6 +211,8 @@ export function gridSummary(rows: GridRow[]): GridSummary {
     days: rows.length,
     shifts: rows.filter((r) => !r.empty).length,
     confirmed: rows.filter((r) => r.confirmed).length,
+    synced: rows.filter((r) => r.confirmed && r.synced).length,
+    syncFailed: rows.filter((r) => r.syncFailed).length,
     attention: rows.filter((r) => r.attention).length,
     unknownCodes: rows.filter((r) => r.unknownCode).length,
     confirmable: rows.filter((r) => r.confirmable).length,

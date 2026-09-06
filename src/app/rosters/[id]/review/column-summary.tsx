@@ -1,7 +1,7 @@
 import { Banner } from '@/components/banner'
 import { Badge } from '@/components/ui/badge'
 import { elencoGiorni } from '@/lib/time'
-import type { GridSummary } from '@/modules/review'
+import { calendarBadge, type GridSummary } from '@/modules/review'
 
 /** La testa della colonna: quanto è confermato, e cosa va guardato prima. */
 export function ColumnSummary({
@@ -21,19 +21,34 @@ export function ColumnSummary({
 }) {
   const percentuale =
     summary.confirmable === 0 ? 0 : Math.round((summary.confirmed / summary.confirmable) * 100)
+  // Lo stesso badge dell elenco dei mesi: una sola regola per «è sul calendario?».
+  const calendario = calendarBadge({
+    confirmed: summary.confirmed,
+    synced: summary.synced,
+    failed: summary.syncFailed,
+  })
 
   return (
     <section className="flex flex-col gap-3">
       <div className="bg-card border-border rounded-2xl border px-4 py-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-base font-bold">{columnLabel}</span>
-          {summary.attention > 0 && (
-            <Badge variant="destructive">{summary.attention} da rileggere</Badge>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {summary.attention > 0 && (
+              <Badge variant="destructive">{summary.attention} da rileggere</Badge>
+            )}
+            {calendario && <Badge variant={calendario.variant}>{calendario.text}</Badge>}
+          </div>
         </div>
         <p className="text-muted-foreground mt-2 text-sm tabular">
           <span className="text-foreground font-bold">{summary.confirmed}</span> di{' '}
           {summary.confirmable} confermati
+          {summary.confirmed > 0 && (
+            <>
+              {' · '}
+              <span className="text-foreground font-bold">{summary.synced}</span> sul calendario
+            </>
+          )}
         </p>
         <div className="bg-muted mt-2 h-1.5 overflow-hidden rounded-full">
           <div className="bg-ok h-full rounded-full" style={{ width: `${percentuale}%` }} />

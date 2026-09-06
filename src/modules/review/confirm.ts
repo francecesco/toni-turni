@@ -258,3 +258,19 @@ export async function reviewableRosters(viewer: Viewer): Promise<
       return senzaCelle
     })
 }
+
+/**
+ * I turni confermati di una persona sulle tabelle indicate, con lo stato dell
+ * ultimo invio: è quello che l elenco dei mesi riduce in un badge («sul
+ * calendario», «2 da mandare») con `calendarCounts` e `calendarBadge`.
+ */
+export async function confirmedAssignmentsByRoster(
+  userId: string,
+  rosterIds: string[],
+): Promise<Array<{ rosterId: string; syncState: string }>> {
+  if (rosterIds.length === 0) return []
+  return prisma.assignment.findMany({
+    where: { userId, rosterId: { in: rosterIds }, confirmedAt: { not: null } },
+    select: { rosterId: true, syncState: true },
+  })
+}

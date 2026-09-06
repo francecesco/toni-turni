@@ -17,6 +17,7 @@ export type { ColumnTarget, ConfirmResult } from './confirm'
 export {
   ReviewForbiddenError,
   columnAssignments,
+  confirmedAssignmentsByRoster,
   confirmColumn,
   confirmDays,
   requireColumnAccess,
@@ -28,3 +29,5 @@ export type { CellCorrection, CorrectionResult } from './correct'
 export { ReviewRejectedError, correctCell } from './correct'
 export type { LandingCandidate, MonthEntry } from './landing'
 export { landingRoster, monthPickerEntries, rosterHref } from './landing'
+export type { CalendarBadge, CalendarCounts } from './calendar-status'
+export { calendarBadge, calendarCounts } from './calendar-status'
