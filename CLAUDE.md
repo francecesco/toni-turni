@@ -384,6 +384,15 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
   `Unknown argument '<campo>'` su un campo che nello schema esiste, non è un tuo difetto: lancia
   `npx prisma generate`. Dopo ogni `migrate dev` rilancia `npx prisma generate` **e la suite
   intera**.
+- **Dal telefono, in sviluppo, la pagina arriva e gli script no.** Next emette gli `<script>` con
+  `crossorigin=""`, quindi Safari manda `Origin`, e il dev server risponde **403** a ogni chunk chiesto
+  da un host diverso da quello di avvio: pagina visibile, niente idratazione, nessun errore da nessuna
+  parte — un ⋯ che «non reagisce al tocco». Su `localhost` non si vede mai. L'allowlist è
+  `allowedDevOrigins` in `next.config.ts`, derivata dall'host di `APP_URL` (`src/lib/dev-origins.ts`):
+  per il percorso dal telefono `APP_URL` va all'IP di rete, e serve un riavvio del dev server. Attenzione
+  al secondo strato: il caricatore di Next **non sovrascrive** una variabile già nella shell, quindi un
+  `APP_URL` esportato nell'ambiente vince sul `.env` in silenzio — `env -u APP_URL npm run dev` se il
+  `.env` sembra ignorato.
 - **Node 22 è obbligatorio, e la shell può partire su una versione più vecchia.** Verifica con
   `node -v` e, se serve, `nvm use 22` prima di installare o eseguire i test.
 - **`npm run lint` esegue `tsc --noEmit`, che richiede i tipi generati in `.next/types`.** Su un
