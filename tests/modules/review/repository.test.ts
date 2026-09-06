@@ -322,6 +322,53 @@ describe('columnAssignments — cosa la griglia sa delle conferme', () => {
   })
 })
 
+describe('removeAssignment — il turno tolto dal foglio nuovo si toglie con un gesto', () => {
+  async function orfana() {
+    // Un assegnazione senza cella: il foglio nuovo non ha più quel turno.
+    await aliases.assignColumnToUser('CRISTINA', cristina.id)
+    return prisma.assignment.create({
+      data: {
+        rosterId,
+        userId: cristina.id,
+        day: 20,
+        code: 'M',
+        columnLabel: 'CRISTINA',
+        confirmedAt: new Date(),
+        eventId: 'ev-20',
+        syncState: 'synced',
+      },
+    })
+  }
+
+  it('chi possiede la colonna la cancella: il prossimo sync toglierà l evento', async () => {
+    await orfana()
+
+    const esito = await confirm.removeAssignment(viewer.cristina(), {
+      rosterId,
+      columnLabel: 'CRISTINA',
+      day: 20,
+    })
+
+    expect(esito).toEqual({ removed: 1 })
+    expect(await prisma.assignment.count({ where: { userId: cristina.id } })).toBe(0)
+  })
+
+  it('un altra infermiera no', async () => {
+    await orfana()
+    await expect(
+      confirm.removeAssignment(viewer.sara(), { rosterId, columnLabel: 'CRISTINA', day: 20 }),
+    ).rejects.toBeInstanceOf(confirm.ReviewForbiddenError)
+    expect(await prisma.assignment.count({ where: { userId: cristina.id } })).toBe(1)
+  })
+
+  it('nemmeno la referente: il calendario è della persona', async () => {
+    await orfana()
+    await expect(
+      confirm.removeAssignment(viewer.anna(), { rosterId, columnLabel: 'CRISTINA', day: 20 }),
+    ).rejects.toBeInstanceOf(confirm.ReviewForbiddenError)
+  })
+})
+
 describe('reviewableRosters — cosa un utente ha da confermare', () => {
   it("elenca le tabelle in cui l'utente ha una colonna", async () => {
     await aliases.assignColumnToUser('CRISTINA', cristina.id)

@@ -181,6 +181,27 @@ export async function unconfirmDays(
   })
 }
 
+/**
+ * Toglie un assegnazione. Serve per il turno che il foglio **nuovo** non ha più:
+ * la riga è vuota ma l assegnazione (e l evento su Google) esistono ancora. Senza
+ * assegnazione la chiave non è più protetta e il prossimo sync cancella l evento
+ * (`planSync`). È un gesto della persona, non un automatismo: un turno che
+ * sparisce dal calendario da solo è il tipo di sorpresa che fa perdere la fiducia.
+ */
+export async function removeAssignment(
+  viewer: Viewer,
+  input: ColumnTarget & { day: number },
+): Promise<{ removed: number }> {
+  const userId = await requireOwnColumn(viewer, input.columnLabel, 'toglierne un turno dal calendario')
+
+  return withWriteLock(async () => {
+    const esito = await prisma.assignment.deleteMany({
+      where: { userId, rosterId: input.rosterId, day: input.day },
+    })
+    return { removed: esito.count }
+  })
+}
+
 /** Le conferme della persona associata alla colonna, per la griglia. */
 export async function columnAssignments(
   rosterId: string,

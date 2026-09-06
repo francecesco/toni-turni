@@ -20,6 +20,7 @@ export {
   confirmedAssignmentsByRoster,
   confirmColumn,
   confirmDays,
+  removeAssignment,
   requireColumnAccess,
   requireOwnColumn,
   reviewableRosters,

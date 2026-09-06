@@ -10,6 +10,7 @@ import {
   confirmColumn,
   confirmDays,
   correctCell,
+  removeAssignment,
   requireOwnColumn,
   unconfirmDays,
 } from '@/modules/review'
@@ -102,6 +103,35 @@ export async function confirmColumnAction(form: FormData): Promise<void> {
     tornaCon(rosterId, columnLabel, {
       ok: `${esito.confirmed} turni confermati`,
       error: esito.refused.length > 0 ? messaggioDeiRifiuti(esito.refused) : undefined,
+    })
+  } catch (errore) {
+    if (errore instanceof ReviewForbiddenError) {
+      tornaCon(rosterId, columnLabel, { error: errore.message })
+    }
+    throw errore
+  }
+}
+
+/**
+ * «Togli dal calendario»: il foglio nuovo non ha più questo turno, ma l assegnazione
+ * e l evento su Google ci sono ancora. Cancella l assegnazione; l evento lo toglie il
+ * prossimo sync. Stessa barriera della conferma: solo chi possiede la colonna.
+ */
+export async function removeAssignmentAction(form: FormData): Promise<void> {
+  const user = await requireUser()
+  const rosterId = text(form, 'rosterId')
+  const columnLabel = text(form, 'columnLabel')
+  const day = Number(text(form, 'day'))
+
+  if (rosterId === '' || columnLabel === '' || !Number.isInteger(day)) {
+    tornaCon(rosterId, columnLabel, { error: 'Richiesta incompleta' })
+  }
+
+  try {
+    await removeAssignment(user, { rosterId, columnLabel, day })
+    revalidatePath(`/rosters/${rosterId}/review`)
+    tornaCon(rosterId, columnLabel, {
+      ok: `Giorno ${day} tolto: al prossimo invio l evento sparisce dal calendario.`,
     })
   } catch (errore) {
     if (errore instanceof ReviewForbiddenError) {

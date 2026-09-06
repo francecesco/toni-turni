@@ -290,6 +290,26 @@ describe('correctCellAction — chi corregge una cella, e chi no', () => {
   })
 })
 
+describe('removeAssignmentAction', () => {
+  it('senza sessione manda al login', async () => {
+    await expect(reviewActions.removeAssignmentAction(moduloGiorno(20))).rejects.toThrow(
+      'REDIRECT:/login',
+    )
+  })
+
+  it('un altra infermiera riceve un errore leggibile e non cancella niente', async () => {
+    await prisma.assignment.create({
+      data: { rosterId, userId: cristina.id, day: 20, code: 'M', confirmedAt: new Date(), syncState: 'synced' },
+    })
+    await session.openSessionCookie(sara.id)
+
+    await expect(reviewActions.removeAssignmentAction(moduloGiorno(20))).rejects.toThrow(
+      /REDIRECT:.*error=/,
+    )
+    expect(await prisma.assignment.count({ where: { userId: cristina.id } })).toBe(1)
+  })
+})
+
 describe('saveColumnAlias — solo la referente associa le colonne', () => {
   function moduloAlias(label: string, userId: string): FormData {
     const form = new FormData()
