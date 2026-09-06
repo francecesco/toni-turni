@@ -13,8 +13,9 @@ Istruzioni per Claude Code su questo repository.
 >
 > La **Fase 5** è implementata: una seconda foto dello stesso mese **sposta** le conferme sulla versione
 > nuova alla chiusura della lettura (`carryOverAssignments`, per persona e solo se la sua colonna c'è),
-> riporta le correzioni a mano a grezzo uguale, e la griglia mostra solo i giorni cambiati
-> (`diffVersions`, puro). La referente ha `/rosters/[id]/diff`. Resta la rifinitura UI (Fase 6).
+> riporta le correzioni a mano a grezzo uguale, e la griglia mostra tutti i giorni e un riquadro
+> elenca solo quelli cambiati (`diffVersions`, puro). La referente ha `/rosters/[id]/diff`. Resta la
+> rifinitura UI (Fase 6).
 >
 > ## Provider e strategia: Gemini, una chiamata sola — **misurata**
 >
@@ -211,6 +212,7 @@ src/
 │   ├── rosters/[id]/                      # vista estrazione + avanzamento
 │   ├── rosters/[id]/columns/              # ColumnAlias: colonna → persona
 │   ├── rosters/[id]/review/               # griglia di conferma, correzione, sync
+│   ├── rosters/[id]/diff/                 # diff fra versioni, solo referente
 │   ├── login/, settings/{codes,users}/    # pagine + server action
 │   └── page.tsx, layout.tsx
 ├── modules/
@@ -221,8 +223,8 @@ src/
 │   │              # + crop (cropRosterWhole, cropRosterBands), preview
 │   ├── extract/   # VisionProvider (gemini, anthropic), schema Zod, strategy, index
 │   │              # + band-schema (con la fusione), band-prompt, extract-bands, prompt (riparazione)
-│   ├── roster/    # tabella, versioni, stato per banda, job e worker, form, index
-│   ├── review/    # access, aliases, grid, holes, confirm, correct, index
+│   ├── roster/    # tabella, versioni, stato per banda, job e worker, form, versions, index
+│   ├── review/    # access, aliases, grid, holes, confirm, correct, landing, calendar-status, diff, index
 │   └── calendar/  # shiftKey, event, diff, window (puri) · api, dedicated, repository, lock, sync
 ├── components/ui/ # generati da shadcn
 └── lib/           # env, db, time, crypto, homography (raddrizzamento prospettico)
