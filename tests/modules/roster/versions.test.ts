@@ -254,6 +254,28 @@ describe('carryOverAssignments — le conferme seguono la versione nuova', () =>
     expect(riga.rosterId).toBe(v3.id)
   })
 
+  it('è idempotente anche con qualcosa da riportare: la seconda chiamata non duplica nulla', async () => {
+    const v1 = await tabella(1)
+    const v2 = await tabella(2)
+    const quando = new Date('2026-09-02T09:00:00Z')
+    await cella(v1.id, 'CRISTINA', 1, 'M', { correctedCode: 'P', correctedAt: quando, correctedBy: 'anna' })
+    await cella(v2.id, 'CRISTINA', 1, 'M')
+    await assegnazione(v1.id, cristina.id, 1)
+
+    const prima = await versions.carryOverAssignments(v2.id)
+    expect(prima).toEqual({ movedAssignments: 1, carriedCorrections: 1, skippedUsers: [] })
+
+    const seconda = await versions.carryOverAssignments(v2.id)
+    expect(seconda).toEqual({ movedAssignments: 0, carriedCorrections: 0, skippedUsers: [] })
+
+    expect(await prisma.assignment.count({ where: { userId: cristina.id } })).toBe(1)
+    const assegnazioneFinale = await prisma.assignment.findFirstOrThrow({ where: { userId: cristina.id } })
+    expect(assegnazioneFinale.rosterId).toBe(v2.id)
+    const cellaFinale = await prisma.rosterCell.findFirstOrThrow({ where: { rosterId: v2.id, day: 1 } })
+    expect(cellaFinale.correctedAt).toEqual(quando)
+    expect(cellaFinale.correctedCode).toBe('P')
+  })
+
   it('è idempotente: senza niente da riportare non tocca nulla', async () => {
     const v1 = await tabella(1)
     const v2 = await tabella(2)
