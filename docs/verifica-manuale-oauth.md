@@ -1,5 +1,15 @@
 # Verifica manuale del flusso Google OAuth
 
+> **Stato al 2026-09-06**, con credenziali Google reali su `localhost:3001`:
+> passo 1 **fatto** (accesso riuscito, `turni_session` presente); passo 3 **fatto** (un
+> `GoogleAccount` con `status = ok` e `refreshToken` nella forma `iv.ciphertext.authTag`, 182
+> caratteri, mai in chiaro); passi 8, 9 e 10 **fatti** da riga di comando: `code` finto con `state`
+> valido → `/login?error=google`, consenso negato → `/login?error=denied`, `state` manomesso →
+> `/login?error=state`, tutti redirect e non pagine di errore. **Restano** i passi 2, 4, 5, 6 e 7 (servono
+> un secondo account Google o un riavvio) e tutta la sezione del calendario, che si fa col primo sync.
+> Il calendario dedicato si chiama ora **«Turni Toniolo»** e non viene mai ricreato dall app da sola:
+> se quello collegato sparisce, la griglia mostra «Ricollega il calendario».
+
 Questa è l'unica parte della Fase 1 che **non è coperta dai test automatici**, e va eseguita una volta
 dal proprietario del progetto. Il motivo è preciso: in tutti i test `exchangeGoogleCode` è sostituita
 da un mock, quindi `googleClient()`, `generateAuthUrl`, `verifyIdToken`, il redirect URI reale e il
