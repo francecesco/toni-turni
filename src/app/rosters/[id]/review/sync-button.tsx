@@ -31,7 +31,7 @@ export function SyncButton({ shifts }: { shifts: number }) {
       <p aria-live="polite" className="text-muted-foreground text-center text-xs">
         {pending
           ? 'Un evento per volta: può volerci un minuto. Non chiudere la pagina.'
-          : 'Scrive solo sul calendario "Turni" creato dall’app, e solo i turni che hai confermato.'}
+          : 'Scrive solo sul calendario "Turni Toniolo" creato dall’app, e solo i turni che hai confermato.'}
       </p>
     </>
   )

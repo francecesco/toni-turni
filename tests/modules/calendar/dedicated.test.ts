@@ -3,7 +3,7 @@ import {
   DEDICATED_CALENDAR_SUMMARY,
   resolveDedicatedCalendar,
 } from '@/modules/calendar/dedicated'
-import type { CalendarApi, CalendarSummary } from '@/modules/calendar/api'
+import { CalendarRefusedError, type CalendarApi, type CalendarSummary } from '@/modules/calendar/api'
 
 function apiFinto(over: Partial<CalendarApi> = {}) {
   const api: CalendarApi = {
@@ -65,6 +65,30 @@ describe('resolveDedicatedCalendar', () => {
 
     expect(esito).toEqual({ calendarId: 'nuovo', created: true, changed: true })
     expect(api.getCalendar).toHaveBeenCalledWith('sparito')
+  })
+
+  it('il calendario si chiama "Turni Toniolo"', () => {
+    // Deciso dal proprietario il 2026-09-06. Il nome e anche la chiave con cui si
+    // ritrova il calendario se l id memorizzato manca: cambiarlo dopo il primo sync
+    // farebbe creare un doppione a chi non ha l id salvato.
+    expect(DEDICATED_CALENDAR_SUMMARY).toBe('Turni Toniolo')
+  })
+
+  it('con due calendari dello stesso nome si rifiuta di scegliere, e non ne crea un terzo', async () => {
+    // Puo succedere se l utente ne ha creato uno a mano con lo stesso nome. Prendere
+    // il primo dell elenco significherebbe che l ordine di Google decide dove vanno i
+    // turni, e a ogni sync potrebbe cambiare.
+    const api = apiFinto({
+      listCalendars: vi.fn(async () => [
+        { id: 'a', summary: DEDICATED_CALENDAR_SUMMARY },
+        { id: 'b', summary: DEDICATED_CALENDAR_SUMMARY },
+      ]),
+    })
+
+    await expect(resolveDedicatedCalendar({ api, knownCalendarId: null })).rejects.toBeInstanceOf(
+      CalendarRefusedError,
+    )
+    expect(api.createCalendar).not.toHaveBeenCalled()
   })
 
   it('non restituisce mai il calendario principale', async () => {

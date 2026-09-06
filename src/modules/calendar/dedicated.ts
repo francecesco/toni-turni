@@ -2,10 +2,13 @@ import type { CalendarApi } from './api'
 import { CalendarRefusedError } from './api'
 
 /**
- * Nome del calendario creato dall app. Non si scrive da nessun altra parte:
- * i turni non finiscono mai nel calendario principale dell utente.
+ * Nome del calendario creato dall app, deciso dal proprietario. Non si scrive da
+ * nessun altra parte: i turni non finiscono mai nel calendario principale
+ * dell utente. È anche la chiave con cui si **ritrova** il calendario quando l id
+ * memorizzato manca: cambiarlo dopo il primo sync farebbe creare un doppione a
+ * chi non ha ancora l id salvato.
  */
-export const DEDICATED_CALENDAR_SUMMARY = 'Turni — Toni Turni'
+export const DEDICATED_CALENDAR_SUMMARY = 'Turni Toniolo'
 
 const DEDICATED_CALENDAR_DESCRIPTION =
   'Calendario creato da Toni Turni per i turni del reparto. Gli eventi qui dentro sono gestiti dall app: le modifiche fatte a mano vengono riscritte al prossimo sync.'
@@ -53,7 +56,15 @@ export async function resolveDedicatedCalendar(input: {
   }
 
   const calendars = await input.api.listCalendars()
-  const found = calendars.find((calendar) => calendar.summary === DEDICATED_CALENDAR_SUMMARY)
+  const omonimi = calendars.filter((calendar) => calendar.summary === DEDICATED_CALENDAR_SUMMARY)
+  if (omonimi.length > 1) {
+    // Prendere il primo vorrebbe dire che l ordine di Google decide dove vanno i
+    // turni, e a ogni sync potrebbe cambiare. Meglio fermarsi e dirlo.
+    throw new CalendarRefusedError(
+      `Su Google ci sono ${omonimi.length} calendari chiamati «${DEDICATED_CALENDAR_SUMMARY}»: tienine uno solo, poi riprova`,
+    )
+  }
+  const found = omonimi[0]
   if (found) {
     assertNotPrimary(found.id)
     return { calendarId: found.id, created: false, changed: true }

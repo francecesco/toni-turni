@@ -66,7 +66,7 @@ piccolo script `tsx`.
 
 | # | Cosa fare | Cosa deve succedere |
 |---|---|---|
-| 1 | Primo sync di un mese con due o tre turni confermati, uno dei quali `NOTTE` | Su Google compare un calendario nuovo chiamato "Turni — Toni Turni"; gli eventi stanno **lì**, non nel calendario principale. `GoogleAccount.calendarId` è valorizzato |
+| 1 | Primo sync di un mese con due o tre turni confermati, uno dei quali `NOTTE` | Su Google compare un calendario nuovo chiamato "Turni Toniolo"; gli eventi stanno **lì**, non nel calendario principale. `GoogleAccount.calendarId` è valorizzato |
 | 2 | Guarda la notte sul telefono | Comincia alle 21:00 e finisce alle 07:00 del **giorno dopo** |
 | 3 | Metti a mano un appuntamento personale nel calendario dedicato e rilancia il sync | L'appuntamento è ancora lì, intatto: non ha `shiftKey`, quindi non si tocca. L'esito lo conta fra gli "eventi non creati dall'app" |
 | 4 | Rilancia il sync senza cambiare niente | Zero creati, zero aggiornati, zero cancellati. Se qualcosa si muove, l'idempotenza è rotta: fermati e apri un test |
