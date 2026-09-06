@@ -3,6 +3,7 @@
 import { Drawer } from '@base-ui/react/drawer'
 import { EllipsisIcon } from 'lucide-react'
 import Link from 'next/link'
+import { LogoutForm } from '@/components/logout-form'
 import type { MenuItem } from '@/modules/auth'
 
 /**
@@ -10,12 +11,11 @@ import type { MenuItem } from '@/modules/auth'
  * telefono il basso è dove arriva il pollice. Base UI dà chiusura con Esc, clic
  * fuori e trappola del focus senza scriverli.
  *
- * Con l elenco vuoto **non disegna niente**, nemmeno il bottone: chi non è
- * referente non deve vedere un ⋯ che apre un foglio vuoto.
+ * È anche il menu dell **account**: in fondo c è sempre «Esci», per tutti. Per
+ * questo si disegna anche con l elenco vuoto — chi non è referente vede un foglio
+ * con la sola uscita, e prima non aveva nessun modo di uscire.
  */
 export function AppMenu({ items }: { items: MenuItem[] }) {
-  if (items.length === 0) return null
-
   return (
     <Drawer.Root>
       <Drawer.Trigger
@@ -41,6 +41,8 @@ export function AppMenu({ items }: { items: MenuItem[] }) {
                   {voce.label}
                 </Drawer.Close>
               ))}
+              {items.length > 0 ? <div className="bg-border my-1 h-px" role="separator" /> : null}
+              <LogoutForm />
             </nav>
           </Drawer.Popup>
         </Drawer.Viewport>

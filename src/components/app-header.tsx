@@ -18,8 +18,8 @@ export function AppHeader({
   backHref,
   // `columns`, `upload`, `settings/codes`, `settings/users` non passano
   // `menuItems`: **di proposito**, non per dimenticanza. Sono sotto-pagine con
-  // `backHref` (la freccia indietro), non schermate di primo livello con un
-  // menu ⋯.
+  // `backHref` (la freccia indietro), e il loro ⋯ porta solo «Esci», che c è
+  // su ogni schermata.
   menuItems = [],
 }: {
   title: string
