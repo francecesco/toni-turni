@@ -35,10 +35,13 @@ Istruzioni per Claude Code su questo repository.
 >
 > Sul segnale che guida la rilettura umana: le celle **riscritte a mano** sono trovate tutte
 > (richiamo 100%, 10 su 10), e le celle **da rileggere** — riscritture più annotazioni d'orario —
-> anche (15 su 15), con precisione 79%. Le quattro segnalazioni che la fixture non spiega
-> (`24 KHADIJA`, `26 KHADIJA`, `27 CARMEN`, `31 KHADIJA`) sono da guardare sulla foto: potrebbero
-> essere segni a penna che la trascrizione non ha registrato, e in quel caso la precisione vera è più
-> alta.
+> anche (15 su 15). La precisione era 79%, con quattro segnalazioni che la fixture non spiegava; dal
+> 2026-09-06 il prompt dice che **l'evidenziatore non è una correzione** (vedi sotto) e la misura dà
+> precisione **100%** su agosto e **zero** celle marcate su settembre, dove la stessa tabella letta
+> dall'app ne portava 47. In quella misura agosto ha letto 247/248: la cella persa è `giorno 10
+> COSTANZA` (`P RSF` in corsivo a mano, letta `P1°P`), nella zona che la fixture dichiara come il suo
+> punto meno certo e che oscilla di una cella da una misura all'altra. Tempi: 47 s agosto, 89 s
+> settembre. Il log è in `.superpowers/sdd/2026-09-06-evidenziatore-eval.log`.
 >
 > Il motivo del cambio non era l'accuratezza, era la **latenza**, e non stava nel codice: nella
 > misura su Groq l'estrazione durava 461 s su agosto **di cui 417 di sola attesa** e 657 su settembre
@@ -154,8 +157,10 @@ Istruzioni per Claude Code su questo repository.
 >    Sono le quattro domeniche evidenziate in giallo per intero (32 celle) e i 15 `RP` evidenziati col
 >    pennarello; i due `RP` su fondo grigio *stampato* non sono marcati. Per il modello `handCorrected`
 >    vuole dire «c'è l'evidenziatore», e una griglia che chiede di rileggere una cella su cinque
->    insegna a ignorare l'avviso. È il prossimo lavoro sul prompt, e si rimisura: serve prima che chi
->    conosce il foglio confermi che settembre non ha correzioni a penna, così la fixture può dichiararlo;
+>    insegna a ignorare l'avviso. **Corretto lo stesso giorno** nel prompt e rimisurato: zero marcate
+>    su settembre, precisione 100% sulle celle da rileggere di agosto. La fixture di settembre ora
+>    dichiara `handCorrected` e `penAnnotations` **vuote** — quindi misurabili — sulla base della
+>    foto; resta da confermare da chi conosce il foglio, come tutto il resto della trascrizione;
 > 3. le trascrizioni di riferimento in `fixtures/` portano ancora `"verified": false`: le percentuali
 >    qui sopra valgono quanto la trascrizione, che nessuno che conosce il reparto ha ancora guardato.
 
@@ -287,12 +292,17 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
   `correctedAt !== null ? correctedCode : code`, e `correctedCode` null **con** `correctedAt`
   valorizzato significa «il foglio qui è vuoto». `saveBandCells` non tocca una cella corretta a
   mano: una rilettura non deve cancellare il giudizio di chi ha il foglio davanti.
-- **L'evidenziatore non è una correzione, ma il modello lo marca come tale.** Sulla tabella di
-  settembre letta dall'app (Gemini 3.6 Flash, prompt finale) 47 celle su 240 portano `handCorrected`
-  e nessuna è riscritta a penna: sono le righe delle domeniche evidenziate in giallo e i singoli `RP`
-  evidenziati. Il prompt oggi dice cosa **è** una correzione (correttore, riscrittura, orario a penna)
-  ma non cosa **non lo è**. Sull'agosto della misura questo non si vedeva (1 solo falso positivo su 11),
-  quindi il comportamento cambia da foto a foto: qualunque ritocco del prompt si rimisura su entrambe.
+- **L'evidenziatore non è una correzione, e al modello va detto.** Sulla tabella di settembre letta
+  dall'app (Gemini 3.6 Flash) 47 celle su 240 portavano `handCorrected` e nessuna era riscritta a
+  penna: le righe delle domeniche evidenziate in giallo e i singoli `RP` evidenziati. Il prompt diceva
+  cosa **è** una correzione ma non cosa **non lo è**; ora la regola 3 nomina evidenziatore e fondo
+  colorato. Rimisurato: zero marcate su settembre, e su agosto le quattro segnalazioni inspiegate sono
+  sparite **senza perdere** nessuna delle dieci correzioni vere. La fixture di settembre dichiara le
+  liste vuote proprio perché la misura possa contare questi falsi positivi: una lista **assente** fa
+  saltare il blocco, una lista **vuota** lo rende contabile. Se una foto nuova porta un altro tipo di
+  segno (una crocetta, una freccia), è lo stesso schema: prima si guarda cosa il modello marca e perché,
+  poi si nomina nel prompt, poi si rimisura su **tutte** le foto, perché la recall delle correzioni
+  vere è il numero che non deve scendere.
 - **`handCorrected` funziona, ed è il segnale buono.** Misurato su agosto: precisione 91%, richiamo
   **100%** (10 veri positivi, 1 falso positivo, 0 falsi negativi). Tutte e dieci le correzioni a
   penna trovate, nessuna mancata. **La griglia di conferma della Fase 3 si progetta su questo.**

@@ -1216,5 +1216,8 @@
       "column": "SARA DP.",
       "code": "P"
     }
-  ]
+  ],
+  "handCorrected": [],
+  "penAnnotations": [],
+  "_evidenziature": "Liste vuote di proposito, non assenti: sul foglio di settembre non c'e nessuna correzione a penna ne annotazione d'orario (guardato sulla foto il 2026-09-06, da confermare da chi conosce il reparto). Ci sono pero le righe delle quattro domeniche (6, 13, 20, 27) evidenziate in giallo per intero, quindici RP evidenziati col pennarello e alcune celle su fondo grigio stampato: nessuna di queste e una correzione, e una cella marcata handCorrected qui e un falso positivo. Misurato prima di dirlo al prompt: 47 marcate su 240."
 }

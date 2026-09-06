@@ -232,6 +232,45 @@ describe('validateExpectedRoster', () => {
  * primo col secondo nasconderebbe un peggioramento del primo dietro un
  * miglioramento del secondo.
  */
+describe('compareExtraction, fixture senza correzioni a penna', () => {
+  // La fixture di settembre dichiara liste **vuote**, non assenti: il foglio non
+  // ha correzioni a penna, e dichiararlo rende contabile ogni cella marcata dal
+  // modello come falso positivo — prima la misura saltava il blocco e i falsi
+  // positivi restavano invisibili.
+  const expected = {
+    year: 2026,
+    month: 9,
+    ward: '3°PIANO',
+    cells: [
+      { day: 6, column: 'RENATA', code: 'RP' },
+      { day: 7, column: 'RENATA', code: 'M' },
+    ],
+    handCorrected: [],
+    penAnnotations: [],
+  }
+
+  it('ogni cella marcata e un falso positivo, e la recall resta null perche non c e niente da trovare', () => {
+    const report = compareExtraction(expected, {
+      year: 2026,
+      month: 9,
+      ward: '3°PIANO',
+      columns: ['RENATA'],
+      cells: [
+        { day: 6, column: 'RENATA', code: 'RP', confidence: 0.9, handCorrected: true },
+        { day: 7, column: 'RENATA', code: 'M', confidence: 0.9, handCorrected: false },
+      ],
+    })
+    expect(report.handCorrectedAccuracy).toEqual({
+      truePositives: 0,
+      falsePositives: 1,
+      falseNegatives: 0,
+      precision: 0,
+      recall: null,
+    })
+    expect(report.unexplainedHandCorrected).toEqual([{ day: 6, column: 'RENATA' }])
+  })
+})
+
 describe('compareExtraction, celle da rileggere', () => {
   const base = {
     year: 2026,

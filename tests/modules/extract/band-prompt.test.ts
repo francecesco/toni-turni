@@ -31,6 +31,16 @@ describe('buildBandPrompt', () => {
     expect(prompt).toMatch(/handCorrected/)
   })
 
+  it('dice che evidenziatore e colore di fondo non sono correzioni a mano', () => {
+    // Misurato sulla tabella di settembre letta dall app: 47 celle su 240 marcate
+    // handCorrected e nessuna riscritta a penna — le righe delle domeniche
+    // evidenziate in giallo e i singoli RP evidenziati col pennarello. Il prompt
+    // diceva cosa e una correzione, non cosa non lo e.
+    expect(prompt).toMatch(/evidenziat/i)
+    expect(prompt).toMatch(/non (e |è )una correzione/i)
+    expect(prompt).toMatch(/fondo/i)
+  })
+
   it('chiede esplicitamente di riportare anche le righe vuote', () => {
     expect(prompt).toMatch(/vuot/i)
     expect(prompt).toMatch(/anche[^\n]*vuot/i)
