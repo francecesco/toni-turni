@@ -137,7 +137,11 @@ export function DayRow({
 
         {canConfirm && row.confirmable && (
           <form
-            action={row.confirmed ? unconfirmDayAction : confirmDayAction}
+            // Confermato ma cambiato dopo la conferma: il bottone deve riconfermare
+            // il codice nuovo, non deconfermare quello vecchio — altrimenti premerlo
+            // protegge l evento sbagliato invece di aggiornarlo (`confirmDays` fa già
+            // l upsert col codice nuovo e `syncState: 'confirmed'`).
+            action={row.confirmed && !row.changedSinceConfirm ? unconfirmDayAction : confirmDayAction}
             className="shrink-0"
           >
             <input type="hidden" name="rosterId" value={rosterId} />
@@ -146,10 +150,10 @@ export function DayRow({
             <Button
               type="submit"
               size="touch"
-              variant={row.confirmed ? 'outline' : 'default'}
-              className={row.confirmed ? 'text-ok min-w-24' : 'min-w-24'}
+              variant={row.confirmed && !row.changedSinceConfirm ? 'outline' : 'default'}
+              className={row.confirmed && !row.changedSinceConfirm ? 'text-ok min-w-24' : 'min-w-24'}
             >
-              {row.confirmed ? 'Confermato' : 'Confermo'}
+              {row.changedSinceConfirm ? 'Riconfermo' : row.confirmed ? 'Confermato' : 'Confermo'}
             </Button>
           </form>
         )}
