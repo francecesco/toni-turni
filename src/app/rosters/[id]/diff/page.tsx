@@ -7,6 +7,7 @@ import { prisma } from '@/lib/db'
 import { monthLabel } from '@/lib/time'
 import { requireReferente } from '@/modules/auth'
 import { compactCode } from '@/modules/codes'
+import { normalizeColumn } from '@/modules/extract'
 import { cellsForDiff, previousVersionOf } from '@/modules/roster'
 import { diffVersions, listColumnAliases, type VersionChange } from '@/modules/review'
 import { describeChange } from '../review/changes-box'
@@ -72,19 +73,27 @@ export default async function DiffPage({ params }: { params: Promise<{ id: strin
   )
 
   // «Ha già riconfermato»: la persona della colonna ha un assegnazione confermata
-  // per quel giorno con il codice nuovo.
-  const utentePerColonna = new Map(aliases.filter((a) => !a.ignored && a.userId).map((a) => [a.label, a.userId as string]))
+  // per quel giorno con il codice nuovo. La chiave è `normalizeColumn`, non
+  // l etichetta grezza dell alias: è la stessa identità di colonna usata ovunque
+  // nel progetto (vedi «Trappole note» in CLAUDE.md).
+  const utentePerColonna = new Map(
+    aliases.filter((a) => !a.ignored && a.userId).map((a) => [normalizeColumn(a.label), a.userId as string]),
+  )
   const confermaPer = (c: VersionChange): boolean => {
     const userId = utentePerColonna.get(c.columnKey)
     if (!userId || c.after === null) return false
     return assegnazioni.some((a) => a.userId === userId && a.day === c.day && compactCode(a.code) === compactCode(c.after ?? ''))
   }
 
-  const perColonna = new Map<string, VersionChange[]>()
+  // Raggruppare per `columnLabel` letterale spaccherebbe in due card la stessa
+  // persona quando l etichetta cambia fra le due versioni (`SARA DP.` → `SARA DP`):
+  // il raggruppamento vero è per `columnKey`, e la card mostra l etichetta della
+  // prima voce incontrata.
+  const perColonna = new Map<string, { label: string; changes: VersionChange[] }>()
   for (const c of cambiamenti) {
-    const lista = perColonna.get(c.columnLabel) ?? []
-    lista.push(c)
-    perColonna.set(c.columnLabel, lista)
+    const gruppo = perColonna.get(c.columnKey) ?? { label: c.columnLabel, changes: [] }
+    gruppo.changes.push(c)
+    perColonna.set(c.columnKey, gruppo)
   }
 
   return (
@@ -108,16 +117,16 @@ export default async function DiffPage({ params }: { params: Promise<{ id: strin
           </EmptyState>
         ) : (
           <ul className="flex flex-col gap-3">
-            {[...perColonna.entries()].map(([colonna, lista]) => (
-              <li key={colonna} className="bg-card border-border rounded-2xl border px-4 py-3 shadow-sm">
+            {[...perColonna.entries()].map(([columnKey, { label, changes }]) => (
+              <li key={columnKey} className="bg-card border-border rounded-2xl border px-4 py-3 shadow-sm">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-base font-bold">{colonna}</span>
+                  <span className="text-base font-bold">{label}</span>
                   <Badge variant="secondary">
-                    {lista.length} {lista.length === 1 ? 'giorno' : 'giorni'}
+                    {changes.length} {changes.length === 1 ? 'giorno' : 'giorni'}
                   </Badge>
                 </div>
                 <ul className="mt-2 flex flex-col gap-1">
-                  {lista.map((c) => (
+                  {changes.map((c) => (
                     <li key={`${c.columnKey}:${c.day}`} className="flex items-center justify-between gap-2 text-sm tabular">
                       <span>{describeChange(c)}</span>
                       {confermaPer(c) ? (

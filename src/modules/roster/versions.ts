@@ -80,6 +80,12 @@ export interface CarryOverResult {
  * Non tocca Google e non cambia lo stato di nessuna assegnazione: un turno il cui
  * codice è cambiato resta confermato **con il codice vecchio**, ed è la griglia a
  * dire «va riconfermata» (regola invariante 1).
+ *
+ * Le letture qui dentro sono sicure fuori da una transazione **solo** perché ogni
+ * scrittore di `Assignment` e `RosterCell` passa da `withWriteLock`, e il chiamante
+ * (`finishExtraction`) la tiene già mentre chiama questa funzione. Questa funzione
+ * **non deve** prendere il lock da sé: `withWriteLock` è una coda di promesse, e un
+ * lock annidato è un deadlock.
  */
 export async function carryOverAssignments(newRosterId: string): Promise<CarryOverResult> {
   const nessuno: CarryOverResult = { movedAssignments: 0, carriedCorrections: 0, skippedUsers: [] }

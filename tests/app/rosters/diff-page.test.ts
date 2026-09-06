@@ -149,6 +149,32 @@ describe('/rosters/[id]/diff — cosa mostra', () => {
     expect(t).toMatch(/riconfermato/i)
   })
 
+  it('due colonne con lo stesso nome normalizzato finiscono in una sola card', async () => {
+    // Fra due versioni la stessa persona può comparire con etichette diverse
+    // (`SARA DP.` poi `SARA DP`): sono la stessa identità per `normalizeColumn`. Il
+    // giorno 6 sparisce (rimane con l etichetta vecchia, presa da chi c era prima),
+    // il giorno 5 cambia (etichetta nuova): senza raggruppare per `columnKey`
+    // sarebbero due card per la stessa persona.
+    await versione(1, [
+      { day: 5, column: 'SARA DP.', code: 'M' },
+      { day: 6, column: 'SARA DP.', code: 'M' },
+    ])
+    const v2 = await versione(2, [{ day: 5, column: 'SARA DP', code: 'P' }])
+    await prisma.assignment.create({
+      data: { rosterId: v2.id, userId: infermiera.id, day: 5, code: 'P', columnLabel: 'SARA DP', confirmedAt: new Date(), syncState: 'confirmed' },
+    })
+    await prisma.columnAlias.deleteMany()
+    await prisma.columnAlias.create({ data: { label: 'SARADP', userId: infermiera.id, ignored: false } })
+
+    const pagina = await render(v2.id, referente.id)
+    const t = testo(pagina)
+    expect(t).toContain('5 (M → P)')
+    expect(t).toContain('6 tolto (era M)')
+    expect(t).toMatch(/riconfermato/i)
+    // Una sola card: una sola intestazione «SARA DP[.]», non due (una per etichetta).
+    expect(t.match(/SARA DP/g)).toHaveLength(1)
+  })
+
   it('su una lettura parziale non dichiara "tolto" un giorno forse solo non letto', async () => {
     await versione(1, [{ day: 5, column: 'CRISTINA', code: 'M' }])
     const v2 = await versione(2, [{ day: 6, column: 'CRISTINA', code: 'P' }], { status: 'partial' })
