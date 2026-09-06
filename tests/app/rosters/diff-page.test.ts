@@ -78,9 +78,13 @@ function testo(node: ReactNode): string {
   return testo(el.props?.children)
 }
 
-async function versione(version: number, celle: Array<{ day: number; column: string; code: string }>) {
+async function versione(
+  version: number,
+  celle: Array<{ day: number; column: string; code: string }>,
+  over: { status?: string } = {},
+) {
   const roster = await prisma.roster.create({
-    data: { year: 2026, month: 9, ward: '3°PIANO', version, imagePath: `v${version}.jpg`, status: 'extracted' },
+    data: { year: 2026, month: 9, ward: '3°PIANO', version, imagePath: `v${version}.jpg`, status: over.status ?? 'extracted' },
   })
   await prisma.rosterCell.createMany({
     data: celle.map((c) => ({ rosterId: roster.id, day: c.day, columnLabel: c.column, rawCode: c.code, code: c.code, confidence: 0.9 })),
@@ -143,5 +147,14 @@ describe('/rosters/[id]/diff — cosa mostra', () => {
     expect(t).toContain('MERY')
     expect(t).toContain('9 nuovo (M)')
     expect(t).toMatch(/riconfermato/i)
+  })
+
+  it('su una lettura parziale non dichiara "tolto" un giorno forse solo non letto', async () => {
+    await versione(1, [{ day: 5, column: 'CRISTINA', code: 'M' }])
+    const v2 = await versione(2, [{ day: 6, column: 'CRISTINA', code: 'P' }], { status: 'partial' })
+
+    const t = testo(await render(v2.id, referente.id))
+    expect(t).not.toMatch(/tolto/i)
+    expect(t).toContain('Lettura parziale')
   })
 })

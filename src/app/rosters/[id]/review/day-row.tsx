@@ -60,18 +60,20 @@ export function DayRow({
           {row.empty ? (
             <div className="flex flex-col gap-1">
               <p className="text-muted-foreground text-sm">
-                {row.orphanAssignment
+                {row.orphanCertain
                   ? 'il foglio nuovo non ha più questo turno'
-                  : row.declaredEmpty
-                    ? 'vuota — svuotata a mano'
-                    : 'nessun turno letto'}
+                  : row.orphanAssignment
+                    ? 'questo giorno non è stato letto nella foto nuova: il turno confermato resta com’è'
+                    : row.declaredEmpty
+                      ? 'vuota — svuotata a mano'
+                      : 'nessun turno letto'}
               </p>
-              {row.orphanAssignment && row.synced && (
+              {row.orphanCertain && row.synced && (
                 <p className="text-warn-soft-foreground text-xs font-medium">
                   sul calendario c’è ancora {row.confirmedCode ?? 'il turno di prima'}
                 </p>
               )}
-              {row.orphanAssignment && canConfirm && (
+              {row.orphanCertain && canConfirm && (
                 <form action={removeAssignmentAction}>
                   <input type="hidden" name="rosterId" value={rosterId} />
                   <input type="hidden" name="columnLabel" value={columnLabel} />

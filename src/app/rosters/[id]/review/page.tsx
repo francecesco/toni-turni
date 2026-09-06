@@ -127,9 +127,14 @@ export default async function ReviewPage({
   const cambiamenti = precedente
     ? diffVersions(await cellsForDiff(precedente.id), celle)
     : []
-  const cambiamentiDellaColonna = cambiamenti.filter(
-    (c) => c.columnKey === normalizeColumn(scelta),
-  )
+  // Lettura parziale (banda non letta): un giorno mancante non è per forza «tolto
+  // dal foglio», può essere un giorno non ancora letto. La copertura per banda è
+  // rinviata alla Fase 6; qui la versione minima onesta è tutto-o-niente su
+  // `roster.status`.
+  const sheetFullyRead = roster.status === 'extracted'
+  const cambiamentiDellaColonna = cambiamenti
+    .filter((c) => c.columnKey === normalizeColumn(scelta))
+    .filter((c) => sheetFullyRead || c.kind !== 'removed')
 
   const righe = buildColumnGrid({
     year: roster.year,
@@ -139,6 +144,7 @@ export default async function ReviewPage({
     codes,
     assignments: assegnazioni,
     changes: cambiamenti,
+    sheetFullyRead,
   })
   const riassunto = gridSummary(righe)
 

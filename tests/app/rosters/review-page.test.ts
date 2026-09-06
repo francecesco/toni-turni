@@ -341,3 +341,36 @@ describe('la griglia dice cosa è cambiato rispetto alla foto precedente', () =>
     expect(box?.props.changes).toEqual([])
   })
 })
+
+describe('una lettura parziale non dichiara un turno "tolto dal foglio"', () => {
+  let v2: string
+
+  beforeEach(async () => {
+    await prisma.columnAlias.create({ data: { label: 'CRISTINA', userId: infermiera.id, ignored: false } })
+    // v1 (rosterId): giorno 5 = M
+    await prisma.rosterCell.create({
+      data: { rosterId, day: 5, columnLabel: 'CRISTINA', rawCode: 'M', code: 'M', confidence: 0.9 },
+    })
+    // v2, status "partial": il giorno 5 non compare — potrebbe non essere stato letto,
+    // non è detto che il foglio non abbia più il turno. Il giorno 6 c è, così la
+    // colonna CRISTINA resta visibile su v2.
+    const nuova = await prisma.roster.create({
+      data: { year: 2026, month: 8, ward: '3°PIANO', version: 2, imagePath: 'v2.jpg', status: 'partial' },
+    })
+    v2 = nuova.id
+    await prisma.rosterCell.create({
+      data: { rosterId: v2, day: 6, columnLabel: 'CRISTINA', rawCode: 'M', code: 'M', confidence: 0.9 },
+    })
+  })
+
+  it('il riquadro dei cambiamenti non riceve i "tolti" quando la tabella è letta a metà', async () => {
+    await session.openSessionCookie(infermiera.id)
+    const pagina = await ReviewPage({
+      params: Promise.resolve({ id: v2 }),
+      searchParams: Promise.resolve({ colonna: 'CRISTINA' }),
+    })
+    const box = trovaElemento<{ changes: { kind: string }[]; children?: ReactNode }>(pagina, ChangesBox)
+    expect(box).toBeDefined()
+    expect(box?.props.changes.some((c) => c.kind === 'removed')).toBe(false)
+  })
+})

@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { AppHeader } from '@/components/app-header'
+import { Banner } from '@/components/banner'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/empty-state'
 import { prisma } from '@/lib/db'
@@ -26,7 +27,7 @@ export default async function DiffPage({ params }: { params: Promise<{ id: strin
 
   const roster = await prisma.roster.findUnique({
     where: { id },
-    select: { id: true, year: true, month: true, ward: true, version: true },
+    select: { id: true, year: true, month: true, ward: true, version: true, status: true },
   })
   if (!roster) notFound()
 
@@ -62,7 +63,13 @@ export default async function DiffPage({ params }: { params: Promise<{ id: strin
       select: { userId: true, day: true, code: true },
     }),
   ])
-  const cambiamenti = diffVersions(cellePrecedenti, celleNuove)
+  // Lettura parziale (banda non letta): un giorno mancante può non essere stato
+  // letto, non è detto che il foglio non abbia più il turno. Dichiararlo «tolto»
+  // insegnerebbe a fidarsi di un allarme falso (vedi I2 nel rapporto della revisione).
+  const lettoPerIntero = roster.status === 'extracted'
+  const cambiamenti = diffVersions(cellePrecedenti, celleNuove).filter(
+    (c) => lettoPerIntero || c.kind !== 'removed',
+  )
 
   // «Ha già riconfermato»: la persona della colonna ha un assegnazione confermata
   // per quel giorno con il codice nuovo.
@@ -88,6 +95,12 @@ export default async function DiffPage({ params }: { params: Promise<{ id: strin
           Confronto con la versione {precedente.version}. Le colonne di servizio e i totali non
           compaiono.
         </p>
+        {!lettoPerIntero && (
+          <Banner variant="warn">
+            Lettura parziale: alcune parti della foto non sono state lette. I turni che non
+            compaiono non sono elencati come tolti, perché potrebbero non essere stati letti.
+          </Banner>
+        )}
         {cambiamenti.length === 0 ? (
           <EmptyState title="Nessuna differenza rispetto alla foto precedente">
             Le due letture coincidono cella per cella: nessuna differenza da rivedere. Le conferme

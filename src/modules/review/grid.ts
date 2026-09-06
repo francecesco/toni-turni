@@ -87,6 +87,13 @@ export interface GridRow {
   previousCode: string | null
   /** Riga vuota che porta ancora un assegnazione: il foglio nuovo non ha più questo turno. */
   orphanAssignment: boolean
+  /**
+   * `orphanAssignment` è certa solo se la foto è stata letta per intero
+   * (`sheetFullyRead`): su una lettura parziale una riga vuota può essere un giorno
+   * non letto, non un turno tolto. La copertura per banda (quale giorno è stato letto
+   * davvero) è rinviata alla Fase 6: qui la versione minima onesta è tutto-o-niente.
+   */
+  orphanCertain: boolean
 }
 
 const WEEKDAYS = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'] as const
@@ -114,7 +121,10 @@ export function buildColumnGrid(input: {
   codes: ShiftCodeDef[]
   assignments: ReviewAssignment[]
   changes?: VersionChange[]
+  /** Falso su una lettura parziale: una riga vuota può essere un giorno non letto. */
+  sheetFullyRead?: boolean
 }): GridRow[] {
+  const sheetFullyRead = input.sheetFullyRead ?? true
   const giorniNelMese = new Date(input.year, input.month, 0).getDate()
   const chiaveColonna = normalizeColumn(input.columnLabel)
 
@@ -149,6 +159,7 @@ export function buildColumnGrid(input: {
       confermata && assegnazione !== null && !empty && assegnazione.code !== codiceEffettivo
     const cambio = cambi.get(day) ?? null
     const orphanAssignment = empty && assegnazione !== null
+    const orphanCertain = orphanAssignment && sheetFullyRead
 
     const attentionReasons: string[] = []
     // Su una cella corretta a mano i motivi che vengono dalla lettura del modello sono
@@ -167,7 +178,11 @@ export function buildColumnGrid(input: {
     }
     if (cambio?.kind === 'changed') attentionReasons.push(`cambiato rispetto alla foto precedente: era ${cambio.before}`)
     if (cambio?.kind === 'added') attentionReasons.push('nuovo rispetto alla foto precedente')
-    if (orphanAssignment) attentionReasons.push('il foglio nuovo non ha più questo turno')
+    if (orphanCertain) {
+      attentionReasons.push('il foglio nuovo non ha più questo turno')
+    } else if (orphanAssignment) {
+      attentionReasons.push('giorno non letto in questa foto: il turno confermato resta com’è')
+    }
 
     righe.push({
       day,
@@ -202,6 +217,7 @@ export function buildColumnGrid(input: {
       changed: cambio?.kind ?? null,
       previousCode: cambio ? cambio.before : null,
       orphanAssignment,
+      orphanCertain,
     })
   }
 

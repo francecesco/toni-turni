@@ -67,6 +67,7 @@ function griglia(
   cells: ReviewCell[],
   assignments: Parameters<typeof buildColumnGrid>[0]['assignments'] = [],
   changes: Parameters<typeof buildColumnGrid>[0]['changes'] = [],
+  sheetFullyRead?: boolean,
 ) {
   return buildColumnGrid({
     year: 2026,
@@ -76,6 +77,7 @@ function griglia(
     codes: legenda,
     assignments,
     changes,
+    sheetFullyRead,
   })
 }
 
@@ -431,5 +433,27 @@ describe('buildColumnGrid — cosa è cambiato rispetto alla foto precedente', (
   it('ignora i cambiamenti di altre colonne', () => {
     const righe = griglia([cella(5)], [], [{ ...cambio(5, 'changed', 'M', 'P'), columnLabel: 'MERY', columnKey: 'MERY' }])
     expect(righe[4].changed).toBeNull()
+  })
+})
+
+describe('buildColumnGrid — un giorno non letto non è un turno tolto dal foglio', () => {
+  it('con la foto letta per intero (default) un orfano è certo', () => {
+    const righe = griglia([], [{ day: 20, code: 'M', confirmedAt: new Date(), syncState: 'synced' }])
+    expect(righe[19].orphanAssignment).toBe(true)
+    expect(righe[19].orphanCertain).toBe(true)
+    expect(righe[19].attentionReasons).toContain('il foglio nuovo non ha più questo turno')
+  })
+
+  it('con una lettura parziale (sheetFullyRead: false) lo stesso orfano non è certo', () => {
+    const righe = griglia(
+      [],
+      [{ day: 20, code: 'M', confirmedAt: new Date(), syncState: 'synced' }],
+      [],
+      false,
+    )
+    expect(righe[19].orphanAssignment).toBe(true)
+    expect(righe[19].orphanCertain).toBe(false)
+    expect(righe[19].attentionReasons).not.toContain('il foglio nuovo non ha più questo turno')
+    expect(righe[19].attentionReasons).toContain('giorno non letto in questa foto: il turno confermato resta com’è')
   })
 })
