@@ -31,6 +31,7 @@ let ReviewPage: typeof import('@/app/rosters/[id]/review/page').default
 let AppHeader: typeof import('@/components/app-header').AppHeader
 let ActionDock: typeof import('@/components/action-dock').ActionDock
 let ColumnSummary: typeof import('@/app/rosters/[id]/review/column-summary').ColumnSummary
+let ChangesBox: typeof import('@/app/rosters/[id]/review/changes-box').ChangesBox
 let actions: typeof import('@/app/rosters/[id]/review/actions')
 
 let referente: { id: string }
@@ -50,6 +51,7 @@ beforeAll(async () => {
   AppHeader = (await import('@/components/app-header')).AppHeader
   ActionDock = (await import('@/components/action-dock')).ActionDock
   ColumnSummary = (await import('@/app/rosters/[id]/review/column-summary')).ColumnSummary
+  ChangesBox = (await import('@/app/rosters/[id]/review/changes-box')).ChangesBox
   actions = await import('@/app/rosters/[id]/review/actions')
 })
 
@@ -272,5 +274,46 @@ describe('quando il calendario collegato non esiste piu su Google', () => {
   it('senza quel flag il bottone non c e', async () => {
     const pagina = await renderReview(infermiera.id, { colonna: 'CRISTINA' })
     expect(formConAzione(pagina, actions.relinkCalendarAction)).toBeUndefined()
+  })
+})
+
+describe('la griglia dice cosa è cambiato rispetto alla foto precedente', () => {
+  let v2: string
+
+  beforeEach(async () => {
+    await prisma.columnAlias.create({ data: { label: 'CRISTINA', userId: infermiera.id, ignored: false } })
+    // v1 (rosterId, già creata dal beforeEach del file): giorno 5 = M
+    await prisma.rosterCell.create({
+      data: { rosterId, day: 5, columnLabel: 'CRISTINA', rawCode: 'M', code: 'M', confidence: 0.9 },
+    })
+    // v2: giorno 5 = P
+    const nuova = await prisma.roster.create({
+      data: { year: 2026, month: 8, ward: '3°PIANO', version: 2, imagePath: 'v2.jpg', status: 'extracted' },
+    })
+    v2 = nuova.id
+    await prisma.rosterCell.create({
+      data: { rosterId: v2, day: 5, columnLabel: 'CRISTINA', rawCode: 'P', code: 'P', confidence: 0.9 },
+    })
+  })
+
+  async function renderReviewDi(id: string, userId: string): Promise<ReactNode> {
+    await session.openSessionCookie(userId)
+    return ReviewPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({ colonna: 'CRISTINA' }) })
+  }
+
+  it('sulla versione 2 il riquadro dei cambiamenti riceve il diff della colonna', async () => {
+    const pagina = await renderReviewDi(v2, infermiera.id)
+    const box = trovaElemento<{ changes: unknown[]; children?: ReactNode }>(pagina, ChangesBox)
+    expect(box).toBeDefined()
+    expect(box?.props.changes).toEqual([
+      expect.objectContaining({ day: 5, kind: 'changed', before: 'M', after: 'P' }),
+    ])
+  })
+
+  it('sulla prima versione il riquadro riceve un diff vuoto', async () => {
+    const pagina = await renderReviewDi(rosterId, infermiera.id)
+    const box = trovaElemento<{ changes: unknown[]; children?: ReactNode }>(pagina, ChangesBox)
+    expect(box).toBeDefined()
+    expect(box?.props.changes).toEqual([])
   })
 })

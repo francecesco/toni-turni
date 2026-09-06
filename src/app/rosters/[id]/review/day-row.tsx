@@ -2,7 +2,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { ShiftCodeDef } from '@/modules/codes'
 import type { GridRow } from '@/modules/review'
-import { confirmDayAction, correctCellAction, unconfirmDayAction } from './actions'
+import {
+  confirmDayAction,
+  correctCellAction,
+  removeAssignmentAction,
+  unconfirmDayAction,
+} from './actions'
 
 /**
  * Una riga giorno. Estratta da `page.tsx`, che a 436 righe non era più un file su
@@ -53,9 +58,30 @@ export function DayRow({
 
         <div className="min-w-0 flex-1">
           {row.empty ? (
-            <p className="text-muted-foreground text-sm">
-              {row.declaredEmpty ? 'vuota — svuotata a mano' : 'nessun turno letto'}
-            </p>
+            <div className="flex flex-col gap-1">
+              <p className="text-muted-foreground text-sm">
+                {row.orphanAssignment
+                  ? 'il foglio nuovo non ha più questo turno'
+                  : row.declaredEmpty
+                    ? 'vuota — svuotata a mano'
+                    : 'nessun turno letto'}
+              </p>
+              {row.orphanAssignment && row.synced && (
+                <p className="text-warn-soft-foreground text-xs font-medium">
+                  sul calendario c’è ancora {row.confirmedCode ?? 'il turno di prima'}
+                </p>
+              )}
+              {row.orphanAssignment && canConfirm && (
+                <form action={removeAssignmentAction}>
+                  <input type="hidden" name="rosterId" value={rosterId} />
+                  <input type="hidden" name="columnLabel" value={columnLabel} />
+                  <input type="hidden" name="day" value={row.day} />
+                  <Button type="submit" size="touch" variant="outline" className="min-w-24">
+                    Togli dal calendario
+                  </Button>
+                </form>
+              )}
+            </div>
           ) : (
             <>
               <p className="flex flex-wrap items-center gap-2">
@@ -67,6 +93,8 @@ export function DayRow({
                 )}
                 {row.unknownCode && <Badge variant="destructive">sconosciuto</Badge>}
                 {row.manuallyCorrected && <Badge variant="outline">corretta a mano</Badge>}
+                {row.changed === 'changed' && <Badge variant="secondary">cambiato</Badge>}
+                {row.changed === 'added' && <Badge variant="secondary">nuovo</Badge>}
               </p>
               {row.time && (
                 // `row.time` porta già il suffisso «(+1 giorno)» quando il turno
@@ -127,6 +155,12 @@ export function DayRow({
 
       {row.confirmed && row.synced && (
         <p className="text-ok mt-2 text-xs font-medium">già sul tuo calendario</p>
+      )}
+
+      {row.changedSinceConfirm && row.synced && (
+        <p className="text-warn-soft-foreground mt-2 text-xs font-medium">
+          sul calendario c’è ancora {row.confirmedCode}: riconferma per aggiornarlo
+        </p>
       )}
 
       {/* La correzione si apre solo quando serve: una tendina per ogni giorno

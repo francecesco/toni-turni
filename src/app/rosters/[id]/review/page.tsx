@@ -9,6 +9,7 @@ import { prisma } from '@/lib/db'
 import { monthLabel } from '@/lib/time'
 import { menuItemsFor, requireUser } from '@/modules/auth'
 import { listShiftCodes } from '@/modules/codes'
+import { normalizeColumn } from '@/modules/extract'
 import {
   aliasFor,
   buildColumnGrid,
@@ -16,16 +17,19 @@ import {
   columnAssignments,
   defaultColumn,
   describeUnreadBands,
+  diffVersions,
   gridSummary,
   listColumnAliases,
   rosterColumnLabels,
   visibleColumns,
 } from '@/modules/review'
+import { cellsForDiff, previousVersionOf } from '@/modules/roster'
 import {
   confirmColumnAction,
   syncColumnAction,
   relinkCalendarAction,
 } from './actions'
+import { ChangesBox } from './changes-box'
 import { ColumnSummary } from './column-summary'
 import { DayRow } from './day-row'
 import { SyncButton } from './sync-button'
@@ -112,6 +116,16 @@ export default async function ReviewPage({
     prisma.rosterCell.findMany({ where: { rosterId: id }, orderBy: { day: 'asc' } }),
   ])
 
+  // Fase 5: il diff con la versione precedente, calcolato al volo. Sulla prima
+  // versione è vuoto e il riquadro non si disegna.
+  const precedente = await previousVersionOf(id)
+  const cambiamenti = precedente
+    ? diffVersions(await cellsForDiff(precedente.id), celle)
+    : []
+  const cambiamentiDellaColonna = cambiamenti.filter(
+    (c) => c.columnKey === normalizeColumn(scelta),
+  )
+
   const righe = buildColumnGrid({
     year: roster.year,
     month: roster.month,
@@ -119,6 +133,7 @@ export default async function ReviewPage({
     cells: celle,
     codes,
     assignments: assegnazioni,
+    changes: cambiamenti,
   })
   const riassunto = gridSummary(righe)
 
@@ -222,6 +237,7 @@ export default async function ReviewPage({
           unreadTouchingColumn={bandeCheToccanoQuestaColonna.length > 0}
           unknownBands={bandeIgnote.length > 0}
         />
+        <ChangesBox changes={cambiamentiDellaColonna} />
 
         <ul className="flex flex-col gap-2">
           {righe.map((riga) => (
