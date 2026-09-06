@@ -146,10 +146,16 @@ Istruzioni per Claude Code su questo repository.
 > 1. il flusso OAuth non è mai stato eseguito con credenziali Google reali — in tutti i test
 >    `exchangeGoogleCode` è mockata; la checklist è in
 >    [docs/verifica-manuale-oauth.md](docs/verifica-manuale-oauth.md);
-> 2. il percorso foto → anteprima → estrazione è stato percorso dall'interfaccia su Groq, **non su
->    Gemini**: la misura passa dallo stesso codice di ritaglio ed estrazione, ma non dalle route HTTP
->    né dal job. L'anteprima dei tagli esiste proprio per rendere visibile un rilevamento sbagliato
->    prima di spendere una chiamata;
+> 2. ~~il percorso foto → anteprima → estrazione dall'interfaccia su Gemini~~ **fatto** il 2026-08-31
+>    (tabella di settembre, una banda, 240 celle) e confrontato il 2026-09-06 con la trascrizione di
+>    riferimento: **240/240**, zero mancanti, zero in eccesso. Ma ha fatto emergere una cosa che la
+>    misura non poteva vedere, perché la fixture di settembre non dichiara `handCorrected`: il modello
+>    ha marcato **47 celle su 240** da rileggere, e sul foglio **nessuna** è una correzione a penna.
+>    Sono le quattro domeniche evidenziate in giallo per intero (32 celle) e i 15 `RP` evidenziati col
+>    pennarello; i due `RP` su fondo grigio *stampato* non sono marcati. Per il modello `handCorrected`
+>    vuole dire «c'è l'evidenziatore», e una griglia che chiede di rileggere una cella su cinque
+>    insegna a ignorare l'avviso. È il prossimo lavoro sul prompt, e si rimisura: serve prima che chi
+>    conosce il foglio confermi che settembre non ha correzioni a penna, così la fixture può dichiararlo;
 > 3. le trascrizioni di riferimento in `fixtures/` portano ancora `"verified": false`: le percentuali
 >    qui sopra valgono quanto la trascrizione, che nessuno che conosce il reparto ha ancora guardato.
 
@@ -281,6 +287,12 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
   `correctedAt !== null ? correctedCode : code`, e `correctedCode` null **con** `correctedAt`
   valorizzato significa «il foglio qui è vuoto». `saveBandCells` non tocca una cella corretta a
   mano: una rilettura non deve cancellare il giudizio di chi ha il foglio davanti.
+- **L'evidenziatore non è una correzione, ma il modello lo marca come tale.** Sulla tabella di
+  settembre letta dall'app (Gemini 3.6 Flash, prompt finale) 47 celle su 240 portano `handCorrected`
+  e nessuna è riscritta a penna: sono le righe delle domeniche evidenziate in giallo e i singoli `RP`
+  evidenziati. Il prompt oggi dice cosa **è** una correzione (correttore, riscrittura, orario a penna)
+  ma non cosa **non lo è**. Sull'agosto della misura questo non si vedeva (1 solo falso positivo su 11),
+  quindi il comportamento cambia da foto a foto: qualunque ritocco del prompt si rimisura su entrambe.
 - **`handCorrected` funziona, ed è il segnale buono.** Misurato su agosto: precisione 91%, richiamo
   **100%** (10 veri positivi, 1 falso positivo, 0 falsi negativi). Tutte e dieci le correzioni a
   penna trovate, nessuna mancata. **La griglia di conferma della Fase 3 si progetta su questo.**
