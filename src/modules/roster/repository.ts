@@ -7,6 +7,7 @@ import {
   type ExtractedCell,
   type Extraction,
 } from '@/modules/extract'
+import { carryOverAssignments } from './versions'
 
 export interface BandConflict {
   day: number
@@ -414,6 +415,12 @@ export async function finishExtraction(
         ...(meta.conflicts === undefined ? {} : { conflicts: meta.conflicts }),
       },
     })
+
+    // Fase 5: le conferme della versione precedente seguono questa, se la sua lettura
+    // è arrivata da qualche parte. Su `failed` non c è una foto nuova da cui
+    // ripartire, e le conferme restano dove sono.
+    if (status !== 'failed') await carryOverAssignments(rosterId)
+
     return status
   })
 }

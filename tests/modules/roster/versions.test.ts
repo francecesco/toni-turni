@@ -97,3 +97,154 @@ describe('cellsForDiff', () => {
     ])
   })
 })
+
+describe('carryOverAssignments — le conferme seguono la versione nuova', () => {
+  let cristina: { id: string }
+  let sara: { id: string }
+
+  beforeEach(async () => {
+    await prisma.assignment.deleteMany()
+    await prisma.columnAlias.deleteMany()
+    await prisma.user.deleteMany()
+    cristina = await prisma.user.create({ data: { email: 'cri@example.com', displayName: 'Cristina' } })
+    sara = await prisma.user.create({ data: { email: 'sara@example.com', displayName: 'Sara' } })
+    await prisma.columnAlias.createMany({
+      data: [
+        { label: 'CRISTINA', userId: cristina.id, ignored: false },
+        { label: 'SARADP', userId: sara.id, ignored: false },
+      ],
+    })
+  })
+
+  async function cella(rosterId: string, columnLabel: string, day: number, rawCode: string, over: Record<string, unknown> = {}) {
+    return prisma.rosterCell.create({
+      data: { rosterId, day, columnLabel, rawCode, code: rawCode, confidence: 0.9, ...over },
+    })
+  }
+
+  async function assegnazione(rosterId: string, userId: string, day: number, over: Record<string, unknown> = {}) {
+    return prisma.assignment.create({
+      data: {
+        rosterId,
+        userId,
+        day,
+        code: 'M',
+        columnLabel: 'CRISTINA',
+        confirmedAt: new Date('2026-09-01T08:00:00Z'),
+        eventId: `ev-${day}`,
+        syncState: 'synced',
+        syncedAt: new Date('2026-09-01T08:05:00Z'),
+        ...over,
+      },
+    })
+  }
+
+  it('sposta le assegnazioni sulla versione nuova con tutti i campi intatti', async () => {
+    const v1 = await tabella(1)
+    const v2 = await tabella(2)
+    await cella(v1.id, 'CRISTINA', 1, 'M')
+    await cella(v2.id, 'CRISTINA', 1, 'M')
+    await assegnazione(v1.id, cristina.id, 1)
+
+    const esito = await versions.carryOverAssignments(v2.id)
+
+    expect(esito.movedAssignments).toBe(1)
+    const righe = await prisma.assignment.findMany({ where: { userId: cristina.id } })
+    expect(righe).toHaveLength(1)
+    expect(righe[0]).toMatchObject({
+      rosterId: v2.id,
+      day: 1,
+      code: 'M',
+      eventId: 'ev-1',
+      syncState: 'synced',
+      confirmedAt: new Date('2026-09-01T08:00:00Z'),
+      syncedAt: new Date('2026-09-01T08:05:00Z'),
+    })
+  })
+
+  it('non sposta quelle di chi non ha la colonna nella foto nuova: resta sulla vecchia', async () => {
+    const v1 = await tabella(1)
+    const v2 = await tabella(2)
+    await cella(v1.id, 'CRISTINA', 1, 'M')
+    await cella(v1.id, 'SARA DP.', 1, 'P')
+    await cella(v2.id, 'CRISTINA', 1, 'M') // la foto nuova non ha SARA DP.
+    await assegnazione(v1.id, cristina.id, 1)
+    await assegnazione(v1.id, sara.id, 1, { code: 'P', columnLabel: 'SARA DP.' })
+
+    const esito = await versions.carryOverAssignments(v2.id)
+
+    expect(esito.movedAssignments).toBe(1)
+    expect(esito.skippedUsers).toEqual([sara.id])
+    const diSara = await prisma.assignment.findFirstOrThrow({ where: { userId: sara.id } })
+    expect(diSara.rosterId).toBe(v1.id)
+  })
+
+  it('l identità di colonna è normalizeColumn: "SARA DP." nella foto vale per l alias "SARADP"', async () => {
+    const v1 = await tabella(1)
+    const v2 = await tabella(2)
+    await cella(v1.id, 'SARA DP.', 1, 'P')
+    await cella(v2.id, 'SARA DP', 1, 'P')
+    await assegnazione(v1.id, sara.id, 1, { code: 'P', columnLabel: 'SARA DP.' })
+
+    const esito = await versions.carryOverAssignments(v2.id)
+
+    expect(esito.movedAssignments).toBe(1)
+    expect(esito.skippedUsers).toEqual([])
+  })
+
+  it('se la versione nuova ha già un assegnazione per quel giorno, vince quella e la vecchia resta', async () => {
+    const v1 = await tabella(1)
+    const v2 = await tabella(2)
+    await cella(v1.id, 'CRISTINA', 1, 'M')
+    await cella(v2.id, 'CRISTINA', 1, 'M')
+    await assegnazione(v1.id, cristina.id, 1)
+    await assegnazione(v2.id, cristina.id, 1, { eventId: 'ev-nuovo', syncState: 'confirmed' })
+
+    const esito = await versions.carryOverAssignments(v2.id)
+
+    expect(esito.movedAssignments).toBe(0)
+    const suV2 = await prisma.assignment.findFirstOrThrow({ where: { userId: cristina.id, rosterId: v2.id } })
+    expect(suV2.eventId).toBe('ev-nuovo')
+    expect(await prisma.assignment.count({ where: { rosterId: v1.id } })).toBe(1)
+  })
+
+  it('riporta una correzione a mano solo se il modello ha letto la stessa cosa di prima', async () => {
+    const v1 = await tabella(1)
+    const v2 = await tabella(2)
+    const quando = new Date('2026-09-02T09:00:00Z')
+    // giorno 1: stessa lettura M, corretta in P → si riporta
+    await cella(v1.id, 'CRISTINA', 1, 'M', { correctedCode: 'P', correctedAt: quando, correctedBy: 'anna' })
+    await cella(v2.id, 'CRISTINA', 1, 'M')
+    // giorno 2: la lettura è cambiata (M → RP): il foglio è cambiato, la correzione non vale più
+    await cella(v1.id, 'CRISTINA', 2, 'M', { correctedCode: 'P', correctedAt: quando, correctedBy: 'anna' })
+    await cella(v2.id, 'CRISTINA', 2, 'RP')
+    await assegnazione(v1.id, cristina.id, 1)
+
+    const esito = await versions.carryOverAssignments(v2.id)
+
+    expect(esito.carriedCorrections).toBe(1)
+    const g1 = await prisma.rosterCell.findFirstOrThrow({ where: { rosterId: v2.id, day: 1 } })
+    expect(g1).toMatchObject({ correctedCode: 'P', correctedAt: quando, correctedBy: 'anna' })
+    const g2 = await prisma.rosterCell.findFirstOrThrow({ where: { rosterId: v2.id, day: 2 } })
+    expect(g2.correctedAt).toBeNull()
+  })
+
+  it('è idempotente: senza niente da riportare non tocca nulla', async () => {
+    const v1 = await tabella(1)
+    const v2 = await tabella(2)
+    await cella(v1.id, 'CRISTINA', 1, 'M')
+    await cella(v2.id, 'CRISTINA', 1, 'M')
+
+    expect(await versions.carryOverAssignments(v2.id)).toEqual({
+      movedAssignments: 0,
+      carriedCorrections: 0,
+      skippedUsers: [],
+    })
+    // e sulla prima versione non c è niente prima: nessun errore
+    expect(await versions.carryOverAssignments(v1.id)).toEqual({
+      movedAssignments: 0,
+      carriedCorrections: 0,
+      skippedUsers: [],
+    })
+  })
+})

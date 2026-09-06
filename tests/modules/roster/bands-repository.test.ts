@@ -22,6 +22,8 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await prisma.assignment.deleteMany()
+  await prisma.columnAlias.deleteMany()
+  await prisma.user.deleteMany()
   await prisma.rosterCell.deleteMany()
   await prisma.rosterBand.deleteMany()
   await prisma.roster.deleteMany()
@@ -279,6 +281,35 @@ describe('finishExtraction — lo stato finale dice la verità sulle bande', () 
     const stato = await repo.finishExtraction(r.id, { provider: 'gemini', now: ORA })
 
     expect(stato).toBe('failed')
+  })
+
+  it('alla chiusura di una versione nuova riporta le conferme dalla precedente', async () => {
+    // La v1: una cella e una conferma. La v2: stessa cella, bande tutte lette.
+    const v1 = await prisma.roster.create({
+      data: { year: 2026, month: 9, ward: '3°PIANO', version: 1, imagePath: 'v1.jpg', status: 'extracted' },
+    })
+    const utente = await prisma.user.create({ data: { email: 'cri@example.com', displayName: 'Cristina' } })
+    await prisma.columnAlias.create({ data: { label: 'CRISTINA', userId: utente.id, ignored: false } })
+    await prisma.rosterCell.create({
+      data: { rosterId: v1.id, day: 1, columnLabel: 'CRISTINA', rawCode: 'M', code: 'M', confidence: 0.9 },
+    })
+    await prisma.assignment.create({
+      data: { rosterId: v1.id, userId: utente.id, day: 1, code: 'M', confirmedAt: new Date(), syncState: 'confirmed' },
+    })
+
+    const v2 = await prisma.roster.create({
+      data: { year: 2026, month: 9, ward: '3°PIANO', version: 2, imagePath: 'v2.jpg', status: 'extracting' },
+    })
+    await prisma.rosterBand.create({ data: { rosterId: v2.id, index: 0, status: 'done', dayFrom: 1, dayTo: 30 } })
+    await prisma.rosterCell.create({
+      data: { rosterId: v2.id, day: 1, columnLabel: 'CRISTINA', rawCode: 'M', code: 'M', confidence: 0.9 },
+    })
+
+    const stato = await repo.finishExtraction(v2.id, { provider: 'gemini', now: ORA })
+
+    expect(stato).toBe('extracted')
+    const conferma = await prisma.assignment.findFirstOrThrow({ where: { userId: utente.id } })
+    expect(conferma.rosterId).toBe(v2.id)
   })
 })
 
