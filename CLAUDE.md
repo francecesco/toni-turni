@@ -11,14 +11,10 @@ Istruzioni per Claude Code su questo repository.
 > vista dell'estrazione (Fase 2B), la **griglia di conferma umana** con `ColumnAlias` e `Assignment`
 > (`review`, Fase 3) e il **sync idempotente con Google Calendar** (`calendar`, Fase 4).
 >
-> **Non** sono implementati il diff fra versioni della stessa tabella (Fase 5) né la rifinitura UI
-> (Fase 6). Il flusso però si chiude: dalla griglia di conferma il bottone «Manda sul mio calendario»
-> lancia `syncRoster` (`syncColumnAction`), e ognuna sincronizza **solo la propria colonna** —
-> referente compresa, perché sincronizzare la colonna di un'altra scriverebbe sul calendario di
-> quella persona senza il suo consenso. Una cella si può anche **correggere a mano**
-> (`correctCellAction` → `correctCell`), scegliendo fra i codici della legenda: l'infermiera sulla
-> propria colonna, la referente su qualsiasi colonna. Correggere annulla la conferma di quel giorno:
-> si corregge, si conferma, si sincronizza.
+> La **Fase 5** è implementata: una seconda foto dello stesso mese **sposta** le conferme sulla versione
+> nuova alla chiusura della lettura (`carryOverAssignments`, per persona e solo se la sua colonna c'è),
+> riporta le correzioni a mano a grezzo uguale, e la griglia mostra solo i giorni cambiati
+> (`diffVersions`, puro). La referente ha `/rosters/[id]/diff`. Resta la rifinitura UI (Fase 6).
 >
 > ## Provider e strategia: Gemini, una chiamata sola — **misurata**
 >
@@ -408,6 +404,15 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
   ignorare l'avviso. Le bande coprono **mezzo mese**, quindi `RosterBand` porta `dayFrom`/`dayTo` e
   `columnCoverage`/`describeUnreadBands` traducono un buco in nomi di colonna e giorni; dove i nomi
   non si conoscono lo dicono invece di inventarli.
+- **Le conferme vivono sulla versione, e una versione nuova le sposta, non le copia.** `Assignment.rosterId`
+  cambia alla chiusura della lettura della versione N+1 (`finishExtraction` → `carryOverAssignments`).
+  Una riga sola per persona e giorno, sempre sull'ultima versione: due copie con lo stesso `eventId`
+  farebbero litigare due sync. Se la foto nuova **non ha la colonna** di una persona, le sue conferme
+  restano sulla N e lei continua a vedere la N — non è un bug, è la sola versione in cui esiste.
+- **Un turno tolto dal foglio nuovo non sparisce dal calendario da solo.** La riga resta con
+  l'assegnazione «orfana» e il bottone «Togli dal calendario» (`removeAssignment`); solo dopo quel gesto
+  il sync cancella l'evento, perché una giornata senza assegnazione non protegge la chiave. Un turno
+  cambiato dopo l'invio resta sul calendario com'era finché non viene riconfermato: regola invariante 1.
 - **Solo la persona associata a una colonna può confermarla, referente compresa.** La referente
   *vede* tutte le colonne (le serve), ma confermare la colonna di un'altra metterebbe eventi sul
   calendario di quella persona senza il suo consenso.

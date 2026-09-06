@@ -1,6 +1,6 @@
 # Fase 5 — Versioni della stessa tabella: riporto delle conferme e diff
 
-Data: 2026-09-06. Stato: design approvato in chat dal proprietario, da trasformare in piano.
+Data: 2026-09-06. Stato: implementata (piano `docs/superpowers/plans/2026-09-06-fase-5-versioni.md`).
 
 ## 1. Il problema
 
