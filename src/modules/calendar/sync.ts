@@ -10,7 +10,7 @@ import {
 import { listShiftCodes } from '@/modules/codes'
 import { getRosterMonth } from '@/modules/roster'
 import { createCalendarApi, isReauthNeeded, type CalendarApi } from './api'
-import { resolveDedicatedCalendar } from './dedicated'
+import { DedicatedCalendarMissingError, resolveDedicatedCalendar } from './dedicated'
 import { buildDesiredEvents } from './event'
 import { planSync } from './diff'
 import { withSyncLock } from './lock'
@@ -214,6 +214,10 @@ export async function syncRoster(input: SyncRosterInput): Promise<SyncOutcome> {
       if (isReauthNeeded(error)) {
         await markNeedsReauth(input.targetUserId)
         return failed('Il consenso Google va rinnovato: rifai il login', '', true)
+      }
+      if (error instanceof DedicatedCalendarMissingError) {
+        // L id resta com è: azzerarlo è un gesto della persona, non dell app.
+        return { ...failed(error.message), calendarMissing: true }
       }
       return failed(error instanceof Error ? error.message : String(error))
     }

@@ -108,4 +108,10 @@ export interface SyncOutcome {
    * un bottone e un messaggio non è un contratto.
    */
   needsReauth?: boolean
+  /**
+   * L id di calendario memorizzato non esiste più su Google. Anche questo è un
+   * campo a sé: l interfaccia ci attacca «Ricollega il calendario», l unico gesto
+   * che autorizza la creazione di un calendario nuovo.
+   */
+  calendarMissing?: boolean
 }

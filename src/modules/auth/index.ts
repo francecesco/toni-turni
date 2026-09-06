@@ -23,6 +23,7 @@ export {
   GoogleAccountMissingError,
   GoogleReauthRequiredError,
   googleClientForUser,
+  clearCalendarId,
   markNeedsReauth,
   markReauthResolved,
   readGoogleAccountState,

@@ -67,6 +67,7 @@ let prisma: PrismaClient
 let session: typeof import('@/modules/auth/session')
 let reviewActions: typeof import('@/app/rosters/[id]/review/actions')
 let aliases: typeof import('@/modules/review/aliases')
+let crypto: typeof import('@/lib/crypto')
 
 let cristina: { id: string }
 let sara: { id: string }
@@ -88,6 +89,7 @@ beforeAll(async () => {
   session = await import('@/modules/auth/session')
   aliases = await import('@/modules/review/aliases')
   reviewActions = await import('@/app/rosters/[id]/review/actions')
+  crypto = await import('@/lib/crypto')
 })
 
 afterAll(async () => {
@@ -248,5 +250,60 @@ describe('syncColumnAction — cosa legge l utente dopo', () => {
     // `reauth` è ciò su cui la pagina mostra il bottone per riautorizzare: senza
     // questo l utente leggerebbe un messaggio e non saprebbe cosa fare.
     expect(url.searchParams.get('reauth')).toBe('1')
+  })
+})
+
+describe('quando il calendario collegato non esiste piu', () => {
+  async function conCalendarioSparito(userId: string) {
+    await prisma.googleAccount.create({
+      data: {
+        userId,
+        refreshToken: crypto.encryptSecret('refresh-123', `google_refresh:${userId}`),
+        status: 'ok',
+        calendarId: 'sparito',
+      },
+    })
+  }
+
+  it('il sync fallito con calendarMissing porta il flag nella query, come reauth', async () => {
+    esitoFinto = esitoRiuscito({ ok: false, calendarId: '', calendarMissing: true, error: 'sparito' })
+    await session.openSessionCookie(cristina.id)
+
+    const url = await redirectDi(reviewActions.syncColumnAction(modulo()))
+
+    expect(url.searchParams.get('calendarMissing')).toBe('1')
+  })
+
+  it('chi possiede la colonna puo ricollegare: l id salvato viene azzerato', async () => {
+    await conCalendarioSparito(cristina.id)
+    await session.openSessionCookie(cristina.id)
+
+    const url = await redirectDi(reviewActions.relinkCalendarAction(modulo()))
+
+    expect(url.searchParams.get('ok')).toMatch(/ricollegato|scollegato/i)
+    const riga = await prisma.googleAccount.findUniqueOrThrow({ where: { userId: cristina.id } })
+    expect(riga.calendarId).toBeNull()
+  })
+
+  it('un altra infermiera non puo ricollegare il calendario di Cristina', async () => {
+    await conCalendarioSparito(cristina.id)
+    await session.openSessionCookie(sara.id)
+
+    const url = await redirectDi(reviewActions.relinkCalendarAction(modulo()))
+
+    expect(url.searchParams.get('error')).toBeTruthy()
+    const riga = await prisma.googleAccount.findUniqueOrThrow({ where: { userId: cristina.id } })
+    expect(riga.calendarId).toBe('sparito')
+  })
+
+  it('nemmeno la referente: il calendario e della persona, come la conferma', async () => {
+    await conCalendarioSparito(cristina.id)
+    await session.openSessionCookie(anna.id)
+
+    const url = await redirectDi(reviewActions.relinkCalendarAction(modulo()))
+
+    expect(url.searchParams.get('error')).toBeTruthy()
+    const riga = await prisma.googleAccount.findUniqueOrThrow({ where: { userId: cristina.id } })
+    expect(riga.calendarId).toBe('sparito')
   })
 })

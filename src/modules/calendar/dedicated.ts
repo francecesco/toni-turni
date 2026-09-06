@@ -13,6 +13,22 @@ export const DEDICATED_CALENDAR_SUMMARY = 'Turni Toniolo'
 const DEDICATED_CALENDAR_DESCRIPTION =
   'Calendario creato da Toni Turni per i turni del reparto. Gli eventi qui dentro sono gestiti dall app: le modifiche fatte a mano vengono riscritte al prossimo sync.'
 
+/**
+ * L id memorizzato punta a un calendario che su Google non esiste più. È un
+ * errore a sé, e non un `CalendarRefusedError` qualsiasi, perché l interfaccia ci
+ * attacca un bottone: «Ricollega il calendario» azzera l id salvato, e solo dopo
+ * quel gesto un sync può crearne uno nuovo. Deciso il 2026-09-06: un calendario
+ * nuovo nasce per mano di una persona, mai per decisione dell app.
+ */
+export class DedicatedCalendarMissingError extends CalendarRefusedError {
+  constructor() {
+    super(
+      `Il calendario «${DEDICATED_CALENDAR_SUMMARY}» collegato al tuo account non esiste più su Google. Per sicurezza l app non ne crea un altro da sola: premi «Ricollega il calendario», poi rimanda i turni.`,
+    )
+    this.name = 'DedicatedCalendarMissingError'
+  }
+}
+
 export interface DedicatedCalendar {
   calendarId: string
   /** Vero se il calendario è stato creato adesso. */
@@ -37,8 +53,9 @@ function assertNotPrimary(calendarId: string): void {
  *
  * L id memorizzato ha la precedenza e vale anche se l utente ha rinominato il
  * calendario: l id l abbiamo salvato noi alla creazione, e un rinomina non deve
- * generare un doppione con gli stessi turni dentro. Se l id non esiste più si
- * cerca per nome, e solo in ultima istanza si crea.
+ * generare un doppione con gli stessi turni dentro. Se l id non esiste più **ci si
+ * ferma** (`DedicatedCalendarMissingError`): la ricerca per nome e la creazione
+ * valgono solo quando nessun id è memorizzato.
  */
 export async function resolveDedicatedCalendar(input: {
   api: CalendarApi
@@ -49,10 +66,9 @@ export async function resolveDedicatedCalendar(input: {
   if (known !== '') {
     assertNotPrimary(known)
     const existing = await input.api.getCalendar(known)
-    if (existing) {
-      assertNotPrimary(existing.id)
-      return { calendarId: existing.id, created: false, changed: false }
-    }
+    if (!existing) throw new DedicatedCalendarMissingError()
+    assertNotPrimary(existing.id)
+    return { calendarId: existing.id, created: false, changed: false }
   }
 
   const calendars = await input.api.listCalendars()

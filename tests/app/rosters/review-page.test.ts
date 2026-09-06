@@ -31,6 +31,7 @@ let ReviewPage: typeof import('@/app/rosters/[id]/review/page').default
 let AppHeader: typeof import('@/components/app-header').AppHeader
 let ActionDock: typeof import('@/components/action-dock').ActionDock
 let ColumnSummary: typeof import('@/app/rosters/[id]/review/column-summary').ColumnSummary
+let actions: typeof import('@/app/rosters/[id]/review/actions')
 
 let referente: { id: string }
 let infermiera: { id: string }
@@ -49,6 +50,7 @@ beforeAll(async () => {
   AppHeader = (await import('@/components/app-header')).AppHeader
   ActionDock = (await import('@/components/action-dock')).ActionDock
   ColumnSummary = (await import('@/app/rosters/[id]/review/column-summary')).ColumnSummary
+  actions = await import('@/app/rosters/[id]/review/actions')
 })
 
 afterAll(() => db.cleanup())
@@ -233,5 +235,42 @@ describe('la referente atterra sulla propria colonna, non sulla prima in ordine 
     const summary = trovaElemento<{ columnLabel?: string; children?: ReactNode }>(pagina, ColumnSummary)
     expect(summary).toBeDefined()
     expect(summary?.props.columnLabel).toBe('CARMEN')
+  })
+})
+
+describe('quando il calendario collegato non esiste piu su Google', () => {
+  beforeEach(async () => {
+    await prisma.rosterCell.create({
+      data: { rosterId, day: 1, columnLabel: 'CRISTINA', rawCode: 'M', code: 'M', confidence: 0.9 },
+    })
+    await prisma.columnAlias.create({
+      data: { label: 'CRISTINA', userId: infermiera.id, ignored: false },
+    })
+  })
+
+  /** Tutti i `<form>` dell albero, per trovare quello con una data server action. */
+  function formConAzione(node: ReactNode, azione: unknown): ReactElement<{ action?: unknown }> | undefined {
+    if (node === null || node === undefined || typeof node !== 'object') return undefined
+    if (Array.isArray(node)) {
+      for (const figlio of node) {
+        const trovato = formConAzione(figlio, azione)
+        if (trovato) return trovato
+      }
+      return undefined
+    }
+    const elemento = node as ReactElement<{ action?: unknown; children?: ReactNode }>
+    if (elemento.type === 'form' && elemento.props.action === azione) return elemento
+    return formConAzione(elemento.props?.children, azione)
+  }
+
+  it('mostra il bottone «Ricollega il calendario», che e la sola via per crearne uno nuovo', async () => {
+    const pagina = await renderReview(infermiera.id, { colonna: 'CRISTINA', calendarMissing: '1' })
+    const form = formConAzione(pagina, actions.relinkCalendarAction)
+    expect(form).toBeDefined()
+  })
+
+  it('senza quel flag il bottone non c e', async () => {
+    const pagina = await renderReview(infermiera.id, { colonna: 'CRISTINA' })
+    expect(formConAzione(pagina, actions.relinkCalendarAction)).toBeUndefined()
   })
 })

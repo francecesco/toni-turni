@@ -322,6 +322,15 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
   già applicato (`...T21:00:00+02:00`) e nella notte del cambio d'ora i due estremi hanno offset
   diversi: confrontare le stringhe farebbe risultare *diverso* ogni evento a ogni giro, e il sync
   riscriverebbe tutto ogni volta. Vedi `sameEvent` in `src/modules/calendar/diff.ts`.
+- **Un calendario nuovo nasce solo per mano di una persona.** Il calendario dedicato si chiama
+  «Turni Toniolo» (`DEDICATED_CALENDAR_SUMMARY`, fissato da un test perché è anche la chiave con cui
+  lo si ritrova senza id). Con un id salvato il sync riparte **sempre** da quello; se Google dice che
+  non esiste più, `resolveDedicatedCalendar` lancia `DedicatedCalendarMissingError` e il sync si
+  ferma con `calendarMissing: true` — **non** ne crea un altro. La griglia mostra «Ricollega il
+  calendario» (`relinkCalendarAction` → `clearCalendarId`), e solo dopo quel gesto il sync successivo
+  cerca per nome o crea. Due calendari con lo stesso nome fanno rifiutare la scelta invece di prendere
+  il primo. Deciso il 2026-09-06: la ricreazione automatica era il solo ramo in cui l'app poteva
+  produrre un doppione senza che nessuno l'avesse chiesto.
 - **Creare il calendario dedicato richiede lo scope `calendar.app.created`.** Con `calendar.events`
   da solo la creazione risponde 403. Chi aveva già dato il consenso prima della Fase 4 deve
   rifarlo (revoca da myaccount.google.com/permissions).

@@ -17,7 +17,8 @@ export type { CalendarApi, CalendarSummary, CalendarTransport } from './api'
 export { CalendarApiError, CalendarRefusedError, createCalendarApi, isReauthNeeded } from './api'
 
 export type { DedicatedCalendar } from './dedicated'
-export { DEDICATED_CALENDAR_SUMMARY, resolveDedicatedCalendar } from './dedicated'
+export { DEDICATED_CALENDAR_SUMMARY, DedicatedCalendarMissingError,
+  resolveDedicatedCalendar } from './dedicated'
 
 export { buildDesiredEvents, buildEventPayload } from './event'
 export { planSync, sameEvent } from './diff'

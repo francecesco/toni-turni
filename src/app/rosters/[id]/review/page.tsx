@@ -24,6 +24,7 @@ import {
 import {
   confirmColumnAction,
   syncColumnAction,
+  relinkCalendarAction,
 } from './actions'
 import { ColumnSummary } from './column-summary'
 import { DayRow } from './day-row'
@@ -42,11 +43,12 @@ export default async function ReviewPage({
     ok?: string
     sync?: string
     reauth?: string
+    calendarMissing?: string
   }>
 }) {
   const user = await requireUser()
   const { id } = await params
-  const { colonna, error, ok, sync, reauth } = await searchParams
+  const { colonna, error, ok, sync, reauth, calendarMissing } = await searchParams
 
   const roster = await prisma.roster.findUnique({
     where: { id },
@@ -166,7 +168,23 @@ export default async function ReviewPage({
         {error && <Banner variant="error">{error}</Banner>}
         {ok && <Banner variant="ok">{ok}</Banner>}
 
-        {reauth === '1' ? (
+        {calendarMissing === '1' ? (
+          <Banner variant="warn" title="Il calendario «Turni Toniolo» non esiste più su Google.">
+            <p>
+              L id salvato punta a un calendario che è stato cancellato. Per sicurezza l app non
+              ne crea un altro da sola: se vuoi che lo ricrei, scollegalo qui e poi rimanda i
+              turni. Se invece l hai cancellato per errore, su Google puoi ripristinarlo dal
+              cestino dei calendari.
+            </p>
+            <form action={relinkCalendarAction} className="mt-2">
+              <input type="hidden" name="rosterId" value={id} />
+              <input type="hidden" name="columnLabel" value={scelta ?? ''} />
+              <Button type="submit" size="touch">
+                Ricollega il calendario
+              </Button>
+            </form>
+          </Banner>
+        ) : reauth === '1' ? (
           <Banner variant="warn" title="Il collegamento con Google va rinnovato.">
             <p>
               Non è un guasto e non hai perso niente: l app ha bisogno del tuo permesso per creare

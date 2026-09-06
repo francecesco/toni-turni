@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { requireUser } from '@/modules/auth'
+import { clearCalendarId, requireUser } from '@/modules/auth'
 import { describeOutcome, syncRoster } from '@/modules/calendar'
 import {
   ReviewForbiddenError,
@@ -29,13 +29,14 @@ function text(form: FormData, field: string): string {
 function tornaCon(
   rosterId: string,
   columnLabel: string,
-  params: { error?: string; ok?: string; sync?: string; reauth?: boolean },
+  params: { error?: string; ok?: string; sync?: string; reauth?: boolean; calendarMissing?: boolean },
 ): never {
   const query = new URLSearchParams({ colonna: columnLabel })
   if (params.error) query.set('error', params.error)
   if (params.ok) query.set('ok', params.ok)
   if (params.sync) query.set('sync', params.sync)
   if (params.reauth) query.set('reauth', '1')
+  if (params.calendarMissing) query.set('calendarMissing', '1')
   redirect(`/rosters/${rosterId}/review?${query.toString()}`)
 }
 
@@ -145,6 +146,42 @@ export async function syncColumnAction(form: FormData): Promise<void> {
   tornaCon(rosterId, columnLabel, {
     sync: describeOutcome(esito),
     reauth: esito.needsReauth === true,
+    calendarMissing: esito.calendarMissing === true,
+  })
+}
+
+/**
+ * «Ricollega il calendario»: azzera l id del calendario dedicato salvato per la
+ * persona, così il prossimo sync ne cerca uno per nome o ne crea uno nuovo. È
+ * l **unico** modo in cui l app arriva a creare un secondo calendario, e per
+ * questo è un gesto esplicito e non un ramo automatico del sync.
+ *
+ * Permessi come la conferma e il sync: solo chi possiede la colonna, referente
+ * compresa — il calendario è della persona.
+ */
+export async function relinkCalendarAction(form: FormData): Promise<void> {
+  const user = await requireUser()
+  const rosterId = text(form, 'rosterId')
+  const columnLabel = text(form, 'columnLabel')
+
+  if (rosterId === '' || columnLabel === '') {
+    tornaCon(rosterId, columnLabel, { error: 'Richiesta incompleta' })
+  }
+
+  let targetUserId: string
+  try {
+    targetUserId = await requireOwnColumn(user, columnLabel, 'ricollegarne il calendario')
+  } catch (errore) {
+    if (errore instanceof ReviewForbiddenError) {
+      tornaCon(rosterId, columnLabel, { error: errore.message })
+    }
+    throw errore
+  }
+
+  await clearCalendarId(targetUserId)
+  revalidatePath(`/rosters/${rosterId}/review`)
+  tornaCon(rosterId, columnLabel, {
+    ok: 'Calendario scollegato. Al prossimo invio l app cercherà «Turni Toniolo» fra i tuoi calendari e, se non c’è, lo creerà.',
   })
 }
 

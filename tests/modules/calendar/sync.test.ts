@@ -450,6 +450,27 @@ describe('syncRoster — guasti', () => {
     expect(esito.needsReauth).toBe(true)
   })
 
+  it('se il calendario collegato non esiste piu su Google, si ferma senza crearne un altro', async () => {
+    await assegna({ id: 'a1', day: 1, code: 'M' })
+    await prisma.googleAccount.update({
+      where: { userId: 'utente1' },
+      data: { calendarId: 'sparito' },
+    })
+    const finto = calendarioFinto() // nessun calendario: 'sparito' non c e
+
+    const esito = await esegui(finto)
+
+    expect(esito.ok).toBe(false)
+    expect(esito.error).toMatch(/non esiste più/i)
+    // Campo a se, come needsReauth: l interfaccia ci attacca il bottone «Ricollega».
+    expect(esito.calendarMissing).toBe(true)
+    expect(finto.calls).not.toContain('createCalendar')
+    expect(finto.calls).not.toContain('listCalendars')
+    // L id resta: azzerarlo e un gesto della persona, non dell app.
+    const account = await prisma.googleAccount.findUniqueOrThrow({ where: { userId: 'utente1' } })
+    expect(account.calendarId).toBe('sparito')
+  })
+
   it('un token revocato durante il sync segna l account come da riautorizzare', async () => {
     await assegna({ id: 'a1', day: 1, code: 'M' })
     const finto = calendarioFinto()

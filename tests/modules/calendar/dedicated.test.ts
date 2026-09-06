@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   DEDICATED_CALENDAR_SUMMARY,
+  DedicatedCalendarMissingError,
   resolveDedicatedCalendar,
 } from '@/modules/calendar/dedicated'
 import { CalendarRefusedError, type CalendarApi, type CalendarSummary } from '@/modules/calendar/api'
@@ -58,13 +59,18 @@ describe('resolveDedicatedCalendar', () => {
     expect(api.createCalendar).not.toHaveBeenCalled()
   })
 
-  it('se il calendario memorizzato è stato cancellato, ne trova o crea un altro', async () => {
+  it('se il calendario memorizzato non esiste piu, si ferma: non ne cerca ne crea un altro', async () => {
+    // Deciso il 2026-09-06: un calendario nuovo nasce solo per mano di una persona.
+    // L app segnala che quello collegato e sparito, e tocca all utente «ricollegare»
+    // (azzerare l id salvato) prima che un sync possa crearne uno.
     const api = apiFinto({ getCalendar: vi.fn(async () => null) })
 
-    const esito = await resolveDedicatedCalendar({ api, knownCalendarId: 'sparito' })
-
-    expect(esito).toEqual({ calendarId: 'nuovo', created: true, changed: true })
+    await expect(resolveDedicatedCalendar({ api, knownCalendarId: 'sparito' })).rejects.toBeInstanceOf(
+      DedicatedCalendarMissingError,
+    )
     expect(api.getCalendar).toHaveBeenCalledWith('sparito')
+    expect(api.listCalendars).not.toHaveBeenCalled()
+    expect(api.createCalendar).not.toHaveBeenCalled()
   })
 
   it('il calendario si chiama "Turni Toniolo"', () => {

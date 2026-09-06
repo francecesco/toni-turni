@@ -44,6 +44,15 @@ export async function setCalendarId(userId: string, calendarId: string): Promise
   await prisma.googleAccount.updateMany({ where: { userId }, data: { calendarId } })
 }
 
+/**
+ * Scollega il calendario dedicato: l id torna null, il token resta. È il gesto
+ * esplicito con cui una persona autorizza l app a crearne uno nuovo al prossimo
+ * sync, quando quello collegato non esiste più su Google.
+ */
+export async function clearCalendarId(userId: string): Promise<void> {
+  await prisma.googleAccount.updateMany({ where: { userId }, data: { calendarId: null } })
+}
+
 export async function markNeedsReauth(userId: string): Promise<void> {
   await prisma.googleAccount.updateMany({ where: { userId }, data: { status: 'needs_reauth' } })
 }

@@ -74,6 +74,21 @@ describe('setCalendarId', () => {
   })
 })
 
+describe('clearCalendarId', () => {
+  it('scollega il calendario: l id torna null, il token resta', async () => {
+    // E il gesto esplicito con cui una persona autorizza l app a creare un
+    // calendario nuovo: senza id salvato il prossimo sync ne cerca o ne crea uno.
+    await conAccount({ calendarId: 'sparito' })
+
+    await account.clearCalendarId('utente1')
+
+    const riga = await prisma.googleAccount.findUniqueOrThrow({ where: { userId: 'utente1' } })
+    expect(riga.calendarId).toBeNull()
+    expect(riga.refreshToken).not.toBe('')
+    expect(riga.status).toBe('ok')
+  })
+})
+
 describe('markNeedsReauth', () => {
   it('segna lo stato senza cancellare il token', async () => {
     await conAccount()
