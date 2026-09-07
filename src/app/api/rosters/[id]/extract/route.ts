@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { requireEnv } from '@/lib/env'
 import { authorizeApi } from '@/modules/auth'
 import { rosterImageExists } from '@/modules/ingest'
 import { ensureExtractionWorker, prepareExtraction } from '@/modules/roster'
@@ -16,13 +17,16 @@ import { ensureExtractionWorker, prepareExtraction } from '@/modules/roster'
  * una tabella autorizzata e senza bande è ripresa da `resumableRosters`.
  */
 export async function POST(
-  request: Request,
+  _request: Request,
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const auth = await authorizeApi({ referente: true })
   if (!auth.ok) return auth.response
 
   const { id } = await context.params
+  // Da `APP_URL`, non da `request.url`: il server standalone lo compone con l host su
+  // cui ascolta (`0.0.0.0:3000`) e il browser finirebbe su https://0.0.0.0.
+  const appUrl = requireEnv('APP_URL')
 
   const roster = await prisma.roster.findUnique({
     where: { id },
@@ -32,7 +36,7 @@ export async function POST(
 
   const indietro = (message: string) =>
     Response.redirect(
-      new URL(`/rosters/${id}?error=${encodeURIComponent(message)}`, request.url),
+      new URL(`/rosters/${id}?error=${encodeURIComponent(message)}`, appUrl),
       303,
     )
 
@@ -53,5 +57,5 @@ export async function POST(
   // Volutamente non attesa: la risposta parte adesso, il lavoro continua dopo.
   void ensureExtractionWorker()
 
-  return Response.redirect(new URL(`/rosters/${id}`, request.url), 303)
+  return Response.redirect(new URL(`/rosters/${id}`, appUrl), 303)
 }

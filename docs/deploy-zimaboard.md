@@ -152,6 +152,7 @@ non è necessario salvarle, la tabella confermata vive nel database.
 | dopo una settimana il sync dice «il consenso Google va rinnovato» | app OAuth ancora «In test» | passo 5 |
 | la griglia mostra «Ricollega il calendario» | il calendario «Turni Toniolo» è stato cancellato su Google | è voluto: l'app non ne crea uno da sola; premi il bottone e rimanda |
 | lettura della foto fallita, log con `503` o `RESOURCE_EXHAUSTED` | Gemini in alta domanda o quota | riprova più tardi; il modello è pinnato a `gemini-3.6-flash` per una ragione, vedi `CLAUDE.md` |
+| dopo «Carica» il browser va su `0.0.0.0` con `ERR_SSL_PROTOCOL_ERROR` | una route costruisce il redirect da `request.url`, che nel server standalone è l'indirizzo di ascolto e non il dominio | corretto il 2026-09-07; se ricompare, cerca `request.url` nelle route API e parti da `APP_URL` |
 | `app` non diventa *healthy* | manca una variabile obbligatoria in `.env` | `docker compose logs app`: l'errore nomina la variabile |
 
 ## Portare i dati dal Mac (facoltativo)

@@ -44,6 +44,8 @@ beforeAll(async () => {
   process.env.SESSION_SECRET = 'session-secret-di-test-abbastanza-lungo-32+'
   process.env.UPLOAD_DIR = mkdtempSync(join(tmpdir(), 'turni-route-uploads-'))
   process.env.IMAGE_RETENTION_DAYS = '90'
+  // Il nome pubblico dell app: e la base di ogni redirect, non l host della richiesta.
+  process.env.APP_URL = 'https://turni.esempio.it'
   delete (globalThis as unknown as { prisma?: unknown }).prisma
   vi.resetModules()
 
@@ -419,5 +421,65 @@ describe('GET /api/rosters/[id]/image e /preview — la foto è dato personale d
 
     expect(response.status).toBe(409)
     expect(await response.text()).toMatch(/tabella/i)
+  })
+})
+
+describe("i redirect puntano ad APP_URL, non all indirizzo su cui il server ascolta", () => {
+  // In produzione il server standalone di Next compone `request.url` con l host su cui
+  // e in ascolto (`0.0.0.0:3000`), non con l `Host` della richiesta: un redirect
+  // costruito da li manda il browser su https://0.0.0.0 e la pagina non arriva.
+  it('dopo il caricamento rimanda alla tabella sul dominio pubblico', async () => {
+    await session.openSessionCookie(referente.id)
+
+    const response = await uploadRoute.POST(
+      new Request('http://0.0.0.0:3000/api/rosters', {
+        method: 'POST',
+        body: await moduloDiCaricamento(),
+      }),
+    )
+
+    const roster = await prisma.roster.findFirstOrThrow()
+    expect(response.headers.get('location')).toBe(`https://turni.esempio.it/rosters/${roster.id}`)
+  })
+
+  it('un caricamento rifiutato torna al modulo sul dominio pubblico', async () => {
+    await session.openSessionCookie(referente.id)
+
+    const response = await uploadRoute.POST(
+      new Request('http://0.0.0.0:3000/api/rosters', {
+        method: 'POST',
+        body: await moduloDiCaricamento({ month: '13' }),
+      }),
+    )
+
+    expect(response.headers.get('location')).toMatch(
+      /^https:\/\/turni\.esempio\.it\/rosters\/upload\?error=/,
+    )
+  })
+
+  it("l autorizzazione all estrazione rimanda alla tabella sul dominio pubblico", async () => {
+    const roster = await tabellaConFoto()
+    await session.openSessionCookie(referente.id)
+
+    const response = await extractRoute.POST(
+      new Request(`http://0.0.0.0:3000/api/rosters/${roster.id}/extract`, { method: 'POST' }),
+      { params: Promise.resolve({ id: roster.id }) },
+    )
+
+    expect(response.headers.get('location')).toBe(`https://turni.esempio.it/rosters/${roster.id}`)
+  })
+
+  it("un autorizzazione rifiutata torna alla tabella sul dominio pubblico", async () => {
+    const roster = await tabellaConFoto({ status: 'extracted' })
+    await session.openSessionCookie(referente.id)
+
+    const response = await extractRoute.POST(
+      new Request(`http://0.0.0.0:3000/api/rosters/${roster.id}/extract`, { method: 'POST' }),
+      { params: Promise.resolve({ id: roster.id }) },
+    )
+
+    expect(response.headers.get('location')).toMatch(
+      new RegExp(`^https://turni\\.esempio\\.it/rosters/${roster.id}\\?error=`),
+    )
   })
 })

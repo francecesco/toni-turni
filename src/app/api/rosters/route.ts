@@ -1,3 +1,4 @@
+import { requireEnv } from '@/lib/env'
 import { authorizeApi } from '@/modules/auth'
 import {
   normalizeRosterPhoto,
@@ -17,14 +18,19 @@ import { createRoster, parseUploadForm, setRosterImagePath } from '@/modules/ros
  * Risponde subito: normalizza l immagine, la salva sul volume e crea la `Roster`
  * in stato `uploaded`. **Nessuna chiamata al provider AI**: quella parte solo dopo
  * che la referente ha guardato l anteprima dei tagli e ha premuto "Estrai".
+ *
+ * I redirect partono da `APP_URL` e non da `request.url`: in produzione il server
+ * standalone di Next compone quell URL con l host su cui ascolta (`0.0.0.0:3000`),
+ * non con l `Host` della richiesta, e il browser finirebbe su https://0.0.0.0.
  */
 export async function POST(request: Request): Promise<Response> {
   const auth = await authorizeApi({ referente: true })
   if (!auth.ok) return auth.response
 
+  const appUrl = requireEnv('APP_URL')
   const back = (message: string) =>
     Response.redirect(
-      new URL(`/rosters/upload?error=${encodeURIComponent(message)}`, request.url),
+      new URL(`/rosters/upload?error=${encodeURIComponent(message)}`, appUrl),
       303,
     )
 
@@ -69,5 +75,5 @@ export async function POST(request: Request): Promise<Response> {
     console.error('Pulizia delle foto scadute non riuscita:', error)
   }
 
-  return Response.redirect(new URL(`/rosters/${roster.id}`, request.url), 303)
+  return Response.redirect(new URL(`/rosters/${roster.id}`, appUrl), 303)
 }

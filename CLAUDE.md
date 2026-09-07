@@ -438,6 +438,14 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
   al secondo strato: il caricatore di Next **non sovrascrive** una variabile già nella shell, quindi un
   `APP_URL` esportato nell'ambiente vince sul `.env` in silenzio — `env -u APP_URL npm run dev` se il
   `.env` sembra ignorato.
+- **In produzione `request.url` dice `0.0.0.0:3000`, non il dominio.** Il server standalone di Next
+  compone `request.url` con l'host su cui ascolta (`HOSTNAME=0.0.0.0` nel Dockerfile) e la porta, non
+  con l'`Host` della richiesta: un redirect costruito con `new URL(path, request.url)` manda il browser
+  su `https://0.0.0.0` — «Il sito non può fornire una connessione protetta», `ERR_SSL_PROTOCOL_ERROR`,
+  console vuota. È successo al primo caricamento in produzione, il 2026-09-07: il login andava, perché
+  le route di autenticazione partivano già da `APP_URL`, e «Carica» no. Ogni redirect assoluto nelle
+  route API parte da `requireEnv('APP_URL')` (`tests/app/rosters/routes.test.ts` lo fissa con richieste
+  su `0.0.0.0`); in sviluppo su `localhost` la differenza non si vede mai.
 - **Node 22 è obbligatorio, e la shell può partire su una versione più vecchia.** Verifica con
   `node -v` e, se serve, `nvm use 22` prima di installare o eseguire i test.
 - **`npm run lint` esegue `tsc --noEmit`, che richiede i tipi generati in `.next/types`.** Su un
