@@ -57,7 +57,8 @@ Il dominio https non è un vezzo: Google accetta redirect OAuth solo su `https` 
 ## Installazione
 
 La procedura completa per la ZimaBoard, con il tunnel Cloudflare e le verifiche a ogni passo, è in
-[docs/deploy-zimaboard.md](docs/deploy-zimaboard.md). In breve:
+[docs/deploy-zimaboard.md](docs/deploy-zimaboard.md); se sull'host gira già un `cloudflared` per altri
+servizi, la variante con il tunnel condiviso è lì (`deploy/compose.shared-tunnel.yml`). In breve:
 
 ```bash
 git clone https://github.com/francecesco/toni-turni.git

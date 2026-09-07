@@ -141,10 +141,15 @@ Istruzioni per Claude Code su questo repository.
 > cella di differenza fra due misure non è un miglioramento, è la variabilità del modello sulle celle
 > corrette a mano**.
 >
-> Tre verifiche in sospeso, tutte da fare sulla macchina vera:
+> **In produzione dal 2026-09-07** sulla ZimaBoard, `https://turni.cescohomelab.com`, attraverso il
+> tunnel Cloudflare già presente sull'host (`deploy/compose.shared-tunnel.yml`; procedura in
+> [docs/deploy-zimaboard.md](docs/deploy-zimaboard.md)). Delle tre verifiche che erano in sospeso ne
+> resta una:
 >
-> 1. il flusso OAuth non è mai stato eseguito con credenziali Google reali — in tutti i test
->    `exchangeGoogleCode` è mockata; la checklist è in
+> 1. ~~il flusso OAuth con credenziali Google reali~~ **fatto**: il 2026-09-06 su `localhost:3001` e il
+>    2026-09-07 sul dominio di produzione, accesso riuscito, `GoogleAccount` con il refresh token cifrato;
+>    i rami d'errore (`code` riusato, consenso negato, `state` manomesso) provati da riga di comando.
+>    Restano i passi della checklist che vogliono un secondo account Google, e il primo sync vero:
 >    [docs/verifica-manuale-oauth.md](docs/verifica-manuale-oauth.md);
 > 2. ~~il percorso foto → anteprima → estrazione dall'interfaccia su Gemini~~ **fatto** il 2026-08-31
 >    (tabella di settembre, una banda, 240 celle) e confrontato il 2026-09-06 con la trascrizione di

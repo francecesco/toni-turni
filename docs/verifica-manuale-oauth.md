@@ -1,7 +1,8 @@
 # Verifica manuale del flusso Google OAuth
 
-> **Stato al 2026-09-06**, con credenziali Google reali su `localhost:3001`:
-> passo 1 **fatto** (accesso riuscito, `turni_session` presente); passo 3 **fatto** (un
+> **Stato al 2026-09-07.** Con credenziali Google reali su `localhost:3001` (2026-09-06) e poi sul
+> dominio di produzione `https://turni.cescohomelab.com` (2026-09-07, primo accesso → referente):
+> passo 1 **fatto** su entrambi (accesso riuscito, `turni_session` presente); passo 3 **fatto** (un
 > `GoogleAccount` con `status = ok` e `refreshToken` nella forma `iv.ciphertext.authTag`, 182
 > caratteri, mai in chiaro); passi 8, 9 e 10 **fatti** da riga di comando: `code` finto con `state`
 > valido → `/login?error=google`, consenso negato → `/login?error=denied`, `state` manomesso →
