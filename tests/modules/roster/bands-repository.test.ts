@@ -3,6 +3,24 @@ import type { PrismaClient } from '@prisma/client'
 import { createTestDb } from '../../helpers/db'
 import type { ExtractedCell } from '@/modules/extract/schema'
 
+/**
+ * Il riporto delle conferme è vero (serve al test che lo misura) tranne quando
+ * `riportoRotto` è acceso: quel caso prova che uno stato terminale non viene
+ * scritto se il riporto lancia.
+ */
+let riportoRotto = false
+
+vi.mock('@/modules/roster/versions', async (importOriginal) => {
+  const originale = await importOriginal<typeof import('@/modules/roster/versions')>()
+  return {
+    ...originale,
+    carryOverAssignments: async (rosterId: string) => {
+      if (riportoRotto) throw new Error('riporto fallito')
+      return originale.carryOverAssignments(rosterId)
+    },
+  }
+})
+
 let db: ReturnType<typeof createTestDb>
 let prisma: PrismaClient
 let repo: typeof import('@/modules/roster/repository')
@@ -21,6 +39,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
+  riportoRotto = false
   await prisma.assignment.deleteMany()
   await prisma.columnAlias.deleteMany()
   await prisma.user.deleteMany()
@@ -310,6 +329,24 @@ describe('finishExtraction — lo stato finale dice la verità sulle bande', () 
     expect(stato).toBe('extracted')
     const conferma = await prisma.assignment.findFirstOrThrow({ where: { userId: utente.id } })
     expect(conferma.rosterId).toBe(v2.id)
+  })
+
+  it('se il riporto lancia, lo stato non diventa terminale: la tabella resta extracting e si ritenta', async () => {
+    // Scrivere `extracted` e poi riportare significa che un riporto fallito lascia la
+    // tabella «finita» senza conferme e nessuno che riprovi. Riportando **prima**
+    // l errore risale, la tabella resta `extracting`, `reclaimStaleExtractions` la
+    // porta a `interrupted` e il worker richiama `finishExtraction`.
+    const r = await tabella()
+    await repo.prepareExtraction(r.id, [{ index: 0, dayFrom: 1, dayTo: 31 }], ORA)
+    await repo.saveBandCells(r.id, 0, [cella(1, 'A', 'M')], { rawOutput: '{}', now: ORA })
+    riportoRotto = true
+
+    await expect(repo.finishExtraction(r.id, { provider: 'gemini', now: ORA })).rejects.toThrow(
+      'riporto fallito',
+    )
+
+    const row = await prisma.roster.findUniqueOrThrow({ where: { id: r.id } })
+    expect(row.status).toBe('extracting')
   })
 })
 

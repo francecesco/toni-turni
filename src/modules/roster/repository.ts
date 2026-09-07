@@ -406,6 +406,17 @@ export async function finishExtraction(
           ? 'failed'
           : 'partial'
 
+    // Fase 5: le conferme della versione precedente seguono questa, se la sua lettura
+    // è arrivata da qualche parte. Su `failed` non c è una foto nuova da cui
+    // ripartire, e le conferme restano dove sono.
+    //
+    // Il riporto viene **prima** dello stato terminale, e l ordine conta: se lancia,
+    // l errore risale con la tabella ancora `extracting`, `reclaimStaleExtractions` la
+    // porta a `interrupted` e il worker richiama questa funzione, che riprova il
+    // riporto. Scrivendo prima lo stato, una tabella «finita» senza conferme non
+    // avrebbe nessuno che riprovi.
+    if (status !== 'failed') await carryOverAssignments(rosterId)
+
     await prisma.roster.update({
       where: { id: rosterId },
       data: {
@@ -415,11 +426,6 @@ export async function finishExtraction(
         ...(meta.conflicts === undefined ? {} : { conflicts: meta.conflicts }),
       },
     })
-
-    // Fase 5: le conferme della versione precedente seguono questa, se la sua lettura
-    // è arrivata da qualche parte. Su `failed` non c è una foto nuova da cui
-    // ripartire, e le conferme restano dove sono.
-    if (status !== 'failed') await carryOverAssignments(rosterId)
 
     return status
   })
