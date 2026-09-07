@@ -170,12 +170,12 @@ export async function syncRoster(input: SyncRosterInput): Promise<SyncOutcome> {
       month: roster.month,
     })
 
-    // Nessuna assegnazione non vuol dire "svuota il mese": vuol dire che la
-    // conferma non è ancora passata da qui. Meglio fermarsi che cancellare.
-    if (shifts.length === 0) {
-      return failed('Nessun turno da sincronizzare per questa tabella')
-    }
-
+    // Nessuna assegnazione **non** è un motivo per fermarsi, ed era: dopo «Togli dal
+    // calendario» sull ultimo turno la persona non ha più assegnazioni, e un rifiuto
+    // qui lascerebbe l evento su Google senza nessuna via per sparire. Con `desired` e
+    // `protectedKeys` vuoti `planSync` cancella gli eventi **dell app** dentro il mese
+    // (`turno_rimosso`) e non tocca nient altro: la regola 2 vive nella shiftKey, non
+    // in questo conto.
     const codes = await listShiftCodes()
     const { desired, skipped, protectedKeys } = buildDesiredEvents({
       userId: input.targetUserId,

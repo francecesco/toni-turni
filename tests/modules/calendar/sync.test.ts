@@ -381,14 +381,36 @@ describe('syncRoster — quello che non si tocca', () => {
     expect(riga.eventId).toBeNull()
   })
 
-  it('senza nessuna assegnazione si rifiuta di sincronizzare, invece di svuotare il mese', async () => {
+  it('con zero assegnazioni cancella gli eventi rimasti dell app: è così che sparisce l ultimo turno tolto', async () => {
+    // Dopo «Togli dal calendario» sull ultimo turno la persona non ha più nessuna
+    // assegnazione: se il sync si rifiutasse di partire, l evento su Google non
+    // avrebbe più nessuna via per essere cancellato. Zero assegnazioni non vuol dire
+    // «non ho ancora confermato», vuol dire «non ho più niente qui»: `planSync`
+    // cancella solo gli eventi con la **nostra** shiftKey dentro il mese.
     const finto = calendarioFinto()
+    finto.aggiungiEvento('ev-rimasto', {
+      id: 'ev-rimasto',
+      extendedProperties: { private: { shiftKey: 'utente1:2026-08-01' } },
+    })
 
     const esito = await esegui(finto)
 
-    expect(esito.ok).toBe(false)
-    expect(esito.error).toMatch(/nessun turno/i)
-    expect(finto.calls).toEqual([])
+    expect(esito.ok).toBe(true)
+    expect(esito.deleted).toBe(1)
+    expect(finto.calls.some((c) => c.startsWith('delete:'))).toBe(true)
+    expect(finto.events.has('ev-rimasto')).toBe(false)
+  })
+
+  it('con zero assegnazioni non tocca comunque gli eventi che non sono dell app', async () => {
+    const finto = calendarioFinto()
+    finto.aggiungiPersonale('dentista', 'Dentista')
+
+    const esito = await esegui(finto)
+
+    expect(esito.ok).toBe(true)
+    expect(esito.deleted).toBe(0)
+    expect(esito.foreignEvents).toBe(1)
+    expect(finto.events.has('dentista')).toBe(true)
   })
 
   it('non sincronizza i turni di un altra utente su richiesta di un infermiera', async () => {
