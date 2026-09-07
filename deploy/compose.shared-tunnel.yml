@@ -1,0 +1,22 @@
+# Override per chi ha GIÀ un cloudflared sulla macchina (avviato con `docker run` sul bridge di
+# default) e vuole aggiungere toni-turni a quel tunnel invece di crearne un secondo.
+#
+# Cosa cambia rispetto a docker-compose.yml:
+#   - l'app pubblica la porta 3000 del container su 172.17.0.1:3010, cioè l'indirizzo del bridge
+#     `docker0` visto dall'host: raggiungibile dal cloudflared esistente (che sta su quel bridge) e
+#     dall'host stesso, NON dalla rete locale né da Internet;
+#   - il servizio `cloudflared` di questo progetto non parte (profilo mai attivato), quindi
+#     CLOUDFLARE_TUNNEL_TOKEN può restare vuoto nel .env.
+#
+# Uso:
+#   docker compose -f docker-compose.yml -f deploy/compose.shared-tunnel.yml up -d --build
+#
+# Poi, su Cloudflare Zero Trust, nel tunnel esistente: Public Hostname `turni.<dominio>` →
+# Service HTTP `172.17.0.1:3010`. Se la 3010 è occupata, cambia il primo numero qui e su Cloudflare.
+services:
+  app:
+    ports:
+      - '172.17.0.1:3010:3000'
+  cloudflared:
+    profiles:
+      - own-tunnel

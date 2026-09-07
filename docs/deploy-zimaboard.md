@@ -34,6 +34,22 @@ finale, senza porta). Gli scope sono quelli già configurati: `openid`, `email`,
    Docker e il tunnel raggiunge l'app per nome. Non serve aprire porte sul router né sulla Zima.
 4. Salva. Il tunnel risulterà *Inactive* finché il container non parte: è normale.
 
+### Variante: hai già un tunnel su questa macchina
+
+Se sulla Zima gira già un `cloudflared` per altri servizi (avviato con `docker run`, sul bridge di
+default, con i servizi che pubblicano una porta su `172.17.0.1`), non serve un secondo tunnel né un
+secondo token. Usa l'override `deploy/compose.shared-tunnel.yml`:
+
+```bash
+docker compose -f docker-compose.yml -f deploy/compose.shared-tunnel.yml up -d --build
+```
+
+L'app pubblica la porta **3010** sull'indirizzo del bridge (`172.17.0.1`, non raggiungibile dalla
+rete locale né da Internet) e il `cloudflared` di questo progetto non parte. Nel tunnel esistente
+aggiungi il public hostname `turni.tuodominio.it` → *Service* HTTP `172.17.0.1:3010`. In `.env`
+lascia `CLOUDFLARE_TUNNEL_TOKEN` vuoto. Da qui in avanti ogni `docker compose` va dato con gli stessi
+due `-f`, o l'override non viene letto.
+
 ## 2. I segreti
 
 Sulla Zima (o sul Mac, poi li incolli), genera le due chiavi:
