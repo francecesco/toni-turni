@@ -254,6 +254,55 @@ describe('carryOverAssignments — le conferme seguono la versione nuova', () =>
     expect(riga.rosterId).toBe(v3.id)
   })
 
+  it('riporta anche da una versione più vecchia della precedente: una colonna saltata non blocca per sempre', async () => {
+    // Sara viene saltata su v2 (lettura parziale, la sua colonna non c è) e ricompare su
+    // v3. Guardando solo la versione immediatamente precedente le sue conferme
+    // resterebbero su v1 per sempre, perché v2 non ha nessuna sua riga.
+    const v1 = await tabella(1)
+    const v2 = await tabella(2, { status: 'partial' })
+    const v3 = await tabella(3)
+    await cella(v1.id, 'CRISTINA', 1, 'M')
+    await cella(v1.id, 'SARA DP.', 1, 'P')
+    await cella(v2.id, 'CRISTINA', 1, 'M')
+    await cella(v3.id, 'CRISTINA', 1, 'M')
+    await cella(v3.id, 'SARA DP.', 1, 'P')
+    await assegnazione(v1.id, cristina.id, 1)
+    await assegnazione(v1.id, sara.id, 1, { code: 'P', columnLabel: 'SARA DP.' })
+
+    const suV2 = await versions.carryOverAssignments(v2.id)
+    expect(suV2.movedAssignments).toBe(1)
+    expect(suV2.skippedUsers).toEqual([sara.id])
+
+    const suV3 = await versions.carryOverAssignments(v3.id)
+
+    expect(suV3.movedAssignments).toBe(2)
+    expect(suV3.skippedUsers).toEqual([])
+    const diSara = await prisma.assignment.findFirstOrThrow({ where: { userId: sara.id } })
+    expect(diSara.rosterId).toBe(v3.id)
+    const diCristina = await prisma.assignment.findFirstOrThrow({ where: { userId: cristina.id } })
+    expect(diCristina.rosterId).toBe(v3.id)
+  })
+
+  it('con la stessa persona su più versioni vecchie e lo stesso giorno sposta quella della versione più alta', async () => {
+    const v1 = await tabella(1)
+    const v2 = await tabella(2)
+    const v3 = await tabella(3)
+    await cella(v1.id, 'CRISTINA', 1, 'M')
+    await cella(v2.id, 'CRISTINA', 1, 'M')
+    await cella(v3.id, 'CRISTINA', 1, 'M')
+    await assegnazione(v1.id, cristina.id, 1, { eventId: 'ev-vecchio' })
+    await assegnazione(v2.id, cristina.id, 1, { eventId: 'ev-recente' })
+
+    const esito = await versions.carryOverAssignments(v3.id)
+
+    expect(esito.movedAssignments).toBe(1)
+    const suV3 = await prisma.assignment.findFirstOrThrow({ where: { rosterId: v3.id } })
+    expect(suV3.eventId).toBe('ev-recente')
+    // Quella di v1 resta dove è: una riga sola per persona e giorno sull ultima versione.
+    expect(await prisma.assignment.count({ where: { rosterId: v1.id } })).toBe(1)
+    expect(await prisma.assignment.count({ where: { rosterId: v2.id } })).toBe(0)
+  })
+
   it('è idempotente anche con qualcosa da riportare: la seconda chiamata non duplica nulla', async () => {
     const v1 = await tabella(1)
     const v2 = await tabella(2)

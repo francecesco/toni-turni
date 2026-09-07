@@ -43,7 +43,13 @@ Due decisioni prese in sede di design e comunicate:
 `runExtractionJob`/il repository chiude la lettura. Una volta sola per versione: la funzione è
 idempotente (se non ci sono assegnazioni sulla N, non fa niente).
 
-**Cosa.** Per ogni utente con assegnazioni sulla versione N dello stesso `(year, month, ward)`:
+**Cosa.** Per ogni utente con assegnazioni su **una qualsiasi** delle versioni lette precedenti
+(`extracted` o `partial`, `version` minore, stesso `(year, month, ward)`) — non solo sulla N:
+una collega saltata da una lettura parziale ha le conferme due versioni indietro, e guardando solo
+la precedente ci resterebbero per sempre. Se la stessa persona ha una riga su più versioni vecchie
+per lo stesso giorno (non dovrebbe: le righe si spostano) vince quella della versione più alta e le
+altre restano dove sono. Le celle vecchie del riporto delle **correzioni a mano** restano quelle
+della versione immediatamente precedente letta (`previousVersionOf`):
 
 - se la versione N+1 contiene almeno una cella di una colonna a lui associata (`ColumnAlias` non
   ignorato, confronto con `normalizeColumn`), le sue assegnazioni passano alla N+1 con **tutti** i

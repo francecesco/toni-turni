@@ -40,6 +40,32 @@ export async function previousVersionOf(rosterId: string): Promise<RosterVersion
   })
 }
 
+/**
+ * Tutte le versioni **lette** precedenti a questa, dalla più recente alla più
+ * vecchia. Il riporto le guarda tutte, non solo l ultima: se una lettura parziale
+ * salta la colonna di Sara, la versione dopo trova le sue conferme dove sono
+ * rimaste — due versioni indietro — invece di lasciarle là per sempre.
+ */
+async function previousReadVersionsOf(rosterId: string): Promise<RosterVersionRef[]> {
+  const corrente = await prisma.roster.findUnique({
+    where: { id: rosterId },
+    select: { year: true, month: true, ward: true, version: true },
+  })
+  if (!corrente) return []
+
+  return prisma.roster.findMany({
+    where: {
+      year: corrente.year,
+      month: corrente.month,
+      ward: corrente.ward,
+      version: { lt: corrente.version },
+      status: { in: ['extracted', 'partial'] },
+    },
+    orderBy: { version: 'desc' },
+    select: { id: true, year: true, month: true, ward: true, version: true },
+  })
+}
+
 /** Le celle di una versione con i soli campi che il diff e il riporto usano. */
 export async function cellsForDiff(rosterId: string) {
   return prisma.rosterCell.findMany({
@@ -73,6 +99,13 @@ export interface CarryOverResult {
  * parziale) le sue assegnazioni restano dove sono e lei continua a vedere la
  * versione vecchia, che è l unica in cui la sua colonna esiste.
  *
+ * Le assegnazioni da riportare si cercano su **tutte** le versioni lette
+ * precedenti, non solo sull ultima: una collega saltata da una lettura parziale ha
+ * le conferme due versioni indietro, e guardando solo la precedente ci
+ * resterebbero per sempre. Se la stessa persona ha una riga su più versioni vecchie
+ * per lo stesso giorno — non dovrebbe, le righe si spostano sempre — vince quella
+ * della versione più alta, che è la più recente.
+ *
  * Le correzioni a mano si riportano alla cella omologa solo se il modello ha letto
  * la stessa cosa di prima: se il grezzo è cambiato è cambiato il foglio, e il
  * giudizio vecchio non vale più. Si vedrà nel diff.
@@ -89,10 +122,16 @@ export interface CarryOverResult {
  */
 export async function carryOverAssignments(newRosterId: string): Promise<CarryOverResult> {
   const nessuno: CarryOverResult = { movedAssignments: 0, carriedCorrections: 0, skippedUsers: [] }
-  const precedente = await previousVersionOf(newRosterId)
+  const precedenti = await previousReadVersionsOf(newRosterId)
+  // La più recente delle versioni lette: è la base del riporto delle correzioni a
+  // mano (lo stesso valore che `previousVersionOf` restituisce).
+  const precedente = precedenti[0]
   if (!precedente) return nessuno
 
-  const vecchie = await prisma.assignment.findMany({ where: { rosterId: precedente.id } })
+  const versionePerRoster = new Map(precedenti.map((p) => [p.id, p.version]))
+  const vecchie = (
+    await prisma.assignment.findMany({ where: { rosterId: { in: precedenti.map((p) => p.id) } } })
+  ).sort((a, b) => (versionePerRoster.get(b.rosterId) ?? 0) - (versionePerRoster.get(a.rosterId) ?? 0))
   const [celleNuove, celleVecchie] = await Promise.all([cellsForDiff(newRosterId), cellsForDiff(precedente.id)])
   if (vecchie.length === 0 && celleVecchie.every((c) => c.correctedAt === null)) return nessuno
 
@@ -117,6 +156,10 @@ export async function carryOverAssignments(newRosterId: string): Promise<CarryOv
 
   const daSpostare: string[] = []
   const skipped = new Set<string>()
+  // `vecchie` è ordinata dalla versione più alta alla più bassa: la prima riga che si
+  // incontra per una coppia (persona, giorno) è la più recente, e le altre restano
+  // dove sono. Spostarle tutte violerebbe l unicità `(userId, rosterId, day)`.
+  const gia = new Set(giaSullaNuova)
   for (const a of vecchie) {
     const colonne = colonnePerUtente.get(a.userId)
     const haColonna = colonne !== undefined && [...colonne].some((c) => colonneNuove.has(c))
@@ -124,7 +167,9 @@ export async function carryOverAssignments(newRosterId: string): Promise<CarryOv
       skipped.add(a.userId)
       continue
     }
-    if (giaSullaNuova.has(`${a.userId}:${a.day}`)) continue
+    const chiave = `${a.userId}:${a.day}`
+    if (gia.has(chiave)) continue
+    gia.add(chiave)
     daSpostare.push(a.id)
   }
 
