@@ -9,7 +9,12 @@ import { requireReferente } from '@/modules/auth'
 import { compactCode } from '@/modules/codes'
 import { normalizeColumn } from '@/modules/extract'
 import { cellsForDiff, previousVersionOf } from '@/modules/roster'
-import { diffVersions, listColumnAliases, type VersionChange } from '@/modules/review'
+import {
+  diffVersions,
+  filterChangesByCoverage,
+  listColumnAliases,
+  type VersionChange,
+} from '@/modules/review'
 import { describeChange } from '../review/changes-box'
 
 export const dynamic = 'force-dynamic'
@@ -67,10 +72,14 @@ export default async function DiffPage({ params }: { params: Promise<{ id: strin
   // Lettura parziale (banda non letta): un giorno mancante può non essere stato
   // letto, non è detto che il foglio non abbia più il turno. Dichiararlo «tolto»
   // insegnerebbe a fidarsi di un allarme falso (vedi I2 nel rapporto della revisione).
+  // Lo stesso vale al contrario: se era la lettura **precedente** a essere parziale,
+  // un turno che compare solo ora può esserci sempre stato.
   const lettoPerIntero = roster.status === 'extracted'
-  const cambiamenti = diffVersions(cellePrecedenti, celleNuove).filter(
-    (c) => lettoPerIntero || c.kind !== 'removed',
-  )
+  const precedenteLettaPerIntero = precedente.status === 'extracted'
+  const cambiamenti = filterChangesByCoverage(diffVersions(cellePrecedenti, celleNuove), {
+    previousFullyRead: precedenteLettaPerIntero,
+    currentFullyRead: lettoPerIntero,
+  })
 
   // «Ha già riconfermato»: la persona della colonna ha un assegnazione confermata
   // per quel giorno con il codice nuovo. La chiave è `normalizeColumn`, non
@@ -104,10 +113,22 @@ export default async function DiffPage({ params }: { params: Promise<{ id: strin
           Confronto con la versione {precedente.version}. Le colonne di servizio e i totali non
           compaiono.
         </p>
-        {!lettoPerIntero && (
+        {(!lettoPerIntero || !precedenteLettaPerIntero) && (
           <Banner variant="warn">
-            Lettura parziale: alcune parti della foto non sono state lette. I turni che non
-            compaiono non sono elencati come tolti, perché potrebbero non essere stati letti.
+            {!lettoPerIntero && (
+              <p>
+                Lettura parziale di questa versione: alcune parti della foto non sono state lette.
+                I turni che non compaiono non sono elencati come tolti, perché potrebbero non
+                essere stati letti.
+              </p>
+            )}
+            {!precedenteLettaPerIntero && (
+              <p>
+                Lettura parziale della versione {precedente.version}: alcune parti di quella foto
+                non erano state lette. I turni che compaiono solo qui non sono elencati come
+                nuovi, perché potrebbero esserci sempre stati.
+              </p>
+            )}
           </Banner>
         )}
         {cambiamenti.length === 0 ? (

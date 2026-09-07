@@ -374,3 +374,37 @@ describe('una lettura parziale non dichiara un turno "tolto dal foglio"', () => 
     expect(box?.props.changes.some((c) => c.kind === 'removed')).toBe(false)
   })
 })
+
+describe('una versione precedente parziale non rende «nuovo» ciò che non aveva letto', () => {
+  let v2: string
+
+  beforeEach(async () => {
+    await prisma.columnAlias.create({ data: { label: 'CRISTINA', userId: infermiera.id, ignored: false } })
+    // v1 (rosterId) letta a metà: il giorno 6 non c è, ma può non essere stato letto.
+    await prisma.roster.update({ where: { id: rosterId }, data: { status: 'partial' } })
+    await prisma.rosterCell.create({
+      data: { rosterId, day: 5, columnLabel: 'CRISTINA', rawCode: 'M', code: 'M', confidence: 0.9 },
+    })
+    const nuova = await prisma.roster.create({
+      data: { year: 2026, month: 8, ward: '3°PIANO', version: 2, imagePath: 'v2.jpg', status: 'extracted' },
+    })
+    v2 = nuova.id
+    await prisma.rosterCell.createMany({
+      data: [
+        { rosterId: v2, day: 5, columnLabel: 'CRISTINA', rawCode: 'M', code: 'M', confidence: 0.9 },
+        { rosterId: v2, day: 6, columnLabel: 'CRISTINA', rawCode: 'P', code: 'P', confidence: 0.9 },
+      ],
+    })
+  })
+
+  it('il riquadro dei cambiamenti non riceve i "nuovi" quando la precedente è letta a metà', async () => {
+    await session.openSessionCookie(infermiera.id)
+    const pagina = await ReviewPage({
+      params: Promise.resolve({ id: v2 }),
+      searchParams: Promise.resolve({ colonna: 'CRISTINA' }),
+    })
+    const box = trovaElemento<{ changes: { kind: string }[]; children?: ReactNode }>(pagina, ChangesBox)
+    expect(box).toBeDefined()
+    expect(box?.props.changes.some((c) => c.kind === 'added')).toBe(false)
+  })
+})

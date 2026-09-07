@@ -80,3 +80,26 @@ export function diffVersions(previous: DiffCell[], next: DiffCell[]): VersionCha
 
   return changes.sort((a, b) => a.columnKey.localeCompare(b.columnKey) || a.day - b.day)
 }
+
+/**
+ * Un diff sa solo quello che le due letture hanno visto, e su una lettura parziale
+ * metà dei suoi verdetti sono indovinati:
+ *
+ * - se la **corrente** non è letta per intero, un `removed` può essere un giorno non
+ *   letto invece di un turno tolto dal foglio;
+ * - se la **precedente** non era letta per intero, un `added` può essere un turno che
+ *   c era già ed era solo sfuggito a quella lettura.
+ *
+ * Si toglie il verdetto, non il cambiamento: un `changed` è stato visto due volte e
+ * resta. Un avviso che grida al lupo su ogni tabella insegna a ignorarlo.
+ */
+export function filterChangesByCoverage(
+  changes: VersionChange[],
+  coverage: { previousFullyRead: boolean; currentFullyRead: boolean },
+): VersionChange[] {
+  return changes.filter((c) => {
+    if (c.kind === 'removed') return coverage.currentFullyRead
+    if (c.kind === 'added') return coverage.previousFullyRead
+    return true
+  })
+}

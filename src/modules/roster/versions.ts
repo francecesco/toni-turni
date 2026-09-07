@@ -12,6 +12,11 @@ export interface RosterVersionRef {
   month: number
   ward: string
   version: number
+  /**
+   * `extracted` o `partial`: serve al diff per sapere se un `added` è davvero nuovo
+   * o solo un turno che quella lettura non aveva visto.
+   */
+  status: string
 }
 
 /**
@@ -36,7 +41,7 @@ export async function previousVersionOf(rosterId: string): Promise<RosterVersion
       status: { in: ['extracted', 'partial'] },
     },
     orderBy: { version: 'desc' },
-    select: { id: true, year: true, month: true, ward: true, version: true },
+    select: { id: true, year: true, month: true, ward: true, version: true, status: true },
   })
 }
 
@@ -62,7 +67,7 @@ async function previousReadVersionsOf(rosterId: string): Promise<RosterVersionRe
       status: { in: ['extracted', 'partial'] },
     },
     orderBy: { version: 'desc' },
-    select: { id: true, year: true, month: true, ward: true, version: true },
+    select: { id: true, year: true, month: true, ward: true, version: true, status: true },
   })
 }
 

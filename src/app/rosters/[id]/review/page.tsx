@@ -18,6 +18,7 @@ import {
   defaultColumn,
   describeUnreadBands,
   diffVersions,
+  filterChangesByCoverage,
   gridSummary,
   listColumnAliases,
   rosterColumnLabels,
@@ -123,18 +124,20 @@ export default async function ReviewPage({
 
   // Fase 5: il diff con la versione precedente, calcolato al volo. Sulla prima
   // versione è vuoto e il riquadro non si disegna.
+  // Lettura parziale (banda non letta): un giorno mancante non è per forza «tolto
+  // dal foglio», può essere un giorno non ancora letto — e un giorno che compare
+  // solo ora non è per forza «nuovo», se era la lettura **precedente** a essere
+  // parziale. La copertura per banda è rinviata alla Fase 6; qui la versione minima
+  // onesta è tutto-o-niente su `status`.
+  const sheetFullyRead = roster.status === 'extracted'
   const precedente = await previousVersionOf(id)
   const cambiamenti = precedente
-    ? diffVersions(await cellsForDiff(precedente.id), celle)
+    ? filterChangesByCoverage(diffVersions(await cellsForDiff(precedente.id), celle), {
+        previousFullyRead: precedente.status === 'extracted',
+        currentFullyRead: sheetFullyRead,
+      })
     : []
-  // Lettura parziale (banda non letta): un giorno mancante non è per forza «tolto
-  // dal foglio», può essere un giorno non ancora letto. La copertura per banda è
-  // rinviata alla Fase 6; qui la versione minima onesta è tutto-o-niente su
-  // `roster.status`.
-  const sheetFullyRead = roster.status === 'extracted'
-  const cambiamentiDellaColonna = cambiamenti
-    .filter((c) => c.columnKey === normalizeColumn(scelta))
-    .filter((c) => sheetFullyRead || c.kind !== 'removed')
+  const cambiamentiDellaColonna = cambiamenti.filter((c) => c.columnKey === normalizeColumn(scelta))
 
   const righe = buildColumnGrid({
     year: roster.year,

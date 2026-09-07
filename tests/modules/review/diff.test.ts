@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { diffVersions, effectiveCode, type DiffCell } from '@/modules/review/diff'
+import {
+  diffVersions,
+  effectiveCode,
+  filterChangesByCoverage,
+  type DiffCell,
+  type VersionChange,
+} from '@/modules/review/diff'
 
 function cella(day: number, columnLabel: string, code: string | null, over: Partial<DiffCell> = {}): DiffCell {
   return { day, columnLabel, rawCode: code ?? '', code, ...over }
@@ -119,5 +125,34 @@ describe('diffVersions — cosa è cambiato fra due foto dello stesso mese', () 
       'MERY:4',
       'MERY:9',
     ])
+  })
+})
+
+describe('filterChangesByCoverage — una lettura parziale non dichiara più di quello che sa', () => {
+  const cambiato: VersionChange = { columnLabel: 'MERY', columnKey: 'MERY', day: 5, kind: 'changed', before: 'M', after: 'P' }
+  const nuovo: VersionChange = { columnLabel: 'MERY', columnKey: 'MERY', day: 6, kind: 'added', before: null, after: 'M' }
+  const tolto: VersionChange = { columnLabel: 'MERY', columnKey: 'MERY', day: 7, kind: 'removed', before: 'M', after: null }
+  const tutti = [cambiato, nuovo, tolto]
+
+  it('con entrambe le letture complete non toglie niente', () => {
+    expect(filterChangesByCoverage(tutti, { previousFullyRead: true, currentFullyRead: true })).toEqual(tutti)
+  })
+
+  it('se la corrente è parziale toglie i «tolti»: quel giorno può essere solo non letto', () => {
+    expect(filterChangesByCoverage(tutti, { previousFullyRead: true, currentFullyRead: false })).toEqual([
+      cambiato,
+      nuovo,
+    ])
+  })
+
+  it('se la precedente è parziale toglie i «nuovi»: quel turno poteva esserci già', () => {
+    expect(filterChangesByCoverage(tutti, { previousFullyRead: false, currentFullyRead: true })).toEqual([
+      cambiato,
+      tolto,
+    ])
+  })
+
+  it('con entrambe parziali resta solo quello che si è visto due volte', () => {
+    expect(filterChangesByCoverage(tutti, { previousFullyRead: false, currentFullyRead: false })).toEqual([cambiato])
   })
 })
