@@ -94,6 +94,15 @@ export default async function DiffPage({ params }: { params: Promise<{ id: strin
     return assegnazioni.some((a) => a.userId === userId && a.day === c.day && compactCode(a.code) === compactCode(c.after ?? ''))
   }
 
+  // Su un turno **tolto** non c è niente da riconfermare: il codice nuovo non esiste.
+  // Quello che può restare da fare è togliere la conferma — e con essa l evento sul
+  // calendario — e lo può fare solo la persona della colonna, dalla sua griglia.
+  const confermaAncoraLa = (c: VersionChange): boolean => {
+    const userId = utentePerColonna.get(c.columnKey)
+    if (!userId) return false
+    return assegnazioni.some((a) => a.userId === userId && a.day === c.day)
+  }
+
   // Raggruppare per `columnLabel` letterale spaccherebbe in due card la stessa
   // persona quando l etichetta cambia fra le due versioni (`SARA DP.` → `SARA DP`):
   // il raggruppamento vero è per `columnKey`, e la card mostra l etichetta della
@@ -150,7 +159,13 @@ export default async function DiffPage({ params }: { params: Promise<{ id: strin
                   {changes.map((c) => (
                     <li key={`${c.columnKey}:${c.day}`} className="flex items-center justify-between gap-2 text-sm tabular">
                       <span>{describeChange(c)}</span>
-                      {confermaPer(c) ? (
+                      {c.kind === 'removed' ? (
+                        confermaAncoraLa(c) ? (
+                          <Badge variant="outline">da togliere</Badge>
+                        ) : (
+                          <Badge variant="secondary">tolto</Badge>
+                        )
+                      ) : confermaPer(c) ? (
                         <Badge variant="default">riconfermato</Badge>
                       ) : (
                         <Badge variant="outline">da riconfermare</Badge>

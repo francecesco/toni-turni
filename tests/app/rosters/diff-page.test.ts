@@ -27,6 +27,7 @@ let prisma: PrismaClient
 let session: typeof import('@/modules/auth/session')
 let DiffPage: typeof import('@/app/rosters/[id]/diff/page').default
 let EmptyState: typeof import('@/components/empty-state').EmptyState
+let Badge: typeof import('@/components/ui/badge').Badge
 
 let referente: { id: string }
 let infermiera: { id: string }
@@ -41,6 +42,7 @@ beforeAll(async () => {
   session = await import('@/modules/auth/session')
   DiffPage = (await import('@/app/rosters/[id]/diff/page')).default
   EmptyState = (await import('@/components/empty-state')).EmptyState
+  Badge = (await import('@/components/ui/badge')).Badge
 })
 
 afterAll(() => db.cleanup())
@@ -67,6 +69,15 @@ function trovaElemento<P extends { children?: ReactNode }>(node: ReactNode, tipo
   const elemento = node as ReactElement<P>
   if (elemento.type === tipo) return elemento
   return trovaElemento<P>(elemento.props?.children, tipo)
+}
+
+/** Tutti gli elementi di un tipo, nell ordine in cui compaiono nell albero. */
+function trovaTutti<P extends { children?: ReactNode }>(node: ReactNode, tipo: unknown): ReactElement<P>[] {
+  if (node === null || node === undefined || typeof node !== 'object') return []
+  if (Array.isArray(node)) return node.flatMap((figlio) => trovaTutti<P>(figlio, tipo))
+  const elemento = node as ReactElement<P>
+  const qui = elemento.type === tipo ? [elemento] : []
+  return [...qui, ...trovaTutti<P>(elemento.props?.children, tipo)]
 }
 
 /** Tutto il testo letterale dell albero, per cercare frasi senza rendere i componenti. */
@@ -146,7 +157,6 @@ describe('/rosters/[id]/diff — cosa mostra', () => {
     expect(t).toContain('5 (M → P)')
     expect(t).toContain('MERY')
     expect(t).toContain('9 nuovo (M)')
-    expect(t).toMatch(/riconfermato/i)
   })
 
   it('due colonne con lo stesso nome normalizzato finiscono in una sola card', async () => {
@@ -182,5 +192,63 @@ describe('/rosters/[id]/diff — cosa mostra', () => {
     const t = testo(await render(v2.id, referente.id))
     expect(t).not.toMatch(/tolto/i)
     expect(t).toContain('Lettura parziale')
+  })
+})
+
+describe('/rosters/[id]/diff — il badge di un cambiamento, uno per volta', () => {
+  /**
+   * Un cambiamento solo per render, così il badge che si guarda è senza dubbio il suo:
+   * con più cambiamenti «c è scritto riconfermato da qualche parte» non dice su quale
+   * giorno. L ultimo badge dell albero è quello della riga (il primo è il conto dei
+   * giorni sulla card).
+   */
+  async function badgeDelCambiamento(id: string): Promise<string> {
+    const pagina = await render(id, referente.id)
+    const badges = trovaTutti<{ children?: ReactNode }>(pagina, Badge)
+    expect(badges.length).toBeGreaterThan(1)
+    return testo(badges[badges.length - 1].props.children).trim()
+  }
+
+  async function alias(userId: string, label = 'CRISTINA') {
+    await prisma.columnAlias.deleteMany()
+    await prisma.columnAlias.create({ data: { label, userId, ignored: false } })
+  }
+
+  it('un giorno cambiato e già riconfermato porta «riconfermato»', async () => {
+    await versione(1, [{ day: 5, column: 'CRISTINA', code: 'M' }])
+    const v2 = await versione(2, [{ day: 5, column: 'CRISTINA', code: 'P' }])
+    await prisma.assignment.create({
+      data: { rosterId: v2.id, userId: infermiera.id, day: 5, code: 'P', columnLabel: 'CRISTINA', confirmedAt: new Date(), syncState: 'confirmed' },
+    })
+    await alias(infermiera.id)
+
+    expect(await badgeDelCambiamento(v2.id)).toBe('riconfermato')
+  })
+
+  it('un giorno tolto con la conferma ancora là dice «da togliere», non «da riconfermare»', async () => {
+    // Non c è niente da riconfermare: il turno non c è più. Quello che resta da fare è
+    // togliere la conferma (e con essa l evento sul calendario).
+    await versione(1, [
+      { day: 20, column: 'CRISTINA', code: 'M' },
+      { day: 21, column: 'CRISTINA', code: 'M' },
+    ])
+    const v2 = await versione(2, [{ day: 21, column: 'CRISTINA', code: 'M' }])
+    await prisma.assignment.create({
+      data: { rosterId: v2.id, userId: infermiera.id, day: 20, code: 'M', columnLabel: 'CRISTINA', confirmedAt: new Date(), syncState: 'synced' },
+    })
+    await alias(infermiera.id)
+
+    expect(await badgeDelCambiamento(v2.id)).toBe('da togliere')
+  })
+
+  it('un giorno tolto e già senza conferma dice «tolto»: non resta niente da fare', async () => {
+    await versione(1, [
+      { day: 20, column: 'CRISTINA', code: 'M' },
+      { day: 21, column: 'CRISTINA', code: 'M' },
+    ])
+    const v2 = await versione(2, [{ day: 21, column: 'CRISTINA', code: 'M' }])
+    await alias(infermiera.id)
+
+    expect(await badgeDelCambiamento(v2.id)).toBe('tolto')
   })
 })
