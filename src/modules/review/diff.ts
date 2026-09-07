@@ -1,6 +1,5 @@
 import { compactCode } from '@/modules/codes/normalize'
-import { isColonnaDiServizio } from '@/modules/extract/band-schema'
-import { normalizeColumn } from '@/modules/extract/schema'
+import { isColonnaDiServizio, normalizeColumn } from '@/modules/extract'
 
 /**
  * Il diff fra due versioni della stessa tabella, calcolato **al volo** dalle celle:

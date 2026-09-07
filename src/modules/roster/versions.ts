@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db'
-import { normalizeColumn } from '@/modules/extract/schema'
+import { normalizeColumn } from '@/modules/extract'
 
 /**
  * Le versioni della stessa tabella: stesso `(year, month, ward)`, `version` crescente.
