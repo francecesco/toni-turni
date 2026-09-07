@@ -307,3 +307,73 @@ describe('quando il calendario collegato non esiste piu', () => {
     expect(riga.calendarId).toBe('sparito')
   })
 })
+
+describe('removeAssignmentAction — «Togli dal calendario» toglie anche dal calendario', () => {
+  function moduloGiorno(day: unknown, columnLabel = 'CRISTINA'): FormData {
+    const form = new FormData()
+    form.set('rosterId', rosterId)
+    form.set('columnLabel', columnLabel)
+    if (day !== undefined) form.set('day', String(day))
+    return form
+  }
+
+  async function conferma(day: number, userId: string) {
+    await prisma.assignment.create({
+      data: {
+        rosterId,
+        userId,
+        day,
+        code: 'M',
+        columnLabel: 'CRISTINA',
+        confirmedAt: new Date('2026-08-01T08:00:00Z'),
+        eventId: `ev-${day}`,
+        syncState: 'synced',
+      },
+    })
+  }
+
+  it('cancellata l assegnazione lancia subito il sync della persona: l evento non ha altra via per sparire', async () => {
+    await conferma(20, cristina.id)
+    esitoFinto = esitoRiuscito({ deleted: 1 })
+    await session.openSessionCookie(cristina.id)
+
+    const url = await redirectDi(reviewActions.removeAssignmentAction(moduloGiorno(20)))
+
+    // Il gesto si chiama «Togli dal calendario»: la scrittura su Google è esplicita
+    // (regola invariante 1), e senza questo sync l evento resterebbe là per sempre.
+    expect(chiamate).toHaveLength(1)
+    expect(chiamate[0]).toMatchObject({ targetUserId: cristina.id, rosterId })
+    expect(url.searchParams.get('ok')).toMatch(/Giorno 20 tolto/)
+    expect(url.searchParams.get('sync')).toMatch(/cancellati 1/)
+    expect(await prisma.assignment.count({ where: { userId: cristina.id } })).toBe(0)
+  })
+
+  it('porta reauth e calendarMissing come il bottone di invio', async () => {
+    await conferma(20, cristina.id)
+    esitoFinto = esitoRiuscito({ ok: false, calendarId: '', needsReauth: true, calendarMissing: true, error: 'consenso' })
+    await session.openSessionCookie(cristina.id)
+
+    const url = await redirectDi(reviewActions.removeAssignmentAction(moduloGiorno(20)))
+
+    expect(url.searchParams.get('reauth')).toBe('1')
+    expect(url.searchParams.get('calendarMissing')).toBe('1')
+  })
+
+  it('su un giorno senza niente da togliere non chiama il sync e lo dice', async () => {
+    await session.openSessionCookie(cristina.id)
+
+    const url = await redirectDi(reviewActions.removeAssignmentAction(moduloGiorno(21)))
+
+    expect(chiamate).toEqual([])
+    expect(url.searchParams.get('error')).toMatch(/Niente da togliere per il giorno 21/)
+  })
+
+  it('senza il giorno è una richiesta incompleta: "" non vale come giorno', async () => {
+    await session.openSessionCookie(cristina.id)
+
+    const url = await redirectDi(reviewActions.removeAssignmentAction(moduloGiorno('')))
+
+    expect(chiamate).toEqual([])
+    expect(url.searchParams.get('error')).toMatch(/incompleta/i)
+  })
+})

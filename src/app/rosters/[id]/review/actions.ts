@@ -114,31 +114,58 @@ export async function confirmColumnAction(form: FormData): Promise<void> {
 
 /**
  * «Togli dal calendario»: il foglio nuovo non ha più questo turno, ma l assegnazione
- * e l evento su Google ci sono ancora. Cancella l assegnazione; l evento lo toglie il
- * prossimo sync. Stessa barriera della conferma: solo chi possiede la colonna.
+ * e l evento su Google ci sono ancora. Cancella l assegnazione e **subito dopo**
+ * sincronizza, così l evento sparisce davvero.
+ *
+ * La scrittura su Google qui non contraddice la regola invariante 1: il gesto si
+ * chiama «Togli dal calendario» ed è la persona a premerlo. Senza questo sync
+ * l evento dell ultimo turno tolto non avrebbe **nessuna** via per sparire — la
+ * griglia nasconde il bottone di invio quando non resta niente da confermare.
+ *
+ * Stessa barriera della conferma e del sync: solo chi possiede la colonna.
  */
 export async function removeAssignmentAction(form: FormData): Promise<void> {
   const user = await requireUser()
   const rosterId = text(form, 'rosterId')
   const columnLabel = text(form, 'columnLabel')
+  // `Number('')` è 0, che è un intero: senza il minimo a 1 un campo vuoto passerebbe
+  // per un giorno valido.
   const day = Number(text(form, 'day'))
 
-  if (rosterId === '' || columnLabel === '' || !Number.isInteger(day)) {
+  if (rosterId === '' || columnLabel === '' || !Number.isInteger(day) || day < 1) {
     tornaCon(rosterId, columnLabel, { error: 'Richiesta incompleta' })
   }
 
+  let targetUserId: string
+  let removed: number
   try {
-    await removeAssignment(user, { rosterId, columnLabel, day })
-    revalidatePath(`/rosters/${rosterId}/review`)
-    tornaCon(rosterId, columnLabel, {
-      ok: `Giorno ${day} tolto: al prossimo invio l evento sparisce dal calendario.`,
-    })
+    targetUserId = await requireOwnColumn(user, columnLabel, 'toglierne un turno dal calendario')
+    removed = (await removeAssignment(user, { rosterId, columnLabel, day })).removed
   } catch (errore) {
     if (errore instanceof ReviewForbiddenError) {
       tornaCon(rosterId, columnLabel, { error: errore.message })
     }
     throw errore
   }
+
+  revalidatePath(`/rosters/${rosterId}/review`)
+
+  // Niente cancellato, niente da sincronizzare: la pagina che l utente ha davanti è
+  // vecchia, e un sync a vuoto non gli spiegherebbe perché.
+  if (removed === 0) {
+    tornaCon(rosterId, columnLabel, {
+      error: `Niente da togliere per il giorno ${day}: ricarica la pagina`,
+    })
+  }
+
+  const esito = await syncRoster({ actor: user, targetUserId, rosterId })
+  revalidatePath(`/rosters/${rosterId}/review`)
+  tornaCon(rosterId, columnLabel, {
+    ok: `Giorno ${day} tolto`,
+    sync: describeOutcome(esito),
+    reauth: esito.needsReauth === true,
+    calendarMissing: esito.calendarMissing === true,
+  })
 }
 
 /**
