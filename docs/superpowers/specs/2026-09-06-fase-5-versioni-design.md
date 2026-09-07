@@ -85,8 +85,15 @@ Confronto sul **codice effettivo** (`correctedAt !== null ? correctedCode : code
 | `removed` | `M` | vuoto / cella assente |
 
 Una cella con `correctedCode` null **e** `correctedAt` valorizzato è «il foglio qui è vuoto», quindi
-vuota. Celle uguali non compaiono. Le colonne di servizio (`isColonnaDiServizio`) non compaiono.
+vuota. Senza correzione, se il codice non è in legenda (`code` null) vale il **grezzo**: `M h13` è un
+turno letto e da rileggere, non una casella vuota, e confonderli lo farebbe comparire come «tolto».
+Celle uguali non compaiono. Le colonne di servizio (`isColonnaDiServizio`) non compaiono.
 Il diff si calcola **al volo** leggendo le due versioni dal database: nessuna tabella nuova.
+
+`filterChangesByCoverage` toglie i verdetti che una lettura parziale non può dare: i `removed` se la
+versione **corrente** non è `extracted` (il giorno può essere solo non letto) e gli `added` se la
+**precedente** non lo era (il turno poteva esserci già). Un `changed` è stato visto due volte e resta.
+Per questo `previousVersionOf` restituisce anche lo `status`.
 
 `previousVersionOf(roster)` restituisce la versione precedente **letta** (`extracted` o `partial`)
 dello stesso `(year, month, ward)`: una versione caricata e mai letta, fallita o interrotta non ha
@@ -103,12 +110,18 @@ Nella griglia della propria colonna, sulla versione N+1:
 - **Turno cambiato e confermato** (decisione 2): la riga mostra, come oggi, che va riconfermata; in
   più, se `syncState === 'synced'`, la frase «sul calendario c'è ancora M». Il bottone «Confermo»
   conferma il valore nuovo; il sync successivo aggiorna l'evento.
-- **Turno tolto** (decisione 6): la riga è vuota ma porta un'assegnazione. Mostra «il foglio nuovo
-  non ha più questo turno» e, se c'è un evento, «sul calendario c'è ancora M». Bottone «Togli dal
-  calendario» → `removeAssignmentAction` → `removeAssignment` cancella l'assegnazione (stessa
-  barriera di conferma e sync: solo chi possiede la colonna). Il sync successivo cancella l'evento,
-  perché una giornata senza assegnazione non protegge la chiave (comportamento già esistente e già
-  provato in `planSync`).
+- **Turno tolto** (decisione 6): la riga è vuota ma porta un'assegnazione **confermata** (una bozza
+  no: il sync non l'ha mai scritta). Mostra «il foglio nuovo non ha più questo turno» — e lo dice
+  così solo se la foto è letta per intero **e** il diff dichiara quel giorno `removed`, altrimenti
+  «il turno confermato non risulta più letto: resta com'è» — e, se c'è un evento, «sul calendario
+  c'è ancora M». Bottone «Togli dal calendario» → `removeAssignmentAction` → `removeAssignment`
+  cancella l'assegnazione (stessa barriera di conferma e sync: solo chi possiede la colonna) e
+  **subito dopo** `syncRoster`, che cancella l'evento: una giornata senza assegnazione non protegge
+  la chiave (già provato in `planSync`). Il sync parte da qui e non «al prossimo invio» perché sul
+  turno tolto per ultimo non resta niente da confermare, quindi il bottone di invio non c'è; ed è
+  per questo che un sync con **zero** assegnazioni è lecito invece di essere rifiutato. La scrittura
+  su Google è esplicita: il gesto si chiama «Togli dal calendario» (regola invariante 1). Se
+  l'evento non era mai stato mandato (`!synced`) il bottone si chiama «Togli il turno».
 
 Il riquadro e i badge sono derivati: nessun campo nuovo sulle celle.
 
@@ -118,7 +131,10 @@ Pagina `/rosters/[id]/diff`, solo `REFERENTE` (controllo lato server con redirec
 `/settings/codes`), raggiungibile dal menu ⋯ della griglia con la voce «Cosa è cambiato» **solo**
 quando `roster.version > 1`. Contenuto: per ogni colonna di persona, i cambiamenti per giorno con
 prima → dopo, e per ognuno se la persona ha già riconfermato il valore nuovo (`Assignment.code`
-uguale al codice effettivo nuovo e `confirmedAt` valorizzato). Con diff vuoto: «Nessuna differenza
+uguale al codice effettivo nuovo e `confirmedAt` valorizzato). Su un `removed` non c'è niente da
+riconfermare: il badge dice «da togliere» se la conferma di quella persona per quel giorno è ancora
+sulla versione corrente, «tolto» se non c'è più. Il banner della lettura parziale dice **quale** delle
+due letture è incompleta. Con diff vuoto: «Nessuna differenza
 rispetto alla foto precedente». Sulla prima versione la pagina dice che non c'è una versione
 precedente.
 

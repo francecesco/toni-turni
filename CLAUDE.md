@@ -242,8 +242,7 @@ deploy/            # zimaboard.env.example: il .env di produzione da compilare s
 docs/deploy-zimaboard.md   # installazione passo passo: tunnel Cloudflare, segreti, verifiche, backup
 ```
 
-Tutti i moduli previsti dal design esistono. Quello che manca non è un modulo: è il bottone che
-lancia il sync (Fase 4 dall'interfaccia) e il diff fra versioni (Fase 5).
+Tutti i moduli e le fasi 1-5 sono implementati; resta la rifinitura UI (Fase 6).
 
 **Confini dei moduli:** ogni modulo espone la sua interfaccia pubblica in `index.ts`. Non importare
 file interni di un altro modulo. Se serve, allarga l'`index.ts` — non aggirarlo. L'eccezione, la
@@ -425,7 +424,13 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
   restano sulla N e lei continua a vedere la N — non è un bug, è la sola versione in cui esiste.
 - **Un turno tolto dal foglio nuovo non sparisce dal calendario da solo.** La riga resta con
   l'assegnazione «orfana» e il bottone «Togli dal calendario» (`removeAssignment`); solo dopo quel gesto
-  il sync cancella l'evento, perché una giornata senza assegnazione non protegge la chiave. Un turno
+  il sync cancella l'evento, perché una giornata senza assegnazione non protegge la chiave. Quel bottone
+  **lancia subito il sync** della persona (`removeAssignmentAction` → `syncRoster`): è una scrittura su
+  Google, ma innescata da un gesto che si chiama «Togli dal calendario», quindi la regola invariante 1
+  è rispettata. Per questo un sync con **zero assegnazioni è lecito** e non si rifiuta più: con
+  `desired` vuoto `planSync` cancella gli eventi dell'app rimasti nel mese e non tocca nient'altro —
+  se si fermasse, l'evento dell'ultimo turno tolto non avrebbe nessuna via per sparire, perché la
+  griglia nasconde il bottone di invio quando non resta niente da confermare. Un turno
   cambiato dopo l'invio resta sul calendario com'era finché non viene riconfermato: regola invariante 1.
 - **Solo la persona associata a una colonna può confermarla, referente compresa.** La referente
   *vede* tutte le colonne (le serve), ma confermare la colonna di un'altra metterebbe eventi sul
