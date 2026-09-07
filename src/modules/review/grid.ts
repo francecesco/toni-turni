@@ -85,13 +85,19 @@ export interface GridRow {
   changed: ChangeKind | null
   /** Il codice effettivo della versione precedente, solo quando `changed` non è null. */
   previousCode: string | null
-  /** Riga vuota che porta ancora un assegnazione: il foglio nuovo non ha più questo turno. */
+  /**
+   * Riga vuota che porta ancora una **conferma**: il turno non risulta più letto ma
+   * l assegnazione (e forse l evento su Google) c è ancora. Una bozza su riga vuota
+   * non è un orfana: il sync non l ha mai scritta.
+   */
   orphanAssignment: boolean
   /**
-   * `orphanAssignment` è certa solo se la foto è stata letta per intero
-   * (`sheetFullyRead`): su una lettura parziale una riga vuota può essere un giorno
-   * non letto, non un turno tolto. La copertura per banda (quale giorno è stato letto
-   * davvero) è rinviata alla Fase 6: qui la versione minima onesta è tutto-o-niente.
+   * `orphanAssignment` è certa solo quando il foglio nuovo lo dice: foto letta per
+   * intero (`sheetFullyRead`) **e** diff che dichiara quel giorno `removed`. Su una
+   * lettura parziale la riga vuota può essere un giorno non letto, e senza diff — la
+   * prima versione — non c è nessun «foglio nuovo» con cui confrontare. La copertura
+   * per banda (quale giorno è stato letto davvero) è rinviata alla Fase 6: qui la
+   * versione minima onesta è tutto-o-niente.
    */
   orphanCertain: boolean
 }
@@ -158,8 +164,15 @@ export function buildColumnGrid(input: {
     const changedSinceConfirm =
       confermata && assegnazione !== null && !empty && assegnazione.code !== codiceEffettivo
     const cambio = cambi.get(day) ?? null
-    const orphanAssignment = empty && assegnazione !== null
-    const orphanCertain = orphanAssignment && sheetFullyRead
+    // Solo una **conferma** su una riga vuota è un orfana: una bozza non è mai finita
+    // sul calendario (il sync la salta e protegge la chiave), quindi non c è niente da
+    // togliere e chiederlo sarebbe rimediare a un guasto che non c è.
+    const orphanAssignment = empty && assegnazione !== null && assegnazione.confirmedAt != null
+    // Certa solo se il foglio nuovo lo dice: letto per intero **e** il diff dichiara
+    // quel giorno «tolto». Senza diff — la prima versione — non c è un foglio nuovo con
+    // cui confrontare, e su una lettura parziale la riga vuota può essere un giorno non
+    // letto.
+    const orphanCertain = orphanAssignment && sheetFullyRead && cambio?.kind === 'removed'
 
     const attentionReasons: string[] = []
     // Su una cella corretta a mano i motivi che vengono dalla lettura del modello sono
@@ -181,7 +194,9 @@ export function buildColumnGrid(input: {
     if (orphanCertain) {
       attentionReasons.push('il foglio nuovo non ha più questo turno')
     } else if (orphanAssignment) {
-      attentionReasons.push('giorno non letto in questa foto: il turno confermato resta com’è')
+      // Non si sa **perché** il turno non c è: giorno non letto, prima versione senza
+      // confronto, cella svuotata a mano. Quello che si sa è che la conferma resta.
+      attentionReasons.push('il turno confermato non risulta più letto: resta com’è')
     }
 
     righe.push({

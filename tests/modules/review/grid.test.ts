@@ -378,19 +378,19 @@ describe('gridSummary — il riassunto in testa alla griglia', () => {
   })
 })
 
-describe('buildColumnGrid — cosa è cambiato rispetto alla foto precedente', () => {
-  // Nota: `griglia` fissa la colonna a 'CRISTINA' (vedi l helper in cima al file), quindi
-  // il cambio di riferimento usa la stessa colonna — non 'RENATA' come nella bozza del
-  // task, che altrimenti non avrebbe mai trovato corrispondenza col filtro per colonna.
-  const cambio = (day: number, kind: 'changed' | 'added' | 'removed', before: string | null, after: string | null) => ({
-    columnLabel: 'CRISTINA',
-    columnKey: 'CRISTINA',
-    day,
-    kind,
-    before,
-    after,
-  })
+// Nota: `griglia` fissa la colonna a 'CRISTINA' (vedi l helper qui sopra), quindi il
+// cambio di riferimento usa la stessa colonna — non 'RENATA' come nella bozza del
+// task, che altrimenti non avrebbe mai trovato corrispondenza col filtro per colonna.
+const cambio = (day: number, kind: 'changed' | 'added' | 'removed', before: string | null, after: string | null) => ({
+  columnLabel: 'CRISTINA',
+  columnKey: 'CRISTINA',
+  day,
+  kind,
+  before,
+  after,
+})
 
+describe('buildColumnGrid — cosa è cambiato rispetto alla foto precedente', () => {
   it('senza diff nessuna riga è cambiata e il riassunto conta zero', () => {
     const righe = griglia([cella(1)])
     expect(righe[0].changed).toBeNull()
@@ -437,8 +437,12 @@ describe('buildColumnGrid — cosa è cambiato rispetto alla foto precedente', (
 })
 
 describe('buildColumnGrid — un giorno non letto non è un turno tolto dal foglio', () => {
-  it('con la foto letta per intero (default) un orfano è certo', () => {
-    const righe = griglia([], [{ day: 20, code: 'M', confirmedAt: new Date(), syncState: 'synced' }])
+  it('con la foto letta per intero e il diff che dice «tolto» un orfano è certo', () => {
+    const righe = griglia(
+      [],
+      [{ day: 20, code: 'M', confirmedAt: new Date(), syncState: 'synced' }],
+      [cambio(20, 'removed', 'M', null)],
+    )
     expect(righe[19].orphanAssignment).toBe(true)
     expect(righe[19].orphanCertain).toBe(true)
     expect(righe[19].attentionReasons).toContain('il foglio nuovo non ha più questo turno')
@@ -448,12 +452,36 @@ describe('buildColumnGrid — un giorno non letto non è un turno tolto dal fogl
     const righe = griglia(
       [],
       [{ day: 20, code: 'M', confirmedAt: new Date(), syncState: 'synced' }],
-      [],
+      [cambio(20, 'removed', 'M', null)],
       false,
     )
     expect(righe[19].orphanAssignment).toBe(true)
     expect(righe[19].orphanCertain).toBe(false)
     expect(righe[19].attentionReasons).not.toContain('il foglio nuovo non ha più questo turno')
-    expect(righe[19].attentionReasons).toContain('giorno non letto in questa foto: il turno confermato resta com’è')
+    expect(righe[19].attentionReasons).toContain('il turno confermato non risulta più letto: resta com’è')
+  })
+
+  it('senza diff (prima versione) un orfano non è certo: non c è un «foglio nuovo» da confrontare', () => {
+    // Una cella svuotata a mano sulla prima versione lascia l assegnazione su una
+    // riga vuota, ma nessuna foto precedente dice che il turno c era: dichiarare
+    // «il foglio nuovo non ha più questo turno» sarebbe una notizia inventata.
+    const righe = griglia([], [{ day: 20, code: 'M', confirmedAt: new Date(), syncState: 'synced' }])
+    expect(righe[19].orphanAssignment).toBe(true)
+    expect(righe[19].orphanCertain).toBe(false)
+    expect(righe[19].attentionReasons).toContain('il turno confermato non risulta più letto: resta com’è')
+  })
+
+  it('una bozza su una riga vuota non è un orfana: il sync la protegge già', () => {
+    // Senza `confirmedAt` non c è niente sul calendario da togliere, e offrire
+    // «Togli dal calendario» su una bozza chiederebbe di rimediare a un guasto che
+    // non c è (regola invariante 1: il sync non scrive senza conferma).
+    const righe = griglia(
+      [],
+      [{ day: 20, code: 'M', confirmedAt: null, syncState: 'draft' }],
+      [cambio(20, 'removed', 'M', null)],
+    )
+    expect(righe[19].empty).toBe(true)
+    expect(righe[19].orphanAssignment).toBe(false)
+    expect(righe[19].orphanCertain).toBe(false)
   })
 })

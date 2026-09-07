@@ -63,7 +63,7 @@ export function DayRow({
                 {row.orphanCertain
                   ? 'il foglio nuovo non ha più questo turno'
                   : row.orphanAssignment
-                    ? 'questo giorno non è stato letto nella foto nuova: il turno confermato resta com’è'
+                    ? 'il turno confermato non risulta più letto: resta com’è'
                     : row.declaredEmpty
                       ? 'vuota — svuotata a mano'
                       : 'nessun turno letto'}
@@ -78,8 +78,10 @@ export function DayRow({
                   <input type="hidden" name="rosterId" value={rosterId} />
                   <input type="hidden" name="columnLabel" value={columnLabel} />
                   <input type="hidden" name="day" value={row.day} />
+                  {/* Senza `synced` non c è niente su Google da cancellare: chiamarlo
+                      «Togli dal calendario» promette un gesto che non serve. */}
                   <Button type="submit" size="touch" variant="outline" className="min-w-24">
-                    Togli dal calendario
+                    {row.synced ? 'Togli dal calendario' : 'Togli il turno'}
                   </Button>
                 </form>
               )}
