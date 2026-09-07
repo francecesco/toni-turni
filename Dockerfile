@@ -33,7 +33,9 @@ RUN npx prisma generate \
 
 FROM node:22-alpine AS runner
 WORKDIR /app
-RUN apk add --no-cache openssl
+# sqlite: serve solo al backup coerente (`sqlite3 /data/turni.db ".backup ..."`, vedi README);
+# l app usa il client Prisma e non lo tocca.
+RUN apk add --no-cache openssl sqlite
 # HOSTNAME=0.0.0.0 sovrascrive l HOSTNAME che Docker imposta all id del container:
 # senza, il server standalone si lega solo all IP del container e l healthcheck
 # (che chiama localhost) non riceve mai risposta.

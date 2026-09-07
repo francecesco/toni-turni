@@ -233,6 +233,8 @@ tests/             # unit e integrazione, specchio di src/
 scripts/           # accuracy.ts (logica pura) ed eval-extraction.ts (npm run eval)
 fixtures/          # le due foto reali e le trascrizioni di riferimento, per npm run eval
 docker/            # entrypoint: migrate deploy + seed all'avvio
+deploy/            # zimaboard.env.example: il .env di produzione da compilare sulla Zima
+docs/deploy-zimaboard.md   # installazione passo passo: tunnel Cloudflare, segreti, verifiche, backup
 ```
 
 Tutti i moduli previsti dal design esistono. Quello che manca non è un modulo: è il bottone che
@@ -332,6 +334,11 @@ Queste non sono preferenze di stile: violarle rompe la fiducia dell'utente o cor
 - **Creare il calendario dedicato richiede lo scope `calendar.app.created`.** Con `calendar.events`
   da solo la creazione risponde 403. Chi aveva già dato il consenso prima della Fase 4 deve
   rifarlo (revoca da myaccount.google.com/permissions).
+- **L'immagine Docker porta `sqlite3` solo per il backup.** Il comando di backup del README
+  (`docker compose exec app sqlite3 /data/turni.db ".backup …"`) girava dentro un'immagine Alpine che
+  non lo installava: falliva al primo uso. Ora il runner fa `apk add sqlite`; l'app non lo tocca, usa
+  il client Prisma. Verificato il 2026-09-07 costruendo l'immagine da `main` e avviando il container
+  con un `.env` finto: migrazioni, seed, `/api/health` 200, `/api/auth/dev-login` 404 in produzione.
 - **`npm run eval` chiama il provider reale e consuma token.** Non eseguirlo in CI né in loop.
 - **Il 18,5% della Fase 2A non dice niente sulla strategia di oggi, e viceversa.** Quella misura
   mandava al modello la **foto** (prospettiva, sfondo, ~32 px per riga, altro modello) e diede 46/248

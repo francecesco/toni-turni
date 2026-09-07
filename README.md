@@ -56,10 +56,13 @@ Il dominio https non è un vezzo: Google accetta redirect OAuth solo su `https` 
 
 ## Installazione
 
+La procedura completa per la ZimaBoard, con il tunnel Cloudflare e le verifiche a ogni passo, è in
+[docs/deploy-zimaboard.md](docs/deploy-zimaboard.md). In breve:
+
 ```bash
 git clone https://github.com/francecesco/toni-turni.git
 cd toni-turni
-cp .env.example .env
+cp deploy/zimaboard.env.example .env
 # compila .env (vedi sotto), poi:
 docker compose up -d --build
 ```
@@ -101,13 +104,19 @@ IMAGE_RETENTION_DAYS=90                   # cancellazione automatica delle foto 
 1. Su [Google Cloud Console](https://console.cloud.google.com) crea un progetto.
 2. Abilita **Google Calendar API**.
 3. In *Credenziali* crea un **ID client OAuth 2.0** di tipo *Applicazione web*.
-4. Aggiungi come redirect URI autorizzato: `https://tuo-dominio/api/auth/google/callback`.
-5. Nella schermata consenso aggiungi gli scope `openid`, `email`, `profile` (per il login) e
-   `https://www.googleapis.com/auth/calendar.events` (per gli eventi), poi inserisci le utenti come
-   *test users*: per un uso familiare non serve la verifica Google.
+4. Aggiungi come redirect URI autorizzato: `https://tuo-dominio/api/auth/google/callback` (e
+   `http://localhost:3001/api/auth/google/callback` se sviluppi in locale).
+5. Nella schermata consenso aggiungi gli scope `openid`, `email`, `profile` (per il login),
+   `https://www.googleapis.com/auth/calendar.events` (per gli eventi) e
+   `https://www.googleapis.com/auth/calendar.app.created` (per **creare** il calendario dedicato:
+   senza, la creazione risponde 403), poi inserisci le utenti come *test users*.
 6. Copia client ID e secret in `.env`.
+7. Prima dell'uso vero **pubblica l'app** (*Pubblico → Pubblica app*): finché resta «In test» i
+   refresh token scadono dopo 7 giorni e il sync smette di funzionare ogni settimana. Con questi
+   scope Google mostra una volta l'avviso «app non verificata»; fino a 100 utenti non serve la
+   verifica formale.
 
-L'app chiede solo il permesso sugli eventi del calendario, non l'accesso all'account completo.
+L'app chiede il permesso sugli eventi e sui calendari che crea lei, non l'accesso all'account completo.
 
 ### Primo avvio
 
@@ -117,7 +126,9 @@ L'app chiede solo il permesso sugli eventi del calendario, non l'accesso all'acc
 2. Invita le colleghe inserendo la loro email in *Impostazioni → Utenti*: solo le email invitate
    possono accedere.
 3. Verifica in *Impostazioni → Codici turno* che orari e significati corrispondano al reparto.
-4. Carica la prima foto e associa una volta per tutte le colonne della tabella alle utenti.
+4. Carica la prima foto e associa una volta per tutte le colonne della tabella alle utenti. Il
+   calendario che l'app crea su Google si chiama **«Turni Toniolo»** e non viene mai ricreato da
+   sola: se sparisce, la griglia offre «Ricollega il calendario».
 
 ## Legenda turni predefinita
 
