@@ -165,9 +165,16 @@ export function DayRow({
         <p className="text-ok mt-2 text-xs font-medium">già sul tuo calendario</p>
       )}
 
+      {/* «Riconferma» solo a chi può riconfermare: se il codice nuovo non è in legenda
+          il bottone di conferma non c è (`canConfirm && row.confirmable`), e chiedere
+          di riconfermare manderebbe l utente a cercare un bottone che non esiste.
+          Quello che sblocca quel giorno è correggere il codice. */}
       {row.changedSinceConfirm && row.synced && (
         <p className="text-warn-soft-foreground mt-2 text-xs font-medium">
-          sul calendario c’è ancora {row.confirmedCode}: riconferma per aggiornarlo
+          sul calendario c’è ancora {row.confirmedCode}:{' '}
+          {row.confirmable
+            ? 'riconferma per aggiornarlo'
+            : 'correggi il codice sconosciuto per aggiornarlo'}
         </p>
       )}
 
