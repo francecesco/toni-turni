@@ -117,9 +117,12 @@ export default async function ReviewPage({
   // proprio turno, la referente sul foglio. È lo stesso predicato di `canSeeColumn`, e
   // il controllo vero sta lato server, dentro `correctCell`.
   const puoCorreggere = canSeeColumn(user, alias)
-  const [assegnazioni, celle] = await Promise.all([
+  const [assegnazioni, celle, precedente] = await Promise.all([
     columnAssignments(id, scelta),
     prisma.rosterCell.findMany({ where: { rosterId: id }, orderBy: { day: 'asc' } }),
+    // Sulla prima versione non c è niente prima: la query non si fa, invece di farla
+    // per buttarne il risultato.
+    roster.version === 1 ? Promise.resolve(null) : previousVersionOf(id),
   ])
 
   // Fase 5: il diff con la versione precedente, calcolato al volo. Sulla prima
@@ -130,7 +133,6 @@ export default async function ReviewPage({
   // parziale. La copertura per banda è rinviata alla Fase 6; qui la versione minima
   // onesta è tutto-o-niente su `status`.
   const sheetFullyRead = roster.status === 'extracted'
-  const precedente = await previousVersionOf(id)
   const cambiamenti = precedente
     ? filterChangesByCoverage(diffVersions(await cellsForDiff(precedente.id), celle), {
         previousFullyRead: precedente.status === 'extracted',

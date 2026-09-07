@@ -45,7 +45,8 @@ export default async function DiffPage({ params }: { params: Promise<{ id: strin
     />
   )
 
-  const precedente = await previousVersionOf(roster.id)
+  // Sulla prima versione non c è niente prima: la query non si fa.
+  const precedente = roster.version === 1 ? null : await previousVersionOf(roster.id)
   if (!precedente) {
     return (
       <>
