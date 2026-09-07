@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { diffVersions, effectiveCode, type DiffCell } from '@/modules/review/diff'
 
 function cella(day: number, columnLabel: string, code: string | null, over: Partial<DiffCell> = {}): DiffCell {
-  return { day, columnLabel, code, ...over }
+  return { day, columnLabel, rawCode: code ?? '', code, ...over }
 }
 
 describe('effectiveCode — il codice che conta su una cella', () => {
@@ -16,6 +16,22 @@ describe('effectiveCode — il codice che conta su una cella', () => {
 
   it('correzione a mano con codice null vuol dire «il foglio qui è vuoto»', () => {
     expect(effectiveCode(cella(1, 'MERY', 'M', { correctedCode: null, correctedAt: new Date() }))).toBeNull()
+  })
+
+  it('un codice sconosciuto vale il grezzo, non il vuoto: il modello ha letto qualcosa', () => {
+    // `code` null con un grezzo scritto è «letto ma non in legenda» (`M h13`), che è
+    // diversissimo da «qui non c è niente».
+    expect(effectiveCode(cella(1, 'MERY', null, { rawCode: 'M h13' }))).toBe('M h13')
+  })
+
+  it('un grezzo di soli spazi è vuoto davvero', () => {
+    expect(effectiveCode(cella(1, 'MERY', null, { rawCode: '   ' }))).toBeNull()
+  })
+
+  it('la correzione a mano vince anche sul grezzo di un codice sconosciuto', () => {
+    expect(
+      effectiveCode(cella(1, 'MERY', null, { rawCode: 'M h13', correctedCode: 'M', correctedAt: new Date() })),
+    ).toBe('M')
   })
 })
 
@@ -58,6 +74,23 @@ describe('diffVersions — cosa è cambiato fra due foto dello stesso mese', () 
     const prima = [cella(3, 'MERY', 'M', { correctedCode: null, correctedAt: new Date() })]
     const dopo = [cella(3, 'MERY', 'M')]
     expect(diffVersions(prima, dopo).map((c) => c.kind)).toEqual(['added'])
+  })
+
+  it('un codice sconosciuto non è una cella vuota: si confronta col grezzo', () => {
+    // Il foglio nuovo dice `M h13` (orario a penna): il modello non lo trova in
+    // legenda e lascia `code` null. Dichiararlo «tolto» direbbe all infermiera che
+    // quel giorno non ha turno, quando invece ne ha uno da rileggere.
+    const prima = [cella(4, 'MERY', 'M')]
+    const dopo = [cella(4, 'MERY', null, { rawCode: 'M h13' })]
+    expect(diffVersions(prima, dopo)).toEqual([
+      { columnLabel: 'MERY', columnKey: 'MERY', day: 4, kind: 'changed', before: 'M', after: 'M h13' },
+    ])
+  })
+
+  it('due grezzi sconosciuti uguali non sono un cambiamento', () => {
+    const prima = [cella(4, 'MERY', null, { rawCode: 'M h13' })]
+    const dopo = [cella(4, 'MERY', null, { rawCode: 'M h13' })]
+    expect(diffVersions(prima, dopo)).toEqual([])
   })
 
   it('le forme compatte dello stesso codice sono uguali: "M 2°P" e "M2°P"', () => {

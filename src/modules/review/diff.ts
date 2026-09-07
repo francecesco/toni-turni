@@ -14,6 +14,8 @@ export type ChangeKind = 'changed' | 'added' | 'removed'
 export interface DiffCell {
   day: number
   columnLabel: string
+  /** Il testo letto dal modello, anche quando non è un codice della legenda. */
+  rawCode: string
   code: string | null
   correctedCode?: string | null
   correctedAt?: Date | null
@@ -30,10 +32,17 @@ export interface VersionChange {
   after: string | null
 }
 
-/** `correctedAt` valorizzato con `correctedCode` null significa «il foglio qui è vuoto». */
+/**
+ * `correctedAt` valorizzato con `correctedCode` null significa «il foglio qui è
+ * vuoto».
+ *
+ * Senza correzione vale la lettura del modello, e se il codice non è in legenda
+ * (`code` null) vale il **grezzo**: `M h13` è un turno letto e da rileggere, non una
+ * casella vuota, e confonderli lo farebbe comparire nel diff come «tolto».
+ */
 export function effectiveCode(cell: DiffCell): string | null {
   if ((cell.correctedAt ?? null) !== null) return cell.correctedCode ?? null
-  return cell.code
+  return cell.code ?? (cell.rawCode.trim() === '' ? null : cell.rawCode)
 }
 
 function key(cell: DiffCell): string {
